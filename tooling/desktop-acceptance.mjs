@@ -91,6 +91,7 @@ try {
     node: typeof window.process,
     require: typeof window.require,
     bridge: Object.keys(window.ohtia),
+    diagnostics: Object.keys(window.ohtia.diagnostics),
     system: Object.keys(window.ohtia.system),
     motion: window.ohtia.system.readMotion(),
     update: Object.keys(window.ohtia.update),
@@ -101,10 +102,12 @@ try {
   expect(initial.bridge.sort()).toEqual([
     "bootstrap",
     "commands",
+    "diagnostics",
     "foundation",
     "system",
     "update",
   ]);
+  expect(initial.diagnostics).toEqual(["readPage"]);
   expect(initial.system.sort()).toEqual(["readMotion", "subscribeMotion"]);
   expect(initial.update).toEqual(["subscribeState"]);
   // SPEC-001-040: a development or qualification runtime never asks for a newer version.

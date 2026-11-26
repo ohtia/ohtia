@@ -1,6 +1,8 @@
 import { isExternalMessageLink } from "@ohtia/contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  decodeDiagnosticReadRequest,
+  decodeDiagnosticReadResult,
   decodeBootstrapSnapshot,
   isExitChoice,
   isExitDialogState,
@@ -385,6 +387,18 @@ const bridge: DesktopBridge = {
       return () => {
         motionListeners.delete(listener);
       };
+    },
+  },
+  diagnostics: {
+    async readPage(request) {
+      const input = decodeDiagnosticReadRequest(request);
+      if (!input) return { status: "invalid_request" };
+      try {
+        const result: unknown = await ipcRenderer.invoke(desktopChannels.diagnosticsRead, input);
+        return decodeDiagnosticReadResult(result) ?? { status: "unavailable" };
+      } catch {
+        return { status: "unavailable" };
+      }
     },
   },
   update: {

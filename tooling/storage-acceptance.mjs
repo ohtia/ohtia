@@ -370,6 +370,10 @@ async function verifyManagedStoreLocation(page, locale) {
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
+    dialog.getByRole("button", { name: message(locale, "diagnostics.title"), exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
     dialog.getByRole("button", { name: message(locale, "migration_recovery"), exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Tab");

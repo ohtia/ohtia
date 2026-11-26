@@ -3,9 +3,7 @@ type: DecisionRecord
 title: "ADR-0013 — Structured diagnostics without research content"
 description: "Define a versioned local JSONL diagnostic format mapped to OpenTelemetry, with privacy controls and bounded file retention."
 generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.2-sol
 sources:
   - id: otel-logs
     resource: "https://opentelemetry.io/docs/specs/otel/logs/data-model/"
@@ -104,7 +102,7 @@ Restrict directory/file access to the current OS account using the supported pla
 
 ### Inspection, deletion and sharing
 
-[Frontend architecture](../frontend-architecture.md#diagnostics) defines **Settings → Diagnostics**, with **View logs** and **Delete logs** actions. The read-only viewer can inspect the active file and retained archives through named broker operations; it does not expose arbitrary filesystem paths or render event values as executable markup.
+[Frontend architecture](../frontend-architecture.md#diagnostics) defines the **Settings → Diagnostics** viewer and the **Delete logs** action. The read-only viewer can inspect the active file and retained archives through named broker operations; it does not expose arbitrary filesystem paths or render event values as executable markup.
 
 Delete logs requires explicit user confirmation. The broker serializes the operation with the writer, closes its active handle, deletes the managed active/archive files and creates a new active file for subsequent events. Report partial deletion or failure accurately. Deletion affects diagnostic logs only; it leaves research content, revisions, provenance and task/attempt receipts intact. It removes Ohtia's retained files without promising forensic erasure or deletion of copies previously shared by the user.
 

@@ -210,6 +210,40 @@
   inline-size: 100%;
   min-block-size: calc(var(--space-8) + var(--space-1));
 }
+.diagnostics-panel {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  min-inline-size: var(--space-0);
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-panel label {
+  display: grid;
+  gap: var(--space-1);
+  inline-size: 100%;
+}
+
+.diagnostics-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.diagnostic-entries {
+  margin-block: var(--space-0);
+  padding-inline: var(--space-6) var(--space-0);
+  min-inline-size: var(--space-0);
+  max-inline-size: 100%;
+}
+
+.diagnostic-entries li {
+  padding-block: var(--space-2);
+}
+
+.diagnostic-entries li > :not(:last-child) {
+  margin-inline-end: var(--space-2);
+}
 .settings-theme-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

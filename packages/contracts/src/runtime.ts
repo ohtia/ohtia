@@ -1,5 +1,5 @@
 import { isResearchId, type ResearchScope } from "./research-port.js";
-import { isArtifactVersion, isCanonicalUuid } from "./diagnostics.js";
+import { isArtifactVersion, isCanonicalUuid, type DiagnosticsBridge } from "./diagnostics.js";
 import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
 import { isIdentifier, type FoundationPort, type InterfaceLocale } from "./port.js";
@@ -14,6 +14,7 @@ export const desktopChannels = {
   preferencesReady: "ohtia:preferences-ready",
   port: "ohtia:foundation",
   reply: "ohtia:foundation-result",
+  diagnosticsRead: "ohtia:diagnostics-read",
   bootstrap: "ohtia:bootstrap",
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",
@@ -246,6 +247,7 @@ export interface DesktopBridge {
   readonly commands: CommandBridge;
   readonly system: SystemMotionBridge;
   readonly update: UpdateBridge;
+  readonly diagnostics: DiagnosticsBridge;
   readonly foundation: FoundationPort;
   readonly bootstrap: {
     read(): Promise<BootstrapSnapshot>;

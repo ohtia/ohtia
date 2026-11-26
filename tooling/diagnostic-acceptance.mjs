@@ -9,7 +9,14 @@ import assert from "node:assert/strict";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
-import { decodeDiagnosticLine, message } from "../packages/contracts/dist/index.js";
+import { invokeNativeMenu } from "./command-acceptance.mjs";
+import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
+import {
+  decodeDiagnosticLine,
+  diagnosticLimits,
+  message,
+} from "../packages/contracts/dist/index.js";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
 const [profileFile, prepared, output] = process.argv.slice(2);
 const launch = admittedLaunch(profileFile, prepared);
@@ -39,6 +46,146 @@ const saveReceipt = () =>
     path.join(output, "diagnostic-receipt.json"),
     JSON.stringify(receipt, null, 2) + "\n",
   );
+async function verifySettingsViewer(application, page, locale, activeRecord, directory, marker) {
+  const archive = path.join(directory, "ohtia.1.jsonl");
+  const saved = path.join(directory, ".viewer-archive-fixture-backup");
+  assert.ok(!fs.existsSync(saved));
+  const hadArchive = fs.existsSync(archive);
+  if (hadArchive) fs.renameSync(archive, saved);
+  const text = (key, values = {}) => message(locale, key, values);
+  const read = (slot) => page.evaluate((slot) => window.ohtia.diagnostics.readPage({ slot }), slot);
+  const encode = (record) => JSON.stringify(record) + "\n";
+  const times = Array.from({ length: 65 }, (_, index) =>
+    new Date(Date.UTC(2000, 0, 1, 0, 0, index)).toISOString(),
+  );
+  const valid = times.map((timestamp) => encode({ ...activeRecord, timestamp })).join("");
+  const privateLine = encode({ ...activeRecord, message: marker });
+  const unsupported = encode({ schema_version: 2, message: marker });
+  const oversized = marker.padEnd(diagnosticLimits.recordBytes + 1, "x") + "\n";
+  const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
+  try {
+    fs.writeFileSync(archive, valid + privateLine + unsupported + oversized, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    const first = await read(1);
+    assert.equal(first.status, "ready");
+    assert.equal(
+      first.entries.length + first.invalid + first.unsupported,
+      diagnosticLimits.readRecords,
+    );
+    assert.deepEqual([first.invalid, first.unsupported], [2, 1]);
+    const firstPageTimes = times.slice(-first.entries.length).reverse();
+    assert.deepEqual(
+      first.entries.map(({ time }) => time),
+      firstPageTimes,
+    );
+    assert.ok(first.continuation);
+    assert.ok(!JSON.stringify(first).includes(marker));
+    assert.ok(!JSON.stringify(first).includes(directory));
+    assert.deepEqual(Object.keys(first.entries[0]).sort(), ["event", "severity", "time"]);
+    assert.equal((await read(4)).status, "ready");
+
+    const window = await application.browserWindow(page);
+    await focusNative(window, "diagnostic Settings viewer");
+    await invokeNativeMenu(application, "settings.open");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator(".diagnostics-panel")).toHaveCount(0);
+    const category = dialog.getByRole("button", { name: text("diagnostics.title"), exact: true });
+    await category.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+    const source = dialog.getByRole("combobox", { name: text("diagnostics.file"), exact: true });
+    const refresh = dialog.getByRole("button", { name: text("diagnostics.refresh"), exact: true });
+    await expect(source).toHaveValue("0");
+    await source.focus();
+    await page.keyboard.press("Tab");
+    await expect(refresh).toBeFocused();
+    const log = dialog.getByRole("list", { name: text("diagnostics.events"), exact: true });
+    await expect(log.locator("time").first()).toHaveText(/Z$/);
+    await expect(log.locator("code").first()).toHaveText(/^ohtia\./);
+
+    await source.selectOption("1");
+    await expect(log.locator("time")).toHaveText(firstPageTimes);
+    await expect(dialog.getByText(text("diagnostics.invalid", { count: 2 }))).toBeVisible();
+    await expect(dialog.getByText(text("diagnostics.unsupported", { count: 1 }))).toBeVisible();
+    await expect(dialog).not.toContainText(marker);
+    const next = dialog.getByRole("button", { name: text("diagnostics.next"), exact: true });
+    await next.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText(text("diagnostics.page", { page: 2 }))).toBeVisible();
+    await expect(log.locator("time")).toHaveText(times.slice(0, 4).reverse());
+    await source.selectOption("0");
+    await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+    await source.selectOption("1");
+    await expect(log.locator("li")).toHaveCount(first.entries.length);
+    fs.unlinkSync(archive);
+    await next.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText(text("diagnostics.stale"))).toBeVisible();
+    await expect(refresh).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(source).toHaveValue("1");
+    await expect(dialog.getByText(text("diagnostics.empty"))).toBeVisible();
+    await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+
+    await source.selectOption("0");
+    await expect(log.locator("time").first()).toBeVisible();
+    const original = await window.evaluate((window) => {
+      const [width, height] = window.getContentSize();
+      return {
+        width,
+        height,
+        zoomFactor: window.webContents.getZoomFactor(),
+        maximized: window.isMaximized(),
+      };
+    });
+    await withCommandCleanup(
+      async () => {
+        const viewport = await setNativeViewport(page, window, {
+          width: 1280,
+          height: 800,
+          zoomFactor: 4,
+        });
+        assert.equal(viewport.viewportWidth, 320);
+        for (const media of [
+          { colorScheme: "light", forcedColors: "none" },
+          { colorScheme: "dark", forcedColors: "none" },
+          { colorScheme: "dark", forcedColors: "active" },
+        ]) {
+          await page.emulateMedia(media);
+          await expect(source).toBeVisible();
+          await expect(log.locator("time").first()).toBeVisible();
+          assert.equal(
+            await dialog
+              .locator(".settings-content")
+              .evaluate((element) => element.scrollWidth <= element.clientWidth),
+            true,
+          );
+        }
+      },
+      async () => {
+        await page.emulateMedia({ colorScheme: null, forcedColors: null });
+        await setNativeViewport(page, window, original);
+        if (original.maximized) await window.evaluate((window) => window.maximize());
+      },
+    );
+
+    fs.mkdirSync(archive, { mode: 0o700 });
+    await source.selectOption("1");
+    await expect(dialog.getByText(text("diagnostics.unavailable"))).toBeVisible();
+    assert.deepEqual(await read(1), { status: "unavailable" });
+    fs.rmdirSync(archive);
+  } finally {
+    if (fs.existsSync(archive)) {
+      if (fs.lstatSync(archive).isDirectory()) fs.rmdirSync(archive);
+      else fs.unlinkSync(archive);
+    }
+    if (hadArchive) fs.renameSync(saved, archive);
+    if (await dialog.isVisible()) await page.keyboard.press("Escape");
+  }
+}
+
 const record = (id, detail = {}) => {
   receipt.cases.push({ id, result: "pass", ...detail });
   saveReceipt();
@@ -373,6 +520,12 @@ try {
   logs();
   assert.ok(!mainOutput.includes(marker));
   record("automatic-capture-private-markers");
+  const language = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  assert.equal(language.ok, true);
+  const locale = language.value.effectiveLocale;
+  await expect(page.locator("html")).toHaveAttribute("lang", locale);
+  await verifySettingsViewer(application, page, locale, logs()[0], logDirectory, marker);
+  record("settings-bounded-diagnostic-viewer");
   const quitOffsets = new Map();
   for (let slot = 0; slot < 5; slot++) {
     const file = path.join(logDirectory, slot === 0 ? "ohtia.jsonl" : `ohtia.${slot}.jsonl`);

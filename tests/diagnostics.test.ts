@@ -10,6 +10,7 @@ import {
   dataServiceExitCodes,
   diagnosticLimits,
   decodeDiagnosticEvent,
+  decodeDiagnosticReadResult,
   decodeDiagnosticRecord,
   decodeDiagnosticLine,
   decodeChildDiagnostic,
@@ -23,6 +24,56 @@ import {
   stopBrokerServices,
   recoverDiagnosticsAfterShutdown,
 } from "../packages/main/dist/index.js";
+
+it("admits only bounded, catalog-owned diagnostic projections at the wire boundary", () => {
+  const entry = { time, severity: "INFO", event: started.event_name };
+  const page = { status: "ready", entries: [entry], invalid: 0, unsupported: 0 };
+  const cursor = { token: "a".repeat(64), offset: 100 };
+  expect(decodeDiagnosticReadResult(page)).toEqual(page);
+  const full = { ...page, invalid: 32, unsupported: 31, continuation: cursor };
+  expect(decodeDiagnosticReadResult(full)).toEqual(full);
+  for (const invalid of [
+    null,
+    { status: "unexpected" },
+    { status: "busy", data: marker },
+    { ...page, entries: marker },
+    { ...page, entries: Array(65).fill(entry) },
+    { ...page, entries: Array(1) },
+    { ...page, entries: [null] },
+    { ...page, entries: [{ ...entry, event: marker }] },
+    { ...page, entries: [{ ...entry, severity: "FATAL" }] },
+    { ...page, entries: [{ ...entry, time: marker }] },
+    { ...page, entries: [{ ...entry, path: marker }] },
+    { ...page, entries: Object.assign([entry], { path: marker }) },
+    { ...page, invalid: -1 },
+    { ...page, unsupported: 1.5 },
+    { ...page, unsupported: marker },
+    { ...page, unsupported: diagnosticLimits.readRecords + 1 },
+    { ...page, continuation: cursor },
+    { ...full, continuation: { ...cursor, token: marker } },
+    { ...full, continuation: { ...cursor, offset: 0 } },
+    { ...full, continuation: { ...cursor, offset: diagnosticLimits.fileBytes } },
+    { ...full, continuation: { ...cursor, offset: 1.5 } },
+    { ...full, continuation: { ...cursor, offset: marker } },
+    { ...full, continuation: { ...cursor, extra: marker } },
+    new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error(marker);
+        },
+      },
+    ),
+  ])
+    expect(decodeDiagnosticReadResult(invalid)).toBeUndefined();
+  const accessor = [entry];
+  Object.defineProperty(accessor, "0", {
+    get() {
+      throw new Error(marker);
+    },
+  });
+  expect(decodeDiagnosticReadResult({ ...page, entries: accessor })).toBeUndefined();
+});
 
 const marker = "PRIVATE_研究_token_query_filename_SQL_value";
 const time = "2000-01-01T00:00:00.001Z";
@@ -565,22 +616,125 @@ describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeou
   it("returns bounded decoded pages and counters rather than corrupt/unknown raw records", async () => {
     const { writer, active } = fixture();
     await writer.initializeLogs();
-    const future =
-      JSON.stringify({ ...makeDiagnosticRecord(started, "1.2.3", time), schema_version: 2 }) + "\n";
+    // The clock moves backwards while the file continues to grow.
+    const times = Array.from({ length: 65 }, (_, index) =>
+      new Date(Date.parse(time) - index).toISOString(),
+    );
+    const lines = times.map(
+      (observed) => JSON.stringify(makeDiagnosticRecord(started, "1.2.3", observed)) + "\n",
+    );
+    const future = JSON.stringify({ schema_version: 2, message: marker }) + "\n";
     fs.writeFileSync(
       active,
-      line().repeat(65) + JSON.stringify({ message: marker }) + "\n" + future,
+      lines.join("") +
+        JSON.stringify({ message: marker }) +
+        "\n" +
+        future +
+        marker.repeat(diagnosticLimits.recordBytes) +
+        "\n\n" +
+        marker,
     );
     const page = await writer.read(0);
-    expect(page.records).toHaveLength(64);
-    expect(page.nextOffset).toBeDefined();
-    const rest = await writer.read(0, page.nextOffset);
-    expect(rest.records).toHaveLength(1);
-    expect(rest.invalid).toBe(1);
-    expect(rest.unsupported).toBe(1);
-    expect(JSON.stringify(rest)).not.toContain(marker);
-    expect(await writer.read(0, 1)).toMatchObject({ ok: false });
-    expect(await writer.read(5)).toMatchObject({ ok: false });
+    expect(page.records.map((record) => record.observed_timestamp)).toEqual(
+      times.slice(6).reverse(),
+    );
+    expect(page.invalid).toBe(4);
+    expect(page.unsupported).toBe(1);
+    expect(JSON.stringify(page)).not.toContain(marker);
+    const cursor = page.continuation!;
+    expect(cursor).toMatchObject({
+      token: expect.stringMatching(/^[a-f0-9]{64}$/),
+      offset: Buffer.byteLength(lines.slice(0, 6).join("")),
+    });
+    const rest = await writer.read(0, cursor);
+    expect(rest.records.map((record) => record.observed_timestamp)).toEqual(
+      times.slice(0, 6).reverse(),
+    );
+    expect(rest).toMatchObject({ invalid: 0, unsupported: 0 });
+    expect(rest.continuation).toBeUndefined();
+    expect(
+      await writer.read(0, { ...cursor, offset: cursor.offset + Buffer.byteLength(lines[6]) }),
+    ).toMatchObject({ status: "stale" });
+    expect(await writer.read(5)).toMatchObject({ status: "invalid_record" });
+
+    fs.writeFileSync(active, "\n");
+    expect(await writer.read(0)).toMatchObject({
+      status: "ready",
+      records: [],
+      invalid: 1,
+      unsupported: 0,
+    });
+  });
+  it(
+    "binds continuations to the serialized file generation across append, rotation and deletion",
+    async () => {
+      const { writer, active, logs } = fixture();
+      await writer.initializeLogs();
+      const payload = line().repeat(65);
+      fs.writeFileSync(active, payload);
+      const first = await writer.read(0);
+      const cursor = first.continuation!;
+      await writer.append({ event_name: "ohtia.storage.opened" });
+      expect((await writer.read(0, cursor)).records.map((record) => record.event_name)).toEqual([
+        started.event_name,
+      ]);
+      expect((await writer.read(0)).records[0]?.event_name).toBe("ohtia.storage.opened");
+
+      fs.truncateSync(active, diagnosticLimits.fileBytes);
+      const rotating = writer.append(started);
+      const afterRotation = writer.read(0, cursor);
+      expect((await rotating).ok).toBe(true);
+      expect(await afterRotation).toMatchObject({ status: "stale" });
+      expect((await writer.read(0)).records).toHaveLength(1);
+
+      const archive = path.join(logs, "ohtia.1.jsonl");
+      fs.writeFileSync(archive, payload);
+      const archiveCursor = (await writer.read(1)).continuation!;
+      expect((await writer.read(1, archiveCursor)).records).toHaveLength(1);
+      expect(await writer.read(0, archiveCursor)).toMatchObject({ status: "stale" });
+      fs.renameSync(archive, path.join(logs, "prior-archive"));
+      expect(await writer.read(1, archiveCursor)).toMatchObject({ status: "stale" });
+      expect((await writer.read(1)).records).toHaveLength(0);
+      fs.writeFileSync(archive, payload);
+      expect(await writer.read(1, archiveCursor)).toMatchObject({ status: "stale" });
+      const replacement = (await writer.read(1)).continuation!;
+
+      fs.unlinkSync(active);
+      expect(await writer.append(started)).toMatchObject({ status: "unavailable" });
+      expect(await writer.initializeLogs()).toMatchObject({ status: "ready" });
+      expect(await writer.read(1, replacement)).toMatchObject({ status: "stale" });
+      const repaired = (await writer.read(1)).continuation!;
+
+      const deleting = writer.deleteLogs(true);
+      const afterDeletion = writer.read(1, repaired);
+      expect((await deleting).ok).toBe(true);
+      expect(await afterDeletion).toMatchObject({ status: "stale" });
+      expect((await writer.read(0)).records).toHaveLength(0);
+    },
+    nativeAclCaseTimeout,
+  );
+  it("bounds files, refuses read access and rejects foreign offsets", async () => {
+    let admitted = true;
+    const { writer, active, logs } = fixture({
+      assertAdmission: () => {
+        if (!admitted) throw new Error(marker);
+      },
+    });
+    await writer.initializeLogs();
+    fs.writeFileSync(active, line().repeat(65));
+    const cursor = (await writer.read(0)).continuation!;
+    fs.truncateSync(active, cursor.offset);
+    expect(await writer.read(0, cursor)).toMatchObject({ status: "stale" });
+    fs.truncateSync(active, diagnosticLimits.fileBytes + 1);
+    expect(await writer.read(0)).toMatchObject({ status: "invalid_record" });
+    fs.truncateSync(active, cursor.offset);
+    fs.mkdirSync(path.join(logs, "ohtia.1.jsonl"));
+    expect(await writer.read(1)).toMatchObject({ status: "unavailable" });
+    expect(await writer.append(started)).toMatchObject({ status: "ready" });
+    admitted = false;
+    const denied = await writer.read(0);
+    expect(denied).toMatchObject({ status: "unavailable" });
+    expect(JSON.stringify(denied)).not.toContain(marker);
   });
   it.each(["protocol", "process"] as const)(
     "distinguishes %s loss from the child exit receipt without logging rejected content",

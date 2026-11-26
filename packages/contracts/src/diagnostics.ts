@@ -738,6 +738,131 @@ export function decodeDiagnosticLine(bytes: Uint8Array): DiagnosticDecode {
     return { ok: false, code: "invalid_record" };
   }
 }
+export interface DiagnosticContinuation {
+  readonly token: string;
+  readonly offset: number;
+}
+
+export interface DiagnosticReadRequest {
+  readonly slot: number;
+  readonly continuation?: DiagnosticContinuation;
+}
+
+export interface DiagnosticLogEntry {
+  readonly time: string;
+  readonly severity: DiagnosticSeverity;
+  readonly event: DiagnosticEventName;
+}
+
+const diagnosticReadFailures = [
+  "unavailable",
+  "busy",
+  "stale",
+  "invalid_request",
+  "invalid_file",
+] as const;
+export type DiagnosticReadFailure = (typeof diagnosticReadFailures)[number];
+export type DiagnosticReadResult =
+  | { readonly status: DiagnosticReadFailure }
+  | {
+      readonly status: "ready";
+      readonly entries: readonly DiagnosticLogEntry[];
+      readonly invalid: number;
+      readonly unsupported: number;
+      readonly continuation?: DiagnosticContinuation;
+    };
+
+export interface DiagnosticsBridge {
+  readPage(request: DiagnosticReadRequest): Promise<DiagnosticReadResult>;
+}
+
+function diagnosticContinuation(input: unknown): DiagnosticContinuation | undefined {
+  const cursor = object(input, ["token", "offset"], ["token", "offset"]);
+  if (
+    !cursor ||
+    typeof cursor.token !== "string" ||
+    !/^[a-f0-9]{64}$/.test(cursor.token) ||
+    typeof cursor.offset !== "number" ||
+    !Number.isInteger(cursor.offset) ||
+    cursor.offset <= 0 ||
+    cursor.offset >= diagnosticLimits.fileBytes
+  )
+    return;
+  return { token: cursor.token, offset: cursor.offset };
+}
+
+export function decodeDiagnosticReadRequest(input: unknown): DiagnosticReadRequest | undefined {
+  try {
+    const request = object(input, ["slot", "continuation"], ["slot"]);
+    if (
+      !request ||
+      typeof request.slot !== "number" ||
+      !Number.isInteger(request.slot) ||
+      request.slot < 0 ||
+      request.slot >= diagnosticLimits.files
+    )
+      return;
+    if (!Object.hasOwn(request, "continuation")) return { slot: request.slot };
+    const continuation = diagnosticContinuation(request.continuation);
+    if (continuation) return { slot: request.slot, continuation };
+  } catch {
+    return;
+  }
+}
+
+function scanCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= diagnosticLimits.readRecords
+  );
+}
+
+export function decodeDiagnosticReadResult(input: unknown): DiagnosticReadResult | undefined {
+  try {
+    const value = object(
+      input,
+      ["status", "entries", "invalid", "unsupported", "continuation"],
+      ["status"],
+    );
+    if (!value) return;
+    if (value.status !== "ready") {
+      const status = diagnosticReadFailures.find((failure) => failure === value.status);
+      if (status && Object.keys(value).length === 1) return { status };
+      return;
+    }
+    const { entries, invalid, unsupported } = value;
+    if (
+      !Array.isArray(entries) ||
+      !scanCount(invalid) ||
+      !scanCount(unsupported) ||
+      entries.length + invalid + unsupported > diagnosticLimits.readRecords ||
+      Reflect.ownKeys(entries).length !== entries.length + 1
+    )
+      return;
+    const decoded: DiagnosticLogEntry[] = [];
+    for (let index = 0; index < entries.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(entries, String(index));
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return;
+      const fields = ["time", "severity", "event"];
+      const entry = object(descriptor.value, fields, fields);
+      if (!entry || !isDiagnosticTime(entry.time) || !name(entry.event)) return;
+      const severity = diagnosticCatalog[entry.event].severity;
+      if (entry.severity !== severity) return;
+      decoded.push({ time: entry.time, severity, event: entry.event });
+    }
+    if (!Object.hasOwn(value, "continuation")) {
+      return { status: "ready", entries: decoded, invalid, unsupported };
+    }
+    const continuation = diagnosticContinuation(value.continuation);
+    if (continuation && decoded.length + invalid + unsupported === diagnosticLimits.readRecords)
+      return { status: "ready", entries: decoded, invalid, unsupported, continuation };
+  } catch {
+    return;
+  }
+}
+
 export function diagnosticToOpenTelemetry(input: unknown) {
   const decoded = decodeDiagnosticRecord(input);
   if (!decoded.ok) return decoded;

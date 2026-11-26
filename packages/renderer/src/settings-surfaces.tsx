@@ -17,10 +17,12 @@ import {
   type LocaleSnapshot,
   type CommandId,
   type CommandReason,
+  type DiagnosticsBridge,
   type UpdateBridge,
 } from "@ohtia/contracts";
 import { UpdateController } from "./update-controller.js";
 import { UpdateCheckController } from "./update-check-controller.js";
+import { DiagnosticsPanel } from "./diagnostics-panel.js";
 import { UpdateCheckSetting } from "./update-check-setting.js";
 import { useCharacterMode } from "./character.js";
 import { CommandSurfaces } from "./command-surfaces.js";
@@ -67,7 +69,9 @@ export function SettingsSurfaces({
   newProject,
   update,
   recovery,
+  diagnostics,
 }: {
+  readonly diagnostics?: DiagnosticsBridge;
   readonly recovery?: ReactNode;
   /** SPEC-001-040: main's update pushes; without them the window offers no update command. */
   readonly update?: UpdateBridge;
@@ -494,6 +498,17 @@ export function SettingsSurfaces({
                               available={available}
                             />
                           ),
+                        } satisfies SettingsSection,
+                      ]
+                    : []),
+                  ...(diagnostics
+                    ? [
+                        {
+                          id: "diagnostics",
+                          title: message(locale, "diagnostics.title"),
+                          icon: "file-text",
+                          content: (active: boolean) =>
+                            active && <DiagnosticsPanel bridge={diagnostics} locale={locale} />,
                         } satisfies SettingsSection,
                       ]
                     : []),
