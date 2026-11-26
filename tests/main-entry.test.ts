@@ -257,6 +257,7 @@ async function launch(
   const children: ReturnType<typeof child>[] = [];
   const diagnosticWriters: { readonly version: string }[] = [];
   const diagnosticRead = vi.fn();
+  const diagnosticDelete = vi.fn();
   const diagnosticAppend = vi.fn<(event: DiagnosticEvent, correlation?: string) => Promise<void>>(
     async () => {},
   );
@@ -455,6 +456,7 @@ async function launch(
       }
       reservedPermissionProcesses = 0;
       read = diagnosticRead;
+      deleteLogs = diagnosticDelete;
       append = diagnosticAppend;
       close = vi.fn(async () => undefined);
     },
@@ -547,6 +549,7 @@ async function launch(
     children,
     diagnosticWriters,
     diagnosticRead,
+    diagnosticDelete,
     diagnosticAppend,
     supervisors,
     publish,
@@ -773,6 +776,61 @@ describe("broker composition with synthetic Electron adapters", () => {
     for (const result of await Promise.all(reads))
       expect(result).toEqual({ status: "unavailable" });
     expect(await handle(h.event(), request)).toMatchObject({ status: "ready" });
+  });
+  it("requires a trusted confirmed deletion and preserves known and uncertain outcomes", async () => {
+    const h = await launch({ mode: "installed" });
+    const handle = h.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === h.constants.desktopChannels.diagnosticsDelete,
+    )![1];
+    const request = { confirmed: true };
+    expect(await handle(h.event(), request)).toEqual({ status: "unavailable" });
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+    expect(
+      await handle({ ...h.event(), senderFrame: { url: h.constants.desktopDocument } }, request),
+    ).toEqual({ status: "unavailable" });
+    expect(await handle(h.event(), { confirmed: false })).toEqual({ status: "invalid_request" });
+    expect(await handle(h.event(), { ...request, path: "/synthetic/private" })).toEqual({
+      status: "invalid_request",
+    });
+    expect(await handle(h.event(), request, "extra")).toEqual({ status: "invalid_request" });
+    expect(h.diagnosticDelete).not.toHaveBeenCalled();
+
+    for (const [result, expected] of [
+      [
+        { ok: true, status: "ready", deleted: 3 },
+        { status: "ready", deleted: 3 },
+      ],
+      [
+        { ok: false, status: "unavailable", deleted: 2 },
+        { status: "incomplete", deleted: 2 },
+      ],
+      [{ ok: false, status: "unavailable", deleted: 0 }, { status: "unavailable" }],
+      [{ ok: false, status: "busy", deleted: 0 }, { status: "busy" }],
+      [{ ok: false, status: "closed", deleted: 0 }, { status: "unavailable" }],
+    ]) {
+      h.diagnosticDelete.mockResolvedValueOnce(result);
+      expect(await handle(h.event(), request)).toEqual(expected);
+      expect(h.diagnosticDelete).toHaveBeenLastCalledWith(true);
+    }
+    h.diagnosticDelete.mockRejectedValueOnce(new Error("synthetic failure"));
+    expect(await handle(h.event(), request)).toEqual({ status: "uncertain" });
+
+    const ready = { ok: true, status: "ready", deleted: 1 };
+    let release!: (value: typeof ready) => void;
+    h.diagnosticDelete.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const pending = Array.from({ length: h.constants.portLimits.pending_per_window }, () =>
+      handle(h.event(), request),
+    );
+    expect(await handle(h.event(), request)).toEqual({ status: "busy" });
+    h.window.webContents.mainFrame = { ...h.window.webContents.mainFrame };
+    release(ready);
+    for (const result of await Promise.all(pending))
+      expect(result).toEqual({ status: "uncertain" });
+    expect(await handle(h.event(), request)).toEqual({ status: "ready", deleted: 1 });
   });
   it("correlates service and provider diagnostics to the current generation", async () => {
     const h = await launch({ mode: "installed" });

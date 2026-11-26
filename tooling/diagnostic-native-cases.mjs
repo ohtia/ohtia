@@ -336,9 +336,25 @@ await test("multibyte-rejected-bound", async () => {
 await test("serialized-delete-save", async () => {
   const research = path.join(store, "ohtia.db3");
   fs.writeFileSync(research, "synthetic durable record");
-  const results = await Promise.all([w.append(started), w.deleteLogs(true), w.append(started)]);
-  assert.ok(results.every((result) => result.ok));
+  const unrelated = path.join(path.dirname(active), "diagnostics-note.txt");
+  fs.writeFileSync(unrelated, "synthetic unrelated file");
+  const last = { event_name: "ohtia.application.started", timestamp: "2026-02-01T00:00:00.000Z" };
+  const [before, deletion, after] = await Promise.all([
+    w.append(started),
+    w.deleteLogs(true),
+    w.append(last),
+  ]);
+  assert.ok(before.ok && deletion.ok && after.ok);
+  assert.ok(deletion.deleted > 0);
+  const page = await w.read(0);
+  assert.ok(page.ok);
+  assert.deepEqual(
+    page.records.map((record) => record.timestamp),
+    [last.timestamp],
+  );
   assert.equal(fs.readFileSync(research, "utf8"), "synthetic durable record");
+  assert.equal(fs.readFileSync(unrelated, "utf8"), "synthetic unrelated file");
+  fs.unlinkSync(unrelated);
 });
 await test("bounded-queue", async () => {
   const results = await Promise.all(Array.from({ length: 65 }, () => w.append(started)));
@@ -442,6 +458,29 @@ await test("native-denied-io", async () => {
     } else {
       receipt.deniedIo.logsCreated = fs.existsSync(path.join(denied, "logs"));
       assert.equal(receipt.deniedIo.logsCreated, false);
+    }
+    if (!windows) {
+      const deleteRoot = path.join(store, "denied-delete");
+      const directory = path.join(deleteRoot, "logs");
+      fs.mkdirSync(deleteRoot);
+      await w.close();
+      w = writer(deleteRoot);
+      assert.equal((await w.append(started)).ok, true);
+      const file = path.join(directory, "ohtia.jsonl");
+      const contents = fs.readFileSync(file);
+      fs.chmodSync(directory, 0o500);
+      try {
+        assert.throws(() => fs.unlinkSync(file), { code: /^(EACCES|EPERM)$/ });
+        receipt.deniedIo.deletion = await w.deleteLogs(true);
+        assert.deepEqual(receipt.deniedIo.deletion, {
+          ok: false,
+          status: "unavailable",
+          deleted: 0,
+        });
+        assert.deepEqual(fs.readFileSync(file), contents);
+      } finally {
+        fs.chmodSync(directory, 0o700);
+      }
     }
     receipt.deniedIo.phase = "verified";
   } catch (error) {

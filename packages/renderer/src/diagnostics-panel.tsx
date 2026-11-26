@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   diagnosticLimits,
   message,
+  type DiagnosticDeleteResult,
   type DiagnosticReadFailure,
   type DiagnosticReadRequest,
   type DiagnosticReadResult,
@@ -12,13 +13,40 @@ import {
 
 type Page = Extract<DiagnosticReadResult, { status: "ready" }>;
 
+/** Keep the outcome across visits to Diagnostics within the same window. */
+export function useDiagnosticDeletion() {
+  const inFlight = useRef(false);
+  const [deletion, setDeletion] = useState<DiagnosticDeleteResult | { status: "deleting" }>();
+  const deleteLogs = async (bridge: DiagnosticsBridge) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setDeletion({ status: "deleting" });
+    try {
+      setDeletion(await bridge.deleteLogs({ confirmed: true }));
+    } catch {
+      setDeletion({ status: "uncertain" });
+    } finally {
+      inFlight.current = false;
+    }
+  };
+  return { deletion, deleteLogs };
+}
+
 export function DiagnosticsPanel({
   bridge,
   locale,
+  deletionControl: { deletion, deleteLogs },
 }: {
   readonly bridge: DiagnosticsBridge;
   readonly locale: InterfaceLocale;
+  readonly deletionControl: ReturnType<typeof useDiagnosticDeletion>;
 }) {
+  const id = useId();
+  const remove = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const observedDeletion = useRef(deletion);
+  const [confirming, setConfirming] = useState(false);
+  const deleting = deletion?.status === "deleting";
   const pending = useRef<DiagnosticReadRequest | undefined>(undefined);
   const refresh = useRef<HTMLButtonElement>(null);
   const next = useRef<HTMLButtonElement>(null);
@@ -69,44 +97,117 @@ export function DiagnosticsPanel({
     };
   }, [read]);
 
+  useEffect(() => {
+    if (observedDeletion.current === deletion) return;
+    observedDeletion.current = deletion;
+    if (deletion && deletion.status !== "deleting") void read({ slot });
+  }, [deletion, read, slot]);
+
+  useEffect(() => {
+    if (confirming) cancel.current?.focus();
+  }, [confirming]);
+
+  const dismissConfirmation = () => {
+    setConfirming(false);
+    remove.current?.focus();
+  };
+  const controlsBusy = loading || deleting || confirming;
+
   return (
-    <div className="diagnostics-panel">
+    <div
+      className="diagnostics-panel"
+      onKeyDown={(event) => {
+        if (!confirming || event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dismissConfirmation();
+      }}
+    >
       <label>
         {text("diagnostics.file")}
         <select
           value={slot}
-          aria-disabled={loading}
+          aria-disabled={controlsBusy}
           onChange={(event) => {
-            if (!pending.current) void read({ slot: Number(event.currentTarget.value) });
+            if (!controlsBusy) void read({ slot: Number(event.currentTarget.value) });
           }}
         >
-          <option value={0}>{text("diagnostics.active")}</option>
-          {Array.from({ length: diagnosticLimits.files - 1 }, (_, index) => (
-            <option key={index + 1} value={index + 1}>
-              {message(locale, "diagnostics.archive", { slot: index + 1 })}
-            </option>
-          ))}
+          {Array.from({ length: diagnosticLimits.files }, (_, slot) => {
+            const label =
+              slot === 0
+                ? "diagnostics.mostRecentArchive"
+                : slot === diagnosticLimits.files - 1
+                  ? "diagnostics.oldestArchive"
+                  : "diagnostics.archive";
+            return (
+              <option key={slot} value={slot}>
+                {message(locale, label, { slot: slot + 1 })}
+              </option>
+            );
+          })}
         </select>
       </label>
       <div className="diagnostics-actions">
         <button
           type="button"
           ref={refresh}
-          aria-disabled={loading}
-          onClick={() => void read({ slot })}
+          aria-disabled={controlsBusy}
+          onClick={() => {
+            if (!controlsBusy) void read({ slot });
+          }}
         >
           {text("diagnostics.refresh")}
         </button>
         <button
           type="button"
           ref={next}
-          aria-disabled={loading || !page?.continuation}
+          aria-disabled={controlsBusy || !page?.continuation}
           onClick={() => {
-            if (page?.continuation) void read({ slot, continuation: page.continuation });
+            if (!controlsBusy && page?.continuation)
+              void read({ slot, continuation: page.continuation });
           }}
         >
           {text("diagnostics.next")}
         </button>
+        <button
+          type="button"
+          ref={remove}
+          aria-expanded={confirming}
+          aria-disabled={controlsBusy}
+          onClick={() => {
+            if (!controlsBusy) setConfirming(true);
+          }}
+        >
+          {text("diagnostics.delete")}
+        </button>
+      </div>
+      {confirming && (
+        <div role="group" aria-label={text("diagnostics.delete")} aria-describedby={id}>
+          <p id={id}>{text("diagnostics.deleteScope")}</p>
+          <div className="diagnostics-actions">
+            <button type="button" ref={cancel} onClick={dismissConfirmation}>
+              {text("checkpoint_cancel")}
+            </button>
+            <button
+              type="button"
+              className="primitive-destructive"
+              onClick={() => {
+                dismissConfirmation();
+                void deleteLogs(bridge);
+              }}
+            >
+              {text("diagnostics.delete")}
+            </button>
+          </div>
+        </div>
+      )}
+      <div role="status" aria-atomic="true">
+        {deletion && deletion.status !== "ready" && (
+          <p>{text(`diagnostics.deleteResult.${deletion.status}`)}</p>
+        )}
+        {deletion && "deleted" in deletion && (
+          <p>{message(locale, "diagnostics.deleteCount", { count: deletion.deleted })}</p>
+        )}
       </div>
       <div role="status" aria-atomic="true">
         {loading && <p>{text("diagnostics.loading")}</p>}

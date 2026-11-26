@@ -186,6 +186,219 @@ async function verifySettingsViewer(application, page, locale, activeRecord, dir
   }
 }
 
+async function verifySettingsDeletion(application, page, locale, activeRecord, directory) {
+  const active = path.join(directory, "ohtia.jsonl");
+  const archive = path.join(directory, "ohtia.1.jsonl");
+  const unrelated = path.join(directory, "diagnostics-note.txt");
+  fs.writeFileSync(unrelated, "synthetic unrelated file", { flag: "wx", mode: 0o600 });
+  const store = await page.evaluate(async () => {
+    const port = window.ohtia.foundation;
+    const appearance = await port.readAppearance().result;
+    const created = await port.createProject(crypto.randomUUID()).result;
+    if (!appearance.ok || !created.ok) throw new Error("Could not read the synthetic store.");
+    const operationId = crypto.randomUUID();
+    const saved = await port.replaceAppearance({
+      operationId,
+      expectedRevision: appearance.value.revision,
+      value: appearance.value.value === "dark" ? "light" : "dark",
+    }).result;
+    if (!saved.ok) throw new Error("Could not create a synthetic receipt.");
+    return { operationId, projectId: created.value.resultId };
+  });
+  const readStore = () =>
+    page.evaluate(async ({ operationId, projectId }) => {
+      const port = window.ohtia.foundation;
+      const projects = await port.listProjects({ cursor: null, count: 10 }).result;
+      const project = projects.ok ? projects.value.items.find(({ id }) => id === projectId) : null;
+      const receipt = await port.readAppearanceReceipt(operationId).result;
+      if (!project || !receipt.ok) throw new Error("Could not read the synthetic records.");
+      // The workspace can reopen the project and update its navigation timestamp.
+      const { lastOpenedAt, ...record } = project;
+      return { project: record, receipt };
+    }, store);
+  const before = await readStore();
+  const text = (key, values = {}) => message(locale, key, values);
+  const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
+  const trigger = dialog.locator(".diagnostics-actions button[aria-expanded]");
+  const group = dialog.getByRole("group", { name: text("diagnostics.delete"), exact: true });
+  const cancel = group.getByRole("button", { name: text("checkpoint_cancel"), exact: true });
+  const confirm = group.getByRole("button", { name: text("diagnostics.delete"), exact: true });
+  const source = dialog.getByRole("combobox", { name: text("diagnostics.file"), exact: true });
+  const refresh = dialog.getByRole("button", { name: text("diagnostics.refresh"), exact: true });
+  const count = (count) =>
+    dialog.getByText(text("diagnostics.deleteCount", { count }), { exact: true });
+  const window = await application.browserWindow(page);
+  await focusNative(window, "diagnostic deletion");
+  await invokeNativeMenu(application, "settings.open");
+  await dialog.getByRole("button", { name: text("diagnostics.title"), exact: true }).press("Enter");
+  await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+
+  const original = await window.evaluate((window) => {
+    const [width, height] = window.getContentSize();
+    return {
+      width,
+      height,
+      zoomFactor: window.webContents.getZoomFactor(),
+      maximized: window.isMaximized(),
+    };
+  });
+  await withCommandCleanup(
+    async () => {
+      const viewport = await setNativeViewport(page, window, {
+        width: 1280,
+        height: 800,
+        zoomFactor: 4,
+      });
+      assert.equal(viewport.viewportWidth, 320);
+      const category = dialog.getByRole("button", { name: text("diagnostics.title"), exact: true });
+      if (await category.isVisible()) await category.press("Enter");
+      await trigger.press("Enter");
+      await expect(cancel).toBeFocused();
+      await expect(group).toContainText(text("diagnostics.deleteScope"));
+      const html = page.locator("html");
+      const appearance = await html.getAttribute("data-appearance");
+      try {
+        for (const [theme, forcedColors] of [
+          ["light", "none"],
+          ["dark", "none"],
+          ["dark", "active"],
+        ]) {
+          // Exercise the authored theme selectors with the engine's forced-color mode.
+          await html.evaluate((root, theme) => root.setAttribute("data-appearance", theme), theme);
+          await page.emulateMedia({ forcedColors });
+          await expect(cancel).toBeVisible();
+          await expect(confirm).toBeVisible();
+          assert.equal(
+            await dialog
+              .locator(".settings-content")
+              .evaluate((element) => element.scrollWidth <= element.clientWidth),
+            true,
+          );
+        }
+      } finally {
+        await html.evaluate((root, appearance) => {
+          if (appearance === null) root.removeAttribute("data-appearance");
+          else root.setAttribute("data-appearance", appearance);
+        }, appearance);
+      }
+      await page.keyboard.press("Tab");
+      await expect(confirm).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(trigger).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(group).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await expect(trigger).toBeFocused();
+      assert.ok(fs.existsSync(active));
+    },
+    async () => {
+      await page.emulateMedia({ forcedColors: null });
+      await setNativeViewport(page, window, original);
+      if (original.maximized) await window.evaluate((window) => window.maximize());
+    },
+  );
+
+  const submit = async () => {
+    await trigger.press("Enter");
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(confirm).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(group).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  };
+  await source.selectOption("1");
+  await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+  // A directory under a managed filename is refused after the active file is removed.
+  const savedArchive = path.join(directory, "diagnostic-test-archive-backup");
+  if (fs.existsSync(archive)) fs.renameSync(archive, savedArchive);
+  fs.mkdirSync(archive, { mode: 0o700 });
+  try {
+    await submit();
+    await expect(count(1)).toBeVisible();
+    await expect(dialog.getByText(text("diagnostics.deleteResult.incomplete"))).toBeVisible();
+    await expect(dialog.getByText(text("diagnostics.unavailable"))).toBeVisible();
+    assert.ok(!fs.existsSync(active));
+    assert.ok(fs.statSync(archive).isDirectory());
+    assert.deepEqual(await readStore(), before);
+  } finally {
+    fs.rmdirSync(archive);
+    if (fs.existsSync(savedArchive)) fs.renameSync(savedArchive, archive);
+  }
+  await refresh.press("Enter");
+  await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+  const seedArchive = () =>
+    fs.writeFileSync(archive, JSON.stringify(activeRecord) + "\n", { mode: 0o600 });
+  seedArchive();
+  const presentBefore = fs
+    .readdirSync(directory)
+    .filter((name) => /^ohtia(?:\.[1-4])?\.jsonl$/.test(name)).length;
+  await submit();
+  await expect(count(presentBefore)).toBeVisible();
+  await expect(dialog.getByText(text("diagnostics.empty"))).toBeVisible();
+  assert.ok(!fs.existsSync(archive));
+  assert.equal(fs.readFileSync(active).length, 0);
+  assert.equal(fs.readFileSync(unrelated, "utf8"), "synthetic unrelated file");
+  assert.deepEqual(await readStore(), before);
+
+  await source.selectOption("0");
+  await expect(dialog.getByText(text("diagnostics.page", { page: 1 }))).toBeVisible();
+  seedArchive();
+  const releaseReply = await application.evaluateHandle(({ app }) => {
+    const { createRequire } = process.getBuiltinModule("node:module");
+    const path = process.getBuiltinModule("node:path");
+    const directory = app.getAppPath();
+    const require = createRequire(path.join(directory, "package.json"));
+    const { DiagnosticWriter } = require(path.join(directory, "diagnostic-writer.js"));
+    const original = DiagnosticWriter.prototype.deleteLogs;
+    let release;
+    const wait = new Promise((resolve) => {
+      release = resolve;
+    });
+    DiagnosticWriter.prototype.deleteLogs = async function (confirmed) {
+      const result = await original.call(this, confirmed);
+      await wait;
+      return result;
+    };
+    return () => {
+      DiagnosticWriter.prototype.deleteLogs = original;
+      release();
+    };
+  });
+  try {
+    await submit();
+    const uncertain = dialog.getByText(text("diagnostics.deleteResult.uncertain"));
+    await expect(uncertain).toBeVisible({ timeout: 15000 });
+    assert.ok(!fs.existsSync(archive));
+    const appended = await page.evaluate(
+      () => window.ohtia.foundation.createProject(crypto.randomUUID()).result,
+    );
+    assert.equal(appended.ok, true);
+    await expect
+      .poll(async () => {
+        const read = await page.evaluate(() => window.ohtia.diagnostics.readPage({ slot: 0 }));
+        return (
+          read.status === "ready" &&
+          read.entries.some(({ event }) => event === "ohtia.project.created")
+        );
+      })
+      .toBe(true);
+    await expect(refresh).toBeEnabled();
+    await refresh.press("Enter");
+    await expect(dialog.getByText("ohtia.project.created", { exact: true })).toBeVisible();
+    await expect(uncertain).toBeVisible();
+    assert.equal(fs.readFileSync(unrelated, "utf8"), "synthetic unrelated file");
+    assert.deepEqual(await readStore(), before);
+  } finally {
+    await releaseReply.evaluate((release) => release());
+    await releaseReply.dispose();
+    fs.unlinkSync(unrelated);
+    if (await dialog.isVisible()) await page.keyboard.press("Escape");
+  }
+}
+
 const record = (id, detail = {}) => {
   receipt.cases.push({ id, result: "pass", ...detail });
   saveReceipt();
@@ -526,6 +739,8 @@ try {
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
   await verifySettingsViewer(application, page, locale, logs()[0], logDirectory, marker);
   record("settings-bounded-diagnostic-viewer");
+  await verifySettingsDeletion(application, page, locale, logs()[0], logDirectory);
+  record("settings-confirmed-diagnostic-deletion");
   const quitOffsets = new Map();
   for (let slot = 0; slot < 5; slot++) {
     const file = path.join(logDirectory, slot === 0 ? "ohtia.jsonl" : `ohtia.${slot}.jsonl`);

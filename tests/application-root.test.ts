@@ -197,6 +197,7 @@ function fixture() {
     },
     diagnostics: {
       readPage: vi.fn(async () => ({ status: "unavailable" })),
+      deleteLogs: vi.fn(async () => ({ status: "unavailable" })),
     },
     system: { readMotion: () => "unknown", subscribeMotion: () => () => {} },
   } as unknown as DesktopBridge;
@@ -314,9 +315,117 @@ describe("integrated application authority", () => {
     expect(t.bridge.diagnostics.readPage).not.toHaveBeenCalled();
     await click('.settings-pages button[id$="-section-diagnostics-nav"]');
     expect(t.bridge.diagnostics.readPage).toHaveBeenCalledExactlyOnceWith({ slot: 0 });
-    expect(container.querySelector(".diagnostics-panel [role=status]")?.textContent).toBe(
+    expect(container.querySelector(".diagnostics-panel")?.textContent).toContain(
       "The log could not be read.",
     );
+  });
+
+  it("confirms each diagnostic deletion and keeps deletion and refresh feedback independent", async () => {
+    const t = fixture();
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "pending_create",
+    });
+    const present = {
+      status: "ready",
+      entries: [
+        { time: "2026-01-01T00:00:00.000Z", severity: "INFO", event: "ohtia.application.started" },
+      ],
+      invalid: 0,
+      unsupported: 0,
+    } as const;
+    const read = vi.mocked(t.bridge.diagnostics.readPage).mockResolvedValue(present);
+    const remove = vi.mocked(t.bridge.diagnostics.deleteLogs);
+    const first = Promise.withResolvers<Awaited<ReturnType<typeof remove>>>();
+    remove
+      .mockReturnValueOnce(first.promise)
+      .mockRejectedValueOnce(new Error("synthetic lost reply"))
+      .mockResolvedValueOnce({ status: "ready", deleted: 1 })
+      .mockResolvedValueOnce({ status: "busy" })
+      .mockResolvedValueOnce({ status: "unavailable" });
+    await mount(t);
+    await t.intent("settings.open");
+    const diagnostics = '.settings-pages button[id$="-section-diagnostics-nav"]';
+    await click(diagnostics);
+    const panel = container.querySelector(".diagnostics-panel")!;
+    const trigger = panel.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    const refresh = panel.querySelector<HTMLButtonElement>(".diagnostics-actions button")!;
+    const confirm = () => panel.querySelector<HTMLButtonElement>(".primitive-destructive")!;
+    await act(async () => trigger.click());
+    const cancel = panel.querySelector<HTMLButtonElement>('[role="group"] button')!;
+    expect(document.activeElement).toBe(cancel);
+    expect(panel.textContent).toContain("Your research data and history will be kept.");
+    await act(async () => cancel.click());
+    expect(document.activeElement).toBe(trigger);
+    expect(remove).not.toHaveBeenCalled();
+    await act(async () => trigger.click());
+    trigger.focus();
+    await act(async () =>
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(document.activeElement).toBe(trigger);
+    expect(panel.closest("dialog")?.open).toBe(true);
+    expect(confirm()).toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+
+    await act(async () => trigger.click());
+    await act(async () => {
+      confirm().click();
+      confirm().click();
+      trigger.click();
+      refresh.click();
+    });
+    expect(document.activeElement).toBe(trigger);
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ confirmed: true });
+    expect(panel.textContent).toContain("Deleting diagnostic logs");
+    await act(async () => {
+      trigger.click();
+      refresh.click();
+    });
+    expect(confirm()).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockResolvedValueOnce({ status: "unavailable" });
+    await act(async () => first.resolve({ status: "incomplete", deleted: 2 }));
+    expect(panel.textContent).toContain("Diagnostic log deletion did not finish.");
+    expect(panel.textContent).toContain("Diagnostic files removed: 2.");
+    expect(panel.textContent).toContain("The log could not be read.");
+    await act(async () => refresh.click());
+    expect(panel.textContent).toContain("Diagnostic files removed: 2.");
+    expect(panel.querySelector("code")?.textContent).toBe("ohtia.application.started");
+    expect(remove).toHaveBeenCalledTimes(1);
+
+    await act(async () => trigger.click());
+    await act(async () => confirm().click());
+    expect(panel.textContent).toContain("The deletion outcome could not be confirmed.");
+    expect(panel.textContent).not.toContain("synthetic lost reply");
+    await act(async () => refresh.click());
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(panel.querySelector("code")?.textContent).toBe("ohtia.application.started");
+
+    await act(async () => trigger.click());
+    await act(async () => confirm().click());
+    expect(panel.textContent).toContain("Diagnostic files removed: 1.");
+    await click('.settings-pages button[id$="-appearance-nav"]');
+    await click(diagnostics);
+    const reopened = container.querySelector(".diagnostics-panel")!;
+    expect(reopened.textContent).toContain("Diagnostic files removed: 1.");
+    expect(remove).toHaveBeenCalledTimes(3);
+    await act(async () =>
+      reopened.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
+    );
+    await act(async () =>
+      reopened.querySelector<HTMLButtonElement>(".primitive-destructive")!.click(),
+    );
+    expect(reopened.textContent).toContain("The logs are busy.");
+    await act(async () =>
+      reopened.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
+    );
+    await act(async () =>
+      reopened.querySelector<HTMLButtonElement>(".primitive-destructive")!.click(),
+    );
+    expect(reopened.textContent).toContain("Diagnostic log deletion is unavailable.");
+    expect(reopened.textContent).not.toContain("Diagnostic files removed:");
   });
 
   it("keeps the open Settings dialog, input focus and reading position when storage becomes available in another window", async () => {

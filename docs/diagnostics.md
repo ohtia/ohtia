@@ -1,7 +1,7 @@
 ---
 type: Specification
 title: Content-free broker diagnostics
-description: Closed diagnostic events, broker-owned bounded files, Settings log viewing and native account protection.
+description: Closed diagnostic events, broker-owned bounded files, Settings log viewing and deletion, and native account protection.
 generated:
   by: codex/gpt-6.2-sol
 ---
@@ -30,7 +30,7 @@ Startup removes extra numeric managed archive names, reduces oversized managed f
 
 ## Settings log viewer
 
-[STORY-004-019](epics/EPIC-004-onboarding/STORY-004-019-view-diagnostics.md) provides **Settings → Diagnostics**. Entering Diagnostics reads the active log with the most recently written records first. Choosing an archive loads its newest records. **Next page** replaces the displayed page with older records from the same file. **Refresh** reloads the newest records in the selected log. Displayed UTC times retain their recorded values even when clock adjustments make those values differ from write order. The selector names the active log and the four retained archive slots in rotation order. A slot with no managed file yields an empty first page.
+[STORY-004-019](epics/EPIC-004-onboarding/STORY-004-019-view-diagnostics.md) provides **Settings → Diagnostics**. Entering Diagnostics reads the active log with the most recently written records first. Choosing an archive loads its newest records. **Next page** replaces the displayed page with older records from the same file. **Refresh** reloads the newest records in the selected log. Displayed UTC times retain their recorded values even when clock adjustments make those values differ from write order. The selector labels the active log **Archive 1 (most recent)** and the four retained archive slots **Archive 2** through **Archive 5 (oldest)**, in rotation order. A slot with no managed file yields an empty first page.
 
 The named read operation uses a trusted top-level desktop frame, the shared request budget and the writer's serialized queue. A successful page contains at most 64 scanned records, including invalid and unsupported records. Both sides validate closed wire shapes. The broker decodes each line against its schema version and catalog, then projects only UTC time, severity and controlled event name. It uses the recorded event time when present and the broker's recorded observation time otherwise. Invalid, oversized and unsupported lines contribute counts without contributing text. A file beyond the managed byte bound, busy queue or refused access produces a controlled result. The viewer receives no paths, raw lines, artifact metadata or correlation IDs.
 
@@ -38,9 +38,17 @@ A continuation contains a bounded byte offset and a broker-authenticated token b
 
 Write, rotation, permission and deletion exceptions become controlled `unavailable` results. Capacity rejection is `busy`; invalid records, oversized records, missing confirmation and closed writers have separate statuses. Logging does not gate storage transactions or save acknowledgements. Failure never causes recursive logging or output of an exception. A subsequent admitted operation reconciles incomplete files before further append. Diagnostics are operational records rather than crash-durable research receipts; no file synchronization or physical power-loss guarantee is inferred from successful append.
 
+## Delete retained logs
+
+[STORY-004-020](epics/EPIC-004-onboarding/STORY-004-020-delete-diagnostics.md) adds **Delete logs** in **Settings → Diagnostics**. Each deletion requires its own explicit confirmation for the active and retained technical diagnostic files on this device. Confirmation initially focuses **Cancel**. While focus is in Diagnostics, **Escape** closes the confirmation and returns focus to **Delete logs**. The research store keeps its history, revisions, task and attempt records, and receipts (PRIN-013). Previously shared copies are outside the local action, and deletion provides no forensic erasure guarantee.
+
+The named operation validates an explicit confirmation at preload and broker admission. The broker uses the trusted top-level frame, shared request budget and the same writer queue as append, rotation and read. A successful result counts the files the writer actually removed. If deletion fails after removing one or more files, Settings shows an incomplete result and the actual count. The writer stops at the first filesystem failure. Later diagnostic events may appear in the active log. If deletion is refused or fails before removing any files, Settings reports that deletion is unavailable. A busy request reports its own result. A missing, invalid or late reply leaves the outcome uncertain (PRIN-006).
+
+Settings refreshes the selected log through the separate read operation after deletion settles. The deletion result remains visible if that read fails or the researcher manually refreshes. A refresh reloads the current file state and never repeats a deletion. A new deletion requires a fresh confirmation.
+
 ## Security applicability and verification
 
-For the viewer, `2.2.1`–`2.2.3` and `8.2.1` apply at the named request boundary, `16.2.5` and `3.2.1` apply to the text-only event projection, and `16.5.1`–`16.5.3` apply to file, scan and concurrency limits. The broker and preload tests cover untrusted frames, revoked delivery and closed shape validation. `settings-bounded-diagnostic-viewer` exercises the actual Settings action, active/archive paging, private-marker exclusion, denial and stale refresh through the sandboxed desktop bridge.
+For the viewer, `2.2.1`–`2.2.3` and `8.2.1` apply at the named request boundary, `16.2.5` and `3.2.1` apply to the text-only event projection, and `16.5.1`–`16.5.3` apply to file, scan and concurrency limits. The same authority and input bounds apply to deletion. The broker and preload tests cover untrusted frames, revoked delivery and closed shape validation. `settings-bounded-diagnostic-viewer` exercises active/archive paging, private-marker exclusion, denial and stale refresh through the sandboxed desktop bridge. `settings-confirmed-diagnostic-deletion` exercises keyboard confirmation, partial deletion, rereading after a lost reply, unrelated files and stored research through the same bridge.
 
 [Foundation security applicability](foundation-security.md) and its [versioned inventory](../config/desktop/security-applicability.json) supply ADR-0000's ASVS baseline. The following scope maps the complete diagnostics/privacy groups plus the enforcing input, filesystem and availability controls to implementation and reproducible cases. IDs below carry the inventory's `v5.0.0-` prefix.
 

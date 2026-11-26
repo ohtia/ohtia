@@ -115,6 +115,85 @@ describe("sandbox preload composition", () => {
     ipcRenderer.invoke.mockRejectedValueOnce(new Error("synthetic private failure"));
     expect(await read({ slot: 0 })).toEqual({ status: "unavailable" });
   });
+  it("validates diagnostic deletion and treats lost replies as uncertain without retrying", async () => {
+    const { ipcRenderer, bridge } = await load();
+    const remove = bridge.diagnostics.deleteLogs;
+    for (const invalid of [
+      null,
+      { confirmed: false },
+      { confirmed: 1 },
+      { confirmed: true, slot: 0 },
+      new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error("synthetic refusal");
+          },
+        },
+      ),
+    ])
+      expect(await remove(invalid as never)).toEqual({ status: "invalid_request" });
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled();
+    const request = { confirmed: true } as const;
+    for (const valid of [
+      { status: "ready", deleted: 5 },
+      { status: "ready", deleted: 0 },
+      { status: "incomplete", deleted: 2 },
+      { status: "busy" },
+      { status: "invalid_request" },
+      { status: "unavailable" },
+      { status: "uncertain" },
+    ]) {
+      ipcRenderer.invoke.mockResolvedValueOnce(valid as never);
+      expect(await remove(request)).toEqual(valid);
+      expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(
+        desktopChannels.diagnosticsDelete,
+        request,
+      );
+    }
+    for (const invalid of [
+      null,
+      { status: "ready" },
+      { status: "ready", deleted: -1 },
+      { status: "ready", deleted: 1.5 },
+      { status: "ready", deleted: 6 },
+      { status: "incomplete", deleted: 0 },
+      { status: "ready", deleted: 1, path: "/synthetic/private" },
+      { status: "busy", deleted: 1 },
+      { status: "ok" },
+      new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error("synthetic refusal");
+          },
+        },
+      ),
+    ]) {
+      ipcRenderer.invoke.mockResolvedValueOnce(invalid as never);
+      expect(await remove(request)).toEqual({ status: "uncertain" });
+    }
+    ipcRenderer.invoke.mockRejectedValueOnce(new Error("synthetic failure"));
+    expect(await remove(request)).toEqual({ status: "uncertain" });
+
+    vi.useFakeTimers();
+    ipcRenderer.invoke.mockClear();
+    let reply!: (value: never) => void;
+    ipcRenderer.invoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        reply = resolve;
+      }),
+    );
+    const blocked = remove(request);
+    await vi.advanceTimersByTimeAsync(portLimits.request_deadline_ms);
+    expect(await blocked).toEqual({ status: "uncertain" });
+    reply({ status: "ready", deleted: 1 } as never);
+    expect(await blocked).toEqual({ status: "uncertain" });
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(
+      desktopChannels.diagnosticsDelete,
+      request,
+    );
+  });
   it("correlates model pages and agent preference receipts on the fixed desktop port", async () => {
     const { ipcRenderer, bridge } = await load();
     const port = bridge.foundation;

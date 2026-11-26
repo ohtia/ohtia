@@ -22,7 +22,7 @@ import {
 } from "@ohtia/contracts";
 import { UpdateController } from "./update-controller.js";
 import { UpdateCheckController } from "./update-check-controller.js";
-import { DiagnosticsPanel } from "./diagnostics-panel.js";
+import { DiagnosticsPanel, useDiagnosticDeletion } from "./diagnostics-panel.js";
 import { UpdateCheckSetting } from "./update-check-setting.js";
 import { useCharacterMode } from "./character.js";
 import { CommandSurfaces } from "./command-surfaces.js";
@@ -94,6 +94,7 @@ export function SettingsSurfaces({
   readonly serviceGeneration: string | undefined;
   readonly onLocale: (snapshot: LocaleSnapshot) => void;
 }) {
+  const diagnosticDeletion = useDiagnosticDeletion();
   const limits = useMemo(() => new LimitsController(port, () => crypto.randomUUID()), [port]);
   const updates = useMemo(
     () => (update ? new UpdateController(update, port, bridge) : undefined),
@@ -508,7 +509,13 @@ export function SettingsSurfaces({
                           title: message(locale, "diagnostics.title"),
                           icon: "file-text",
                           content: (active: boolean) =>
-                            active && <DiagnosticsPanel bridge={diagnostics} locale={locale} />,
+                            active && (
+                              <DiagnosticsPanel
+                                bridge={diagnostics}
+                                locale={locale}
+                                deletionControl={diagnosticDeletion}
+                              />
+                            ),
                         } satisfies SettingsSection,
                       ]
                     : []),

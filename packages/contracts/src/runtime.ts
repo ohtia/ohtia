@@ -15,6 +15,7 @@ export const desktopChannels = {
   port: "ohtia:foundation",
   reply: "ohtia:foundation-result",
   diagnosticsRead: "ohtia:diagnostics-read",
+  diagnosticsDelete: "ohtia:diagnostics-delete",
   bootstrap: "ohtia:bootstrap",
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",
