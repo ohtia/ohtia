@@ -1,6 +1,9 @@
 import { isExternalMessageLink } from "@ohtia/contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  decodeDiagnosticDeleteRequest,
+  decodeDiagnosticDeleteResult,
+  type DiagnosticDeleteResult,
   decodeDiagnosticReadRequest,
   decodeDiagnosticReadResult,
   decodeBootstrapSnapshot,
@@ -398,6 +401,29 @@ const bridge: DesktopBridge = {
         return decodeDiagnosticReadResult(result) ?? { status: "unavailable" };
       } catch {
         return { status: "unavailable" };
+      }
+    },
+    async deleteLogs(request) {
+      const input = decodeDiagnosticDeleteRequest(request);
+      if (!input) return { status: "invalid_request" };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          ipcRenderer
+            .invoke(desktopChannels.diagnosticsDelete, input)
+            .then<DiagnosticDeleteResult>(
+              (result: unknown) => decodeDiagnosticDeleteResult(result) ?? { status: "uncertain" },
+            ),
+          new Promise<DiagnosticDeleteResult>((resolve) => {
+            timer = setTimeout(() => {
+              resolve({ status: "uncertain" });
+            }, portLimits.request_deadline_ms);
+          }),
+        ]);
+      } catch {
+        return { status: "uncertain" };
+      } finally {
+        clearTimeout(timer);
       }
     },
   },

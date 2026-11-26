@@ -772,8 +772,51 @@ export type DiagnosticReadResult =
       readonly continuation?: DiagnosticContinuation;
     };
 
+export interface DiagnosticDeleteRequest {
+  readonly confirmed: true;
+}
+
+const diagnosticDeleteFailures = ["invalid_request", "unavailable", "busy", "uncertain"] as const;
+
+export type DiagnosticDeleteResult =
+  | { readonly status: "ready" | "incomplete"; readonly deleted: number }
+  | { readonly status: (typeof diagnosticDeleteFailures)[number] };
+
 export interface DiagnosticsBridge {
   readPage(request: DiagnosticReadRequest): Promise<DiagnosticReadResult>;
+  deleteLogs(request: DiagnosticDeleteRequest): Promise<DiagnosticDeleteResult>;
+}
+
+export function decodeDiagnosticDeleteRequest(input: unknown): DiagnosticDeleteRequest | undefined {
+  try {
+    const request = object(input, ["confirmed"], ["confirmed"]);
+    if (!request || request.confirmed !== true) return;
+    return { confirmed: true };
+  } catch {
+    return;
+  }
+}
+
+export function decodeDiagnosticDeleteResult(input: unknown): DiagnosticDeleteResult | undefined {
+  try {
+    const value = object(input, ["status", "deleted"], ["status"]);
+    if (!value) return;
+    const { status, deleted } = value;
+    if (status === "ready" || status === "incomplete") {
+      if (
+        typeof deleted === "number" &&
+        Number.isInteger(deleted) &&
+        deleted >= (status === "ready" ? 0 : 1) &&
+        deleted <= diagnosticLimits.files
+      )
+        return { status, deleted };
+      return;
+    }
+    const failure = diagnosticDeleteFailures.find((candidate) => candidate === status);
+    if (failure && !Object.hasOwn(value, "deleted")) return { status: failure };
+  } catch {
+    return;
+  }
 }
 
 function diagnosticContinuation(input: unknown): DiagnosticContinuation | undefined {

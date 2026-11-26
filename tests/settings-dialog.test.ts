@@ -218,7 +218,8 @@ async function click(selector: string) {
 }
 describe("compact Settings dialog", () => {
   it("pages bounded diagnostic entries and refreshes the selected archive after failures", async () => {
-    const { DiagnosticsPanel } = await import("../packages/renderer/src/diagnostics-panel.js");
+    const { DiagnosticsPanel, useDiagnosticDeletion } =
+      await import("../packages/renderer/src/diagnostics-panel.js");
     const first = deferred<import("@ohtia/contracts").DiagnosticReadResult>();
     const continuation = { token: "a".repeat(64), offset: 100 };
     const entry = {
@@ -248,13 +249,17 @@ describe("compact Settings dialog", () => {
       .mockResolvedValueOnce({ status: "stale" })
       .mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 })
       .mockRejectedValueOnce(new Error("synthetic private message"));
-    const bridge = { readPage };
+    const bridge = { readPage, deleteLogs: vi.fn() };
+    function Viewer() {
+      const deletionControl = useDiagnosticDeletion();
+      return h(DiagnosticsPanel, { bridge, locale: "en-US", deletionControl });
+    }
     await mount("en-US", undefined, {}, undefined, undefined, undefined, [
       {
         id: "diagnostics",
         title: "Diagnostics",
         icon: "file-text",
-        content: (active: boolean) => active && h(DiagnosticsPanel, { bridge, locale: "en-US" }),
+        content: (active: boolean) => active && h(Viewer),
       },
     ]);
     expect(readPage).not.toHaveBeenCalled();
@@ -276,6 +281,13 @@ describe("compact Settings dialog", () => {
     expect(readPage).toHaveBeenCalledTimes(1);
 
     const selector = panel.querySelector("select")!;
+    expect([...selector.options].map((option) => [option.value, option.text])).toEqual([
+      ["0", "Archive 1 (most recent)"],
+      ["1", "Archive 2"],
+      ["2", "Archive 3"],
+      ["3", "Archive 4"],
+      ["4", "Archive 5 (oldest)"],
+    ]);
     await act(async () => {
       selector.value = "2";
       selector.dispatchEvent(new Event("change", { bubbles: true }));

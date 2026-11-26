@@ -48,6 +48,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   suppressDiagnosticCapture,
   type DiagnosticEventName,
+  decodeDiagnosticDeleteRequest,
+  type DiagnosticDeleteResult,
   decodeDiagnosticReadRequest,
   type DiagnosticReadResult,
   diagnosticLimits,
@@ -1556,6 +1558,38 @@ async function start(): Promise<void> {
           unsupported: page.unsupported,
           ...(page.continuation ? { continuation: page.continuation } : {}),
         };
+      } finally {
+        reservation.value();
+      }
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.diagnosticsDelete,
+    async (event, input: unknown, ...extra: unknown[]): Promise<DiagnosticDeleteResult> => {
+      const window = trusted(event);
+      const frame = event.senderFrame;
+      const writer = diagnostics;
+      if (!window || !frame || !writer) return { status: "unavailable" };
+      const request = extra.length === 0 && decodeDiagnosticDeleteRequest(input);
+      if (!request) return { status: "invalid_request" };
+      const reservation = requestBudget.reserve(frame);
+      if (!reservation.ok) return { status: "busy" };
+      try {
+        const result = await writer.deleteLogs(request.confirmed);
+        if (
+          window.isDestroyed() ||
+          frame !== event.senderFrame ||
+          trusted(event) !== window ||
+          diagnostics !== writer
+        )
+          return { status: "uncertain" };
+        if (result.ok) return { status: "ready", deleted: result.deleted };
+        if (result.status === "busy") return { status: "busy" };
+        return result.deleted === 0
+          ? { status: "unavailable" }
+          : { status: "incomplete", deleted: result.deleted };
+      } catch {
+        return { status: "uncertain" };
       } finally {
         reservation.value();
       }

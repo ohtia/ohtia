@@ -44,7 +44,7 @@ okf_version: "0.2"
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned application configuration, managed store inspection, service recovery, provider connections and bounded research operations across the desktop boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
-- [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, Settings log viewing and native account protection.
+- [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, Settings log viewing and deletion, and native account protection.
 
 ## Repository
 
