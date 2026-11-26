@@ -433,9 +433,9 @@ describe("native menu and focused-window shortcut projection", () => {
       .find((item) => item.label === message("es-AR", "menu.file"));
     expect(
       (fileMenu?.submenu as Electron.MenuItemConstructorOptions[])
-        .slice(0, 2)
+        .slice(0, 3)
         .map((item) => item.id),
-    ).toEqual(["project.new", "conversation.new"]);
+    ).toEqual(["project.new", "project.rename", "conversation.new"]);
     expect(items.find((item) => item.id === "help.open")!.label).toBe("Ayuda de Ohtia");
     expect(items.find((item) => item.id === "settings.open")!.enabled).toBe(false);
     expect(items.find((item) => item.id === "edit.copy")!.role).toBe("copy");

@@ -7,6 +7,7 @@ export interface ProjectRecord {
   readonly id: string;
   readonly projectType: "thesis";
   readonly title: string | null;
+  readonly titleRevision: number;
   readonly documentLanguage: string | null;
   readonly isDevelopment: boolean;
   readonly setupConfirmedAt: string | null;
@@ -35,6 +36,14 @@ export function validConversationTitle(value: unknown): value is string {
     !/^\p{White_Space}|\p{White_Space}$/u.test(value) &&
     !/[\0\uD800-\uDFFF]/u.test(value)
   );
+}
+export function projectTitleError(title: string) {
+  if (!title) return "title_empty";
+  if (title.trim() !== title || /^\p{White_Space}|\p{White_Space}$/u.test(title))
+    return "title_whitespace";
+  if (Array.from(title).length > 200) return "title_too_long";
+  if (/[\0\uD800-\uDFFF]/u.test(title)) return "title_invalid";
+  return null;
 }
 export interface MessageRecord {
   readonly id: string;
@@ -193,6 +202,11 @@ export interface ResearchPayloads {
   readonly "development.sendToJosefa": ResearchPayloads["message.append"];
   readonly "project.create": Record<string, never>;
   readonly "project.open": { readonly projectId: string };
+  readonly "project.rename": {
+    readonly projectId: string;
+    readonly title: string;
+    readonly expectedTitleRevision: number;
+  };
   readonly "project.confirmSetup": { readonly proposalId: string };
   readonly "project.rejectSetup": { readonly proposalId: string };
   readonly "conversation.start": {
@@ -219,6 +233,14 @@ export type ResearchCommand = {
 export interface ResearchResult {
   readonly resultId: string;
   readonly outcome?: PlanOutcome;
+  readonly titleChange?: ProjectTitleChange;
+}
+interface ProjectTitleChange {
+  readonly title: string;
+  readonly titleRevision: number;
+}
+export interface RenameProjectResult extends ResearchResult {
+  readonly titleChange: ProjectTitleChange;
 }
 export interface FinishPlanResult extends ResearchResult {
   readonly outcome: PlanOutcome;
@@ -256,6 +278,7 @@ export const researchCommands = [
   "development.sendToJosefa",
   "project.create",
   "project.open",
+  "project.rename",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",

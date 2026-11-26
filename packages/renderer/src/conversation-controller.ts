@@ -85,6 +85,7 @@ export interface ConversationState {
     }
   >;
   readonly scope: ResearchScope;
+  readonly researchScopeReady?: boolean;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
   readonly agentHint?: ReplyAgent | undefined;
@@ -836,6 +837,7 @@ export class ConversationController {
   private subscriptionFailure(epoch: number, error: { code: string }): void {
     if (!this.live(epoch)) return;
     const stream = this.stream;
+    this.state = { ...this.state, researchScopeReady: false };
     this.composer.destinationObservationLost();
     this.history.disconnected(error.code);
     this.activity.disconnect();
@@ -870,6 +872,7 @@ export class ConversationController {
       : empty(scope);
     this.state = {
       ...this.state,
+      researchScopeReady: false,
       ...(previous.scope.projectId === scope.projectId && previous.project
         ? { project: previous.project }
         : {}),
@@ -907,7 +910,12 @@ export class ConversationController {
           this.activity.disconnect();
           const recovery = ++this.epoch;
           this.queue = Promise.resolve();
-          this.state = { ...this.state, loadingEarlier: false, failedEarlier: false };
+          this.state = {
+            ...this.state,
+            researchScopeReady: false,
+            loadingEarlier: false,
+            failedEarlier: false,
+          };
           this.publish();
           this.revisions.clear();
           this.connect(recovery, true);
@@ -955,6 +963,10 @@ export class ConversationController {
       this.composer.destinationObservationReady();
       this.history.connected();
       this.activity.ready();
+      if (!this.live(epoch) || this.stream !== stream) return;
+      this.state = { ...this.state, researchScopeReady: true };
+      this.publish();
+      if (!this.live(epoch) || this.stream !== stream) return;
       this.observed("ready");
       this.queue = this.queue
         .then(async () => {
@@ -968,6 +980,14 @@ export class ConversationController {
           );
         });
     });
+  }
+  forgetProjectRecords(): void {
+    const clear = (snapshot: ConversationState): ConversationState => {
+      const { project, ...state } = snapshot;
+      return project ? state : snapshot;
+    };
+    this.state = clear(this.state);
+    for (const [id, state] of this.cache) this.cache.set(id, clear(state));
   }
   refreshProject(): void {
     const epoch = this.epoch;
@@ -992,7 +1012,11 @@ export class ConversationController {
         throw Object.assign(new Error("Projects could not be read."), { code: page.error.code });
       if (!this.live(epoch)) return;
       const project = page.value.items.find((project) => project.id === this.state.scope.projectId);
-      if (project && (!this.state.project?.setupConfirmedAt || project.setupConfirmedAt))
+      if (
+        project &&
+        (!this.state.project?.setupConfirmedAt ||
+          (project.setupConfirmedAt && project.titleRevision >= this.state.project.titleRevision))
+      )
         this.state = { ...this.state, project };
       if (project) return;
       cursor = page.value.next;
@@ -1347,7 +1371,8 @@ export class ConversationController {
     if (
       event.kind === "projectAttention" ||
       event.kind === "attentionRaised" ||
-      event.kind === "replyFinished"
+      event.kind === "replyFinished" ||
+      (event.kind === "changed" && event.record === "projectTitle")
     )
       return;
     if (event.kind === "planChanged") {

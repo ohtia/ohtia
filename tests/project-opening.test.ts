@@ -1,9 +1,10 @@
 import { seedDefaultModel } from "./fixtures/storage.js";
-import { setupConnections } from "./fixtures/project-setup.js";
+import { proposeSetup, setupConnections } from "./fixtures/project-setup.js";
 import { describe, expect, it } from "vitest";
 import { type Outcome, type Request, policyId, failure } from "@ohtia/contracts";
 import { storageFixture, stores, preProjectOpeningSql } from "./fixtures/storage.js";
 import { objects as previousObjects } from "../packages/utility/src/migrations/0016_task_notices.mjs";
+import { preProjectTitleSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 import { DurableStore } from "../packages/utility/src/storage.js";
 
 function value<T>(result: Outcome<T>): T {
@@ -162,7 +163,7 @@ describe("project opening", () => {
       original.map((p) => [p.id, p.createdAt, p.createdAt, p.updatedAt]),
     );
     const upgraded = fixture.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(37);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(38);
     upgraded.close();
   });
 
@@ -267,4 +268,113 @@ it("admits the first-window restoration signal only in the bootstrap contract", 
       restoreLastProject: true,
     }),
   ).toBeUndefined();
+});
+
+it("migrates confirmed titles and retains exact rename receipts and setup history across restart", async () => {
+  const fixture = storageFixture();
+  await fixture.store.open();
+  const projectId = value(
+    await fixture.store.executeResearchCommand({
+      command: "project.create",
+      operationId: "title-project",
+      payload: {},
+    }),
+  ).resultId;
+  const command = (operationId: string, title: string, expectedTitleRevision: number) => ({
+    command: "project.rename" as const,
+    operationId,
+    payload: { projectId, title, expectedTitleRevision },
+  });
+  expect(
+    await fixture.store.executeResearchCommand(command("bad-revision", "Another title", 0)),
+  ).toEqual(failure("invalid_message"));
+  expect(
+    await fixture.store.executeResearchCommand(command("unfinished", "Another title", 1)),
+  ).toEqual(failure("project_in_setup"));
+  const proposalId = await proposeSetup(fixture.store, fixture.raw, projectId, {
+    title: "Working title A",
+    document_language: "ko-KR",
+  });
+  value(
+    await fixture.store.executeResearchCommand({
+      command: "project.confirmSetup",
+      operationId: "confirm-title",
+      payload: { proposalId },
+    }),
+  );
+  const before = value(await fixture.store.readProjects())[0]!;
+  const context = value(await fixture.store.readConversations(projectId));
+  await fixture.store.close();
+  const prior = fixture.raw();
+  const setup = prior.prepare("SELECT * FROM project_setup_proposals").get();
+  prior.exec(preProjectTitleSql);
+  expect(prior.pragma("user_version", { simple: true })).toBe(37);
+  prior.close();
+  const migrated = new DurableStore(fixture.options);
+  stores.push(migrated);
+  await migrated.open();
+  expect(value(await migrated.readProjects())).toEqual([before]);
+  expect(before.titleRevision).toBe(1);
+  const unchanged = command("unchanged", "Working title A", 1);
+  expect(value(await migrated.executeResearchCommand(unchanged)).titleChange).toEqual({
+    title: "Working title A",
+    titleRevision: 1,
+  });
+  const first = command("first-title", "연구 제목 — مراجعة", 1);
+  const accepted = await migrated.executeResearchCommand(first);
+  expect(value(accepted).titleChange).toEqual({ title: first.payload.title, titleRevision: 2 });
+  expect(
+    await migrated.executeResearchCommand(command("stale", "Working title A", 1)),
+  ).toMatchObject({
+    ok: false,
+    error: { code: "stale_revision", parameters: { currentRevision: 2 } },
+  });
+  expect(await migrated.executeResearchCommand(command("invalid", " leading", 2))).toEqual(
+    failure("name_invalid"),
+  );
+  value(await migrated.executeResearchCommand(command("title-returned", "Working title A", 2)));
+  expect(
+    await migrated.executeResearchCommand(command("same-title-stale", "Working title A", 1)),
+  ).toMatchObject({
+    ok: false,
+    error: { code: "stale_revision", parameters: { currentRevision: 3 } },
+  });
+  await migrated.close();
+
+  const restarted = new DurableStore(fixture.options);
+  stores.push(restarted);
+  await restarted.open();
+  expect(await restarted.executeResearchCommand(first)).toEqual(accepted);
+  expect(
+    await restarted.executeResearchCommand(command("first-title", "Different title", 1)),
+  ).toEqual(failure("operation_conflict"));
+  expect(value(await restarted.readProjects())).toEqual([{ ...before, titleRevision: 3 }]);
+  expect(value(await restarted.readConversations(projectId))).toEqual(context);
+  const current = fixture.raw();
+  try {
+    expect(current.prepare("SELECT * FROM project_setup_proposals").get()).toEqual(setup);
+    expect(
+      current
+        .prepare(
+          "SELECT previous_revision, title_revision FROM project_title_history ORDER BY rowid",
+        )
+        .all(),
+    ).toEqual([
+      { previous_revision: 1, title_revision: 1 },
+      { previous_revision: 1, title_revision: 2 },
+      { previous_revision: 2, title_revision: 3 },
+    ]);
+    expect(
+      current
+        .prepare(
+          "SELECT command FROM command_receipts WHERE operation_id IN ('stale','invalid','unfinished')",
+        )
+        .all(),
+    ).toEqual([]);
+    expect(() => current.exec("UPDATE project_title_history SET title='Changed'")).toThrow(
+      /Immutable/,
+    );
+  } finally {
+    current.close();
+  }
 });

@@ -210,6 +210,18 @@ export class ResearchService {
       respond({ ok: true, value: { parts, latestSequence: all.latestSequence } });
       return true;
     }
+    if (request.operation === "project.rename" || request.operation === "project.read") {
+      const { projectId } = request.payload;
+      if (
+        ![...this.streams.values()].some(
+          (stream) =>
+            stream.window === request.windowGeneration && stream.scope.projectId === projectId,
+        )
+      ) {
+        respond(failure("unauthorized"));
+        return true;
+      }
+    }
     if (isResearchMutation(request.operation)) {
       let payload: unknown = request.payload;
       const payloadHash = createHash("sha256").update(canonicalJson(payload)).digest("hex");
@@ -284,7 +296,7 @@ export class ResearchService {
         });
       }
       try {
-        await this.provider.pump();
+        if (request.operation !== "project.rename") await this.provider.pump();
         await this.publish();
       } catch {
         this.providerFailure();

@@ -1,11 +1,9 @@
 ---
 type: Specification
 title: "Data model"
-description: "Source entities, research-project relationships, and versioned Markdown manuscripts in SQLite."
+description: "Source entities, research-project relationships, and versions of project titles and Markdown manuscripts in SQLite."
 generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.2-sol
 sources:
   - id: biblatex
     resource: "https://www.ctan.org/tex-archive/macros/latex/contrib/biblatex/"
@@ -162,8 +160,11 @@ An original PDF, extraction, corrected extraction and later edition are not inte
 
 - `id`: stable research-project identity.
 - `title`, document language and observed creation/update metadata describe the investigation; the document language is the BCP 47 language of the document's text, confirmed by the researcher during setup and never changed afterwards, in which agents work and answer.
+- `title_revision` is a positive safe integer. Existing and new projects start at 1. For an active, setup-confirmed thesis, the rename command compares the supplied expected revision against the stored revision in the write transaction. A stale revision rejects the save. A changed title advances the revision by exactly one. An unchanged title records the confirmed result at the same revision. Opening a thesis and confirming its initial setup leave the title revision intact.
 - `project_type` classifies the research undertaking using a code-owned typed catalog. SQLite enforces the released catalog with a `CHECK` constraint; the application validates the same values. It is not a user-editable lookup table. Localized display names live in interface message catalogs, while stored values are stable English identifiers. Catalog changes require coordinated application/schema changes, and the feature contract defines the exact values before implementation.
 - The research profile, plan and workflow state belong to this project under their respective feature contracts.
+
+Each accepted rename stores its previous and resulting title and revision in immutable history alongside the command receipt, in the same transaction. Reconciliation of the same operation and payload returns that exact recorded result. The project identity, opening order, confirmed language, setup proposal history and manuscript labels are preserved ([PRIN-004 and PRIN-013](product-definition.md#product-principles)).
 
 The diagram defines manuscript ownership and cardinality. A project title is not a storage path. Interface locale remains separate from the project's document language, which is also the manuscript's language.
 

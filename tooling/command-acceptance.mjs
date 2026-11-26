@@ -154,6 +154,7 @@ async function verifyNativeInventory(application, locale, platform) {
       : []),
     group("file", [
       "project.new",
+      "project.rename",
       "conversation.new",
       "window.new",
       ...(!mac ? ["settings.open"] : []),

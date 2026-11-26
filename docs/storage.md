@@ -1,9 +1,9 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist project opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
+description: Persist project titles and opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.2-sol
 ---
 
 # Durable foundation storage
@@ -95,6 +95,10 @@ Both setup decisions take `{ proposalId }` and use `command_receipts`. The [deci
 The credential-free provider channel has a 2 MiB envelope bound so six-byte JSON escaping of the 256 KiB message budget and operation notes remains admissible. The private instruction text accepts up to 10 KiB to carry the role instructions, shared thesis route and confirmed project context, including titles of up to 800 UTF-8 bytes. Each input message accepts up to 80,000 UTF-8 bytes, covering the researcher’s 20,000-code-point limit. The input and transfer lists also accommodate all 500 guidance messages and their cut-message notes. Main counts the UTF-8 bytes of every text and streamed argument part once per attempt. Complete calls stay buffered until the provider completes within that cumulative budget. Streamed argument parts still forward content-free activity events so recovery and inactivity checks observe the provider’s progress. A failure, uncertain ending, interrupt or limit discards every call. An overflowing text part forwards only its longest whole-code-point prefix that fits; overflow closes the transport and reports `output_limit_exceeded`. Partial text remains an attributed partial reply. Provider calls never confirm a project.
 
 In the development runtime, `--ohtia-dev-command=create-project` prints an ordinary project's identifier and its setup conversation identifier. Send a message with `--ohtia-dev-command=send --ohtia-dev-conversation=<id> --ohtia-dev-text=<text>`. Completed proposals print their identifiers; confirm or reject one with `--ohtia-dev-command=confirm-setup --ohtia-dev-proposal=<id>` or `--ohtia-dev-command=reject-setup --ohtia-dev-proposal=<id>`. Development projects continue to use `development_test`. Namespace tools use the top-level `tools` route; the adapter's explicit `additional_tools` option supports a separately admitted test if a provider rejects that route, without a hidden retry.
+
+## Project title changes
+
+Migration `0038_project_title_revision` adds the checked `title_revision` column to `projects` and initializes existing rows at revision 1. It admits `project.rename` in the existing command receipt registry and adds `project_title_history`, whose immutable rows reference the matching receipt and project. The reserved transaction writes the title change, the history row and the receipt together. A failed history insert rolls back the command. The [data model](data-model.md#projects) owns the revision rule and [the application port](application-port.md#envelopes-and-named-operations) owns the inputs and scoped reads.
 
 ## Execution-limit receipts
 

@@ -69,6 +69,7 @@ export interface WorkspaceChromeProps {
   readonly memoryRequest?: number;
   readonly revealSourceRequest?: object;
   readonly projectSelector?: ReactNode;
+  projectNotice?: ReactNode;
   readonly hasProjects?: boolean | undefined;
   readonly project?: ProjectRecord | undefined;
   readonly projectScope?: string | undefined;
@@ -220,6 +221,7 @@ export function WorkspaceChrome({
   replaceChatHeading,
   revealChatRequest,
   projectSelector,
+  projectNotice,
   hasProjects = false,
   project,
   projectScope,
@@ -826,6 +828,14 @@ export function WorkspaceChrome({
                   </bdi>
                 </Tooltip>
               ))}
+            {project?.setupConfirmedAt && (
+              <ShortcutControl
+                id="project.rename"
+                commands={commands}
+                locale={locale}
+                icon="pencil"
+              />
+            )}
             <ShortcutControl id="project.new" commands={commands} locale={locale} icon="plus" />
           </div>
           <span className="workspace-drag-space" aria-hidden="true" />
@@ -877,6 +887,7 @@ export function WorkspaceChrome({
           </div>
         )}
       </header>
+      {projectNotice}
       {layoutFailure && (
         <div className="workspace-notice workspace-danger" role="alert">
           <LucideGlyph name="octagon-alert" size={16} />

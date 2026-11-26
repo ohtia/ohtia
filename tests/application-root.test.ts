@@ -958,6 +958,7 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
     id: projectId,
     projectType: "thesis",
     title: null,
+    titleRevision: 1,
     documentLanguage: null,
     isDevelopment: false,
     setupConfirmedAt: null,
@@ -1125,6 +1126,7 @@ it.each(["confirmed", "failed"] as const)(
       id: "019a8000-0000-7000-8000-000000000101",
       projectType: "thesis",
       title: "Redes de cuidado",
+      titleRevision: 1,
       documentLanguage: "es-AR",
       isDevelopment: false,
       setupConfirmedAt: "2026-11-17T10:00:00Z",
@@ -1214,6 +1216,7 @@ function raceFixture() {
     id,
     projectType: "thesis",
     title: `Project ${n + 1}`,
+    titleRevision: 1,
     documentLanguage: "en-US",
     isDevelopment: false,
     setupConfirmedAt: "2026-11-17T10:00:00.000Z",
@@ -2491,4 +2494,257 @@ it("loads the full scoped message, recovers a failed quote and discards an obsol
     `#message-${newSource}`,
   );
   expect(readTextPart).toHaveBeenCalledTimes(parts.length + 1);
+});
+
+it("renames by keyboard after IME and shows a committed title through refresh failure", async () => {
+  const t = raceFixture();
+  const title = "연구 제목 " + "A".repeat(120) + " مراجعة";
+  const rename = vi.fn<FoundationPort["renameProject"]>((_operation, input) =>
+    call({
+      ok: true,
+      value: { resultId: input.projectId, titleChange: { title: input.title, titleRevision: 2 } },
+    }),
+  );
+  let observe: ((event: Outcome<ResearchEvent>) => void) | undefined;
+  const subscribe = t.port.subscribeResearch;
+  Object.assign(t.port, {
+    subscribeResearch: (scope: ResearchScope, listener: NonNullable<typeof observe>) => {
+      observe = listener;
+      return subscribe(scope, listener);
+    },
+    renameProject: rename,
+    readProject: () => call(failure("storage_failed")),
+  });
+  await mount(t);
+  const trigger = container.querySelector<HTMLButtonElement>(
+    '[data-workspace-command="project.rename"]',
+  )!;
+  await act(async () => trigger.focus());
+  await act(async () => trigger.click());
+  let input = container.querySelector<HTMLInputElement>("dialog[open] input")!;
+  expect(document.activeElement === input).toBe(true);
+  await act(async () => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement === trigger).toBe(true);
+  expect(rename).not.toHaveBeenCalled();
+  await act(async () => trigger.click());
+  input = container.querySelector<HTMLInputElement>("dialog[open] input")!;
+  await act(async () => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    set.call(input, " leading space");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(rename).not.toHaveBeenCalled();
+  await act(async () => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true,
+        isComposing: true,
+      }),
+    );
+    set.call(input, title);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+  });
+  expect(rename).not.toHaveBeenCalled();
+  await act(async () => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true, cancelable: true }),
+    );
+  });
+  expect(rename).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
+    projectId: t.ids[0],
+    title,
+    expectedTitleRevision: 1,
+  });
+  expect(document.activeElement === trigger).toBe(true);
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(title);
+  expect(container.querySelector(".project-rename-refresh [role=status]")?.textContent).toBe(
+    message("en-US", "project.rename.refreshFailed"),
+  );
+  expect(container.querySelector("dialog[open]")).toBeNull();
+  const reload = container.querySelector<HTMLButtonElement>(".project-rename-refresh button")!;
+  const previousNotice = container.querySelector(".project-rename-refresh [role=status] span");
+  await act(async () => {
+    reload.focus();
+    reload.click();
+  });
+  expect(document.activeElement === reload).toBe(true);
+  expect(
+    container.querySelector(".project-rename-refresh [role=status] span") !== previousNotice,
+  ).toBe(true);
+
+  await act(async () => trigger.click());
+  const editing = container.querySelector<HTMLInputElement>("dialog[open] input")!;
+  Object.assign(t.port, { readTimeline: () => call(failure("storage_failed")) });
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "timeline", id: t.ids[1]!, revision: 2 },
+    }),
+  );
+  const action = container.querySelector<HTMLButtonElement>("dialog[open] .primitive-primary")!;
+  expect(action.getAttribute("aria-disabled")).toBe("false");
+  rename.mockReturnValueOnce(call(failure("uncertain")));
+  await act(async () => action.click());
+  expect(container.querySelector("dialog[open] [role=status]")?.textContent).toContain(
+    message("en-US", "project.rename.uncertain"),
+  );
+  await act(async () => observe?.(failure("service_unavailable")));
+  const dialog = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  expect(dialog.querySelector("input")?.value).toBe(title);
+  const status = dialog.querySelector("[role=status]")?.textContent;
+  expect(status).toContain(message("en-US", "project.rename.unavailable"));
+  expect(status).toContain(message("en-US", "project.rename.uncertain"));
+  const save = dialog.querySelector<HTMLButtonElement>(".primitive-primary")!;
+  expect(save.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => {
+    save.click();
+    editing.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(rename).toHaveBeenCalledTimes(2);
+});
+
+it("refreshes the selected thesis after a title read failure without replaying the event", async () => {
+  const t = raceFixture();
+  let observe: ((event: Outcome<ResearchEvent>) => void) | undefined;
+  const subscribe = t.port.subscribeResearch;
+  const timestamp = "2026-11-17T10:00:00.000Z";
+  const projectId = t.ids[0]!;
+  const later = {
+    id: projectId,
+    projectType: "thesis" as const,
+    title: "Title from another window",
+    titleRevision: 2,
+    documentLanguage: "en-US",
+    isDevelopment: false,
+    setupConfirmedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lastOpenedAt: timestamp,
+  };
+  const readProject = vi
+    .fn<FoundationPort["readProject"]>()
+    .mockImplementationOnce(() => {
+      throw new Error("Synthetic read transport failure");
+    })
+    .mockReturnValueOnce(call({ ok: true, value: later }));
+  Object.assign(t.port, {
+    subscribeResearch: (scope: ResearchScope, listener: NonNullable<typeof observe>) => {
+      observe = listener;
+      return subscribe(scope, listener);
+    },
+    readProject,
+  });
+  await mount(t);
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: t.ids[1]!, revision: 2 },
+    }),
+  );
+  expect(readProject).not.toHaveBeenCalled();
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: projectId, revision: 2 },
+    }),
+  );
+  expect(readProject).toHaveBeenCalledExactlyOnceWith({ projectId });
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 1");
+  const retry = container.querySelector<HTMLButtonElement>(".project-rename-refresh button")!;
+  expect(retry).not.toBeNull();
+  await act(async () => {
+    retry.focus();
+    retry.click();
+  });
+  expect(readProject).toHaveBeenCalledTimes(2);
+  expect(readProject.mock.calls[1]).toEqual([{ projectId }]);
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
+    "Title from another window",
+  );
+  expect(container.querySelector(".project-rename-refresh")).toBeNull();
+  expect(document.activeElement === container.querySelector(".project-selector-button")).toBe(true);
+
+  readProject.mockReturnValueOnce(call(failure("storage_failed")));
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: projectId, revision: 3 },
+    }),
+  );
+  const background = deferred<Outcome<typeof later>>();
+  readProject.mockReturnValueOnce({ result: background.promise, cancel() {} });
+  const coalesced = container.querySelector<HTMLButtonElement>(".project-rename-refresh button")!;
+  await act(async () => {
+    coalesced.focus();
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: projectId, revision: 4 },
+    });
+  });
+  await act(async () => coalesced.click());
+  expect(readProject).toHaveBeenCalledTimes(4);
+  await act(async () =>
+    background.resolve({
+      ok: true,
+      value: { ...later, title: "Background title", titleRevision: 4 },
+    }),
+  );
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
+    "Background title",
+  );
+  expect(container.querySelector(".project-rename-refresh")).toBeNull();
+  expect(document.activeElement === container.querySelector(".project-selector-button")).toBe(true);
+
+  readProject.mockReturnValueOnce(call(failure("storage_failed")));
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: projectId, revision: 5 },
+    }),
+  );
+  expect(container.querySelector(".project-rename-refresh")).not.toBeNull();
+  Object.assign(t.port, {
+    listProjects: () =>
+      call({
+        ok: true,
+        value: {
+          items: [{ ...later, title: "Caught-up title", titleRevision: 5, needsAttention: false }],
+          next: null,
+          hasMore: false,
+        },
+      }),
+  });
+  await act(async () =>
+    observe?.({
+      ok: true,
+      value: { kind: "changed", record: "project", id: t.ids[1]!, revision: 1 },
+    }),
+  );
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
+    "Caught-up title",
+  );
+  expect(container.querySelector(".project-rename-refresh")).toBeNull();
+  expect(readProject).toHaveBeenCalledTimes(5);
 });

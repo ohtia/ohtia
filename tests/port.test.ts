@@ -322,6 +322,8 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "resumeUsagePause",
         "continueAllTasks",
         "readDestination",
+        "renameProject",
+        "readProject",
         "confirmProjectSetup",
         "rejectProjectSetup",
         "createProject",

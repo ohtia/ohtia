@@ -45,7 +45,8 @@
     "admission-crash-preserves-recovery-phase",
     "packaged-settings-presentation",
     "inspect-managed-store-location",
-    "integrated-application-root"
+    "integrated-application-root",
+    "packaged-project-rename"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }
