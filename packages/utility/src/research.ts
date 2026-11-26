@@ -1,3 +1,4 @@
+import { isEntityId } from "./entity-id.js";
 import { replaceAgentPreference, type AgentPreferenceSchema } from "./agent-preferences.js";
 import type {
   InterventionLimitsRow,
@@ -136,12 +137,7 @@ export interface ResearchSchema
     created_at: string;
   };
 }
-export function isEntityId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
-  );
-}
+export { isEntityId } from "./entity-id.js";
 export function bytes(id: string): Buffer {
   return Buffer.from(id.replaceAll("-", ""), "hex");
 }
