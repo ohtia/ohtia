@@ -35,10 +35,6 @@
   background: var(--surface-emphasis);
 }
 
-.workspace-chat > .workspace-panel-scroll:has(.chat-history-view) {
-  margin-inline: 0;
-}
-
 .workspace-chat .chat-conversation {
   display: flex;
   flex-direction: column;
