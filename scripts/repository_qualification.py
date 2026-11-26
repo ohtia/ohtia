@@ -32,10 +32,13 @@ import workspace
 
 ROOT = delivery.ROOT
 
-# The x86-64 Linux cells of the quality inventory: GNOME runs the complete scenario, KDE the
-# short one. Ubuntu runs on its hosted runner, Debian and Fedora in their KVM guests.
-TARGET = "linux-x64"
-LAUNCHERS = ("display-session", "kvm")
+# The Linux cells of the quality inventory and the Scaleway policy, and each target's RPM
+# architecture: GNOME runs the complete scenario, KDE the short one. Ubuntu runs on its hosted
+# x86-64 or ARM64 runner, Debian and Fedora in KVM guests on x86-64 and in disposable guests on
+# ARM64.
+ARCHITECTURES = {"linux-x64": "x86_64", "linux-arm64": "aarch64"}
+# A guest cell runs on a disposable ARM64 guest prepared as the CI prepares its KVM guests.
+LAUNCHERS = ("display-session", "kvm", "guest")
 PAYLOAD = Path("/opt/ohtia")
 SOURCE_ENTRY = Path("/etc/apt/sources.list.d/ohtia.sources")
 FEDORA_ENTRY = Path("/etc/yum.repos.d/ohtia.repo")
@@ -47,17 +50,30 @@ DNF_STATE = Path("/var/cache/ohtia-qualification")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
+def guest_cells() -> list[dict]:
+    """Return the ARM64 cells of the Scaleway policy, which run on disposable native guests."""
+    import linux_desktop
+    import scaleway_cycle
+
+    profiles = scaleway_cycle.policy()["profiles"]
+    return [
+        {**scaleway_cycle.cell(profile, desktop), "launcher": "guest"}
+        for profile in profiles
+        for desktop in linux_desktop.DESKTOPS
+    ]
+
+
 def declared_cell(cell_id: str) -> dict:
-    cells = delivery.read(ROOT / "config/quality/build-targets.json")["cells"]
+    cells = delivery.read(ROOT / "config/quality/build-targets.json")["cells"] + guest_cells()
     found = [item for item in cells if item["id"] == cell_id]
     delivery.require(len(found) == 1, "Repository qualification covers only declared cells.")
     cell = found[0]
     delivery.require(
-        cell["target"] == TARGET
+        cell["target"] in ARCHITECTURES
         and cell["launcher"] in LAUNCHERS
         and cell.get("desktop") in {"gnome", "kde"}
         and cell["formats"] == [linux_profiles.package_format(cell["profile"])],
-        "Repository qualification covers the x86-64 Linux cells with one native package.",
+        "Repository qualification covers the declared Linux cells with one native package.",
     )
     return cell
 
@@ -325,7 +341,9 @@ def installed_packages() -> set[str]:
     return set(listed.stdout.splitlines())
 
 
-def update_with_dnf(profile: str, a_version: str, b_version: str, expected: dict) -> dict:
+def update_with_dnf(
+    profile: str, a_version: str, b_version: str, expected: dict, architecture: str = "x86_64"
+) -> dict:
     """Update through the registered entry: dnf checks the signed metadata and the RPM signature.
 
     The download is compared with the release before anything is installed, and the update must
@@ -351,7 +369,6 @@ def update_with_dnf(profile: str, a_version: str, b_version: str, expected: dict
     )
     run(dnf("upgrade", "ohtia"), capture=False)
     after = installed_packages()
-    architecture = "x86_64"
     delivery.require(
         before - after == {f"ohtia\t0:{native_version(a_version, profile)}\t{architecture}"}
         and after - before == {f"ohtia\t0:{native_version(b_version, profile)}\t{architecture}"},
@@ -538,7 +555,9 @@ def qualify(cell: dict, output: Path, env: dict) -> None:
             run(["sudo", "rm", PAYLOAD / "prepared.json"])
         with report.step("update-to-b") as observed:
             if linux_profiles.is_fedora(profile_id):
-                observed["downloaded"] = update_with_dnf(profile_id, a_version, version, expected)
+                observed["downloaded"] = update_with_dnf(
+                    profile_id, a_version, version, expected, ARCHITECTURES[cell["target"]]
+                )
             else:
                 observed["downloaded"] = update(a_version, version)
             observed["installed_version"] = installed_version(profile_id)
