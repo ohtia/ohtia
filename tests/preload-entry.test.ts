@@ -216,12 +216,28 @@ describe("sandbox preload composition", () => {
       ["retryService", "retry_service"],
       ["newWindow", "new_window"],
       ["exit", "exit"],
-      ["restoreCheckpoint", "restore_checkpoint"],
       ["openStorage", "open_storage"],
     ] as const) {
       expect(await h.bridge.bootstrap[method]()).toMatchObject({ state: "pending_create" });
       expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(desktopChannels.bootstrap, action);
     }
+    const verification = "19dfd574-ee10-4aef-935c-c66afbf0cb6a";
+    await expect(h.bridge.bootstrap.restoreCheckpoint(verification)).resolves.toMatchObject({
+      state: "pending_create",
+    });
+    expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+      desktopChannels.bootstrap,
+      "restore_checkpoint",
+      verification,
+    );
+    await expect(h.bridge.bootstrap.restoreCheckpoint("/ohtia.db3")).rejects.toThrow(
+      /verification/,
+    );
+    expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+      desktopChannels.bootstrap,
+      "restore_checkpoint",
+      verification,
+    );
     h.ipcRenderer.invoke.mockResolvedValueOnce({ injected: true } as never);
     await expect(h.bridge.bootstrap.read()).rejects.toThrow(/bootstrap response/);
     const calls = [

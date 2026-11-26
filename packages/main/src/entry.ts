@@ -56,6 +56,10 @@ import {
   projectResearchScope,
   failure,
   isBootstrapAction,
+  isCanonicalUuid,
+  type BootstrapNotice,
+  type CheckpointProblem,
+  type VerifiedCheckpoint,
   message,
   portLimits,
   resolveInterfaceLocale,
@@ -348,6 +352,10 @@ function resumeDiagnostics(event?: DiagnosticEvent): void {
 }
 let storageRequested = false;
 let storageActionPending = false;
+let verifiedCheckpoint:
+  { readonly value: VerifiedCheckpoint; readonly verification: string } | undefined;
+let checkpointProblem: CheckpointProblem | undefined;
+let restoreOutcome: BootstrapNotice | undefined;
 let admissionFallback: BootstrapState = "storage_failed";
 let localeFallback = false;
 let generation = randomUUID();
@@ -456,6 +464,7 @@ let metricTimer: ReturnType<typeof setInterval> | undefined;
 const snapshot = (window: BrowserWindow): BootstrapSnapshot => {
   const windowState = windows.get(window);
   const openConversation = windowState?.openConversation;
+  const checkpoint = bootstrapState === "recovery_required" ? verifiedCheckpoint : undefined;
   return {
     ...(openConversation ? { openConversation } : {}),
     ...(windowState?.navigateConversation
@@ -466,7 +475,24 @@ const snapshot = (window: BrowserWindow): BootstrapSnapshot => {
     version: 1,
     locale,
     state: bootstrapState === "missing" ? "pending_create" : bootstrapState,
-    ...(localeFallback && bootstrapState === "storage_ready" ? { notice: "locale_fallback" } : {}),
+    ...(checkpoint
+      ? {
+          checkpoint: {
+            operation: checkpoint.value.operation,
+            sourceRevision: checkpoint.value.sourceRevision,
+            targetRevision: checkpoint.value.targetRevision,
+            release: checkpoint.value.release,
+            bytes: checkpoint.value.bytes,
+            verification: checkpoint.verification,
+          },
+        }
+      : {}),
+    ...(bootstrapState === "retry_required" && checkpointProblem ? { checkpointProblem } : {}),
+    ...(localeFallback && bootstrapState === "storage_ready"
+      ? { notice: "locale_fallback" }
+      : restoreOutcome
+        ? { notice: restoreOutcome }
+        : {}),
   };
 };
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
@@ -702,12 +728,15 @@ function constructWindow(
   } else loadDocument();
   return { status: "completed" };
 }
-function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
+function startService(
+  mode?: "open" | "retry" | "restore" | "blocked",
+  checkpoint?: VerifiedCheckpoint,
+): void {
   if (quitting || (service && !service.ceased)) return;
   if (providerDispatch && !providerDispatch.ceased) {
     // Recovery classifies old attempts only after every ended-generation transport has closed.
     void providerDispatch.drain().then(() => {
-      startService(mode);
+      startService(mode, checkpoint);
     });
     return;
   }
@@ -721,7 +750,22 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
       bootstrapState = "storage_opening";
     }
   }
-  const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
+  const storageMode = [
+    "missing",
+    "located",
+    "pending_create",
+    "storage_ready",
+    "storage_opening",
+    "storage_failed",
+    "recovery_required",
+    "retry_required",
+    "checkpoint_restored",
+    "publication_uncertain",
+  ].includes(bootstrapState)
+    ? mode === "open" && locator.state === "missing"
+      ? "create"
+      : mode
+    : "blocked";
   generation = randomUUID();
   windowTheme.reset();
   updateWindowThemes();
@@ -731,21 +775,9 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
       serviceContext,
       generation,
       resolveInterfaceLocale(preferredSystemLanguages()),
-      [
-        "missing",
-        "located",
-        "pending_create",
-        "storage_ready",
-        "storage_opening",
-        "storage_failed",
-        "recovery_required",
-        "retry_required",
-        "checkpoint_restored",
-        "publication_uncertain",
-      ].includes(bootstrapState)
-        ? storageMode
-        : "blocked",
+      storageMode,
       app.getVersion(),
+      ...(storageMode === "restore" && checkpoint ? [checkpoint.operation, checkpoint.sha256] : []),
     ],
     {
       serviceName: "Ohtia data service",
@@ -798,10 +830,14 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
       if (state === "unavailable") {
         // Close every provider request of the ending generation before another service starts.
         providerDispatch?.end(serviceGeneration);
-        if (storageRequested && !storageActionPending)
-          bootstrapState = storageInterruptionState(
-            bootstrapState === "storage_opening" ? admissionFallback : bootstrapState,
-          );
+        if (storageRequested && !requestedStop) {
+          if (mode === "restore" && bootstrapState === "storage_opening")
+            restoreOutcome = "recovery_uncertain";
+          if (!storageActionPending || mode === "restore")
+            bootstrapState = storageInterruptionState(
+              bootstrapState === "storage_opening" ? admissionFallback : bootstrapState,
+            );
+        }
         updateWindowThemes();
         for (const window of windows.keys())
           if (!window.isDestroyed()) window.webContents.send(desktopChannels.ended, generation);
@@ -812,6 +848,11 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
       if (!active || notice.generation !== generation) return;
       admissionFallback = "storage_failed";
       bootstrapState = notice.state;
+      verifiedCheckpoint = notice.checkpoint
+        ? { value: notice.checkpoint, verification: randomUUID() }
+        : undefined;
+      checkpointProblem = notice.checkpointProblem;
+      restoreOutcome = notice.restoreFailure;
       updateWindowThemes();
       if (notice.state !== "storage_ready") return;
       bootstrapState = "storage_opening";
@@ -1452,9 +1493,16 @@ async function start(): Promise<void> {
   });
   ipcMain.handle(
     desktopChannels.bootstrap,
-    async (event, action: unknown): Promise<BootstrapSnapshot> => {
+    async (event, action: unknown, ...args: unknown[]): Promise<BootstrapSnapshot> => {
       const window = trusted(event);
-      if (!window || !isBootstrapAction(action)) throw new Error("Bootstrap admission refused.");
+      if (
+        !window ||
+        !isBootstrapAction(action) ||
+        (action === "restore_checkpoint"
+          ? args.length !== 1 || !isCanonicalUuid(args[0])
+          : args.length !== 0)
+      )
+        throw new Error("Bootstrap admission refused.");
       if (action === "exit") {
         app.quit();
         return snapshot(window);
@@ -1469,7 +1517,10 @@ async function start(): Promise<void> {
         action === "restore_checkpoint" ||
         action === "open_storage"
       ) {
-        if (storageActionPending || bootstrapState === "storage_opening") return snapshot(window);
+        if (storageActionPending || bootstrapState === "storage_opening")
+          return action === "restore_checkpoint"
+            ? { ...snapshot(window), notice: "recovery_busy" }
+            : snapshot(window);
         if (
           action === "open_storage" &&
           ![
@@ -1481,8 +1532,13 @@ async function start(): Promise<void> {
           ].includes(bootstrapState)
         )
           return snapshot(window);
-        if (action === "restore_checkpoint" && bootstrapState !== "recovery_required")
-          return snapshot(window);
+        const checkpoint = action === "restore_checkpoint" ? verifiedCheckpoint : undefined;
+        if (action === "restore_checkpoint") {
+          if (bootstrapState !== "recovery_required" || !checkpoint)
+            return { ...snapshot(window), notice: "recovery_unavailable" };
+          if (args[0] !== checkpoint.verification)
+            return { ...snapshot(window), notice: "recovery_stale" };
+        }
         if (action === "open_storage" && context.mode !== "qualification") {
           try {
             ensureResearchRoot(context.research_root);
@@ -1505,6 +1561,7 @@ async function start(): Promise<void> {
                 : "blocked";
         const previousState = bootstrapState;
         storageActionPending = true;
+        restoreOutcome = undefined;
         try {
           if (mode !== "blocked") {
             admissionFallback = storageInterruptionState(previousState);
@@ -1521,7 +1578,7 @@ async function start(): Promise<void> {
               () => !quitting && service === current,
               () => {
                 for (const existing of windows.keys()) detach(existing);
-                startService(mode);
+                startService(mode, checkpoint?.value);
                 for (const [existing, state] of windows) {
                   if (existing.isDestroyed() || existing.webContents.isDestroyed()) continue;
                   state.generation = randomUUID();
@@ -1549,6 +1606,7 @@ async function start(): Promise<void> {
             mode === "blocked"
               ? restoreStoppedBootstrap(previousState)
               : storageInterruptionState(previousState);
+          if (mode === "restore") restoreOutcome = "recovery_uncertain";
           return snapshot(window);
         } finally {
           storageActionPending = false;

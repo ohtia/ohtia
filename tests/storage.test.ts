@@ -145,10 +145,185 @@ describe("durable preference and migration recovery", () => {
     await expect(store.open()).rejects.toThrow(/ENOSPC/);
     spy.mockRestore();
     expect(fs.existsSync(path.join(root, "migration-pending.json"))).toBe(false);
-    expect(store.recoveryState()).toBe("storage_failed");
+    expect(store.recoveryState()).toEqual({ state: "storage_failed" });
     await store.retry();
     expect(store.ready).toBe(true);
     expect(fs.readdirSync(root).filter((name) => name.startsWith(".intent-"))).toEqual([]);
+  });
+  it("binds recovery to the pending migration build, source, operation and verified snapshot", async () => {
+    const { root, options, store } = fixture();
+    await store.open();
+    await store.close();
+    const recovery = path.join(root, "recovery/migrations");
+    const [operation] = checkpoints(root);
+    const snapshot = path.join(recovery, operation!, "ohtia.db3");
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(recovery, operation!, "manifest.json"), "utf8"),
+    );
+    const pending = {
+      operation,
+      version: 1,
+      source: manifest.sourceRevision,
+      target: manifest.targetRevision,
+      release: manifest.release,
+    };
+    const writeGate = (changes: object = {}) => {
+      fs.writeFileSync(
+        path.join(root, "migration-pending.json"),
+        JSON.stringify({ ...pending, ...changes }),
+      );
+    };
+    const live = path.join(root, "ohtia.db3");
+    const before = fs.readFileSync(live);
+    writeGate();
+    const otherBuild = new DurableStore({ ...options, release: "999.0.0" });
+    stores.push(otherBuild);
+    expect(otherBuild.recoveryState()).toEqual({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_incompatible",
+    });
+    await expect(otherBuild.restorePending(manifest)).rejects.toThrow(/checkpoint_incompatible/);
+    writeGate({ release: "1.0.0" });
+    await expect(otherBuild.retry()).rejects.toThrow(/checkpoint_incompatible/);
+    writeGate();
+    const manifestFile = path.join(recovery, operation!, "manifest.json");
+    fs.writeFileSync(
+      manifestFile,
+      JSON.stringify({
+        ...manifest,
+        engine: { ...manifest.engine, version: "wrong-engine" },
+      }),
+    );
+    await expect(otherBuild.retry()).rejects.toThrow(/checkpoint_incompatible/);
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+    writeGate({ source: pending.source + 1 });
+    expect(store.recoveryState()).toEqual({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_invalid",
+    });
+    await expect(store.restorePending(manifest)).rejects.toThrow(/pending migration/);
+    writeGate();
+    fs.renameSync(snapshot, snapshot + ".saved");
+    expect(store.recoveryState()).toEqual({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_missing",
+    });
+    fs.renameSync(manifestFile, manifestFile + ".saved");
+    try {
+      await expect(otherBuild.retry()).rejects.toThrow(/checkpoint_incompatible/);
+    } finally {
+      fs.renameSync(manifestFile + ".saved", manifestFile);
+    }
+    fs.renameSync(snapshot + ".saved", snapshot);
+    const openSync = fs.openSync;
+    const deny = vi.spyOn(fs, "openSync").mockImplementation((file, flags, mode) => {
+      if (file === snapshot)
+        throw Object.assign(new Error("Synthetic permission denial"), { code: "EACCES" });
+      return openSync(file, flags, mode);
+    });
+    try {
+      expect(store.recoveryState()).toEqual({
+        state: "retry_required",
+        checkpointProblem: "checkpoint_unreadable",
+      });
+    } finally {
+      deny.mockRestore();
+    }
+    fs.appendFileSync(snapshot, "corrupt");
+    expect(store.recoveryState()).toEqual({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_invalid",
+    });
+    await expect(store.restorePending(manifest)).rejects.toThrow(/identity mismatch/);
+    expect(fs.readFileSync(live)).toEqual(before);
+    fs.truncateSync(snapshot, manifest.bytes);
+    expect(store.recoveryState()).toMatchObject({
+      state: "recovery_required",
+      checkpoint: { operation, sha256: manifest.sha256 },
+    });
+    const notices: string[] = [];
+    await initializeStorage(
+      store,
+      "restore",
+      "generation-1",
+      (notice) => {
+        notices.push(notice);
+      },
+      () => false,
+      { ...manifest, sha256: "0".repeat(64) },
+    );
+    expect(JSON.parse(notices.at(-1)!)).toMatchObject({
+      state: "recovery_required",
+      restoreFailure: "recovery_stale",
+    });
+    expect(fs.existsSync(path.join(root, "restore-pending.json"))).toBe(false);
+    expect(fs.readFileSync(live)).toEqual(before);
+    await store.restorePending(manifest);
+    expect(store.ready).toBe(false);
+    writeGate({ release: undefined });
+    const restoredSource = fs.readFileSync(live);
+    fs.renameSync(manifestFile, manifestFile + ".saved");
+    try {
+      await expect(otherBuild.retry()).rejects.toThrow(/checkpoint_incompatible/);
+      expect(fs.readFileSync(live)).toEqual(restoredSource);
+      await initializeStorage(
+        store,
+        "retry",
+        "generation-2",
+        (notice) => {
+          notices.push(notice);
+        },
+        () => false,
+      );
+      expect(JSON.parse(notices.at(-1)!)).toMatchObject({
+        state: "retry_required",
+        checkpointProblem: "checkpoint_incompatible",
+      });
+      const originalPragma = Database.prototype.pragma;
+      const hotJournal = vi.spyOn(Database.prototype, "pragma").mockImplementation(function (
+        this: InstanceType<typeof Database>,
+        source,
+        options,
+      ) {
+        if (this.name === live && source === "integrity_check")
+          throw Object.assign(new Error("Synthetic hot rollback journal"), {
+            code: "SQLITE_READONLY_ROLLBACK",
+          });
+        return originalPragma.call(this, source, options);
+      });
+      try {
+        await initializeStorage(
+          store,
+          "retry",
+          "generation-3",
+          (notice) => {
+            notices.push(notice);
+          },
+          () => false,
+        );
+        expect(JSON.parse(notices.at(-1)!)).toMatchObject({
+          state: "retry_required",
+          checkpointProblem: "checkpoint_incompatible",
+        });
+        expect(hotJournal.mock.results).toContainEqual({
+          type: "throw",
+          value: expect.objectContaining({ code: "SQLITE_READONLY_ROLLBACK" }),
+        });
+        expect(fs.readFileSync(live)).toEqual(restoredSource);
+      } finally {
+        hotJournal.mockRestore();
+      }
+    } finally {
+      fs.renameSync(manifestFile + ".saved", manifestFile);
+    }
+    const differentPlan = [...manifest.pending];
+    differentPlan[0] = { ...differentPlan[0], sha256: "0".repeat(64) };
+    fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, pending: differentPlan }));
+    await expect(otherBuild.retry()).rejects.toThrow(/checkpoint_incompatible/);
+    expect(fs.readFileSync(live)).toEqual(restoredSource);
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+    await otherBuild.retry();
+    expect(otherBuild.ready).toBe(true);
   });
   it("normalizes a complete intent published before an interrupted link cleanup", async () => {
     const { store, root } = fixture();
@@ -160,7 +335,10 @@ describe("durable preference and migration recovery", () => {
     await expect(store.open()).rejects.toThrow(/intent interruption/);
     spy.mockRestore();
     expect(fs.statSync(path.join(root, "migration-pending.json")).nlink).toBe(2);
-    expect(store.recoveryState()).toBe("retry_required");
+    expect(store.recoveryState()).toEqual({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_missing",
+    });
     expect(fs.statSync(path.join(root, "migration-pending.json")).nlink).toBe(1);
     await store.retry();
     expect(store.ready).toBe(true);

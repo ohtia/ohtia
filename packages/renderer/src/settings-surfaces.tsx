@@ -27,7 +27,7 @@ import { CommandController } from "./command-controller.js";
 import { type SettingFeature, SettingsController } from "./settings-controller.js";
 import { LucideGlyph as Icon } from "./iconography.js";
 import { RecoveryFocusBoundary, SettingsFeedback } from "./settings-notices.js";
-import { SettingsDialog } from "./settings-dialog.js";
+import { SettingsDialog, type SettingsSection } from "./settings-dialog.js";
 import { LanguageController } from "./language-controller.js";
 import { LayoutPreferences } from "./layout-preferences.js";
 import { WorkspaceController, type WorkspaceState } from "./workspace-controller.js";
@@ -62,7 +62,9 @@ export function SettingsSurfaces({
   projects,
   newProject,
   update,
+  recovery,
 }: {
+  readonly recovery?: ReactNode;
   /** SPEC-001-040: main's update pushes; without them the window offers no update command. */
   readonly update?: UpdateBridge;
   readonly children?: (
@@ -458,13 +460,13 @@ export function SettingsSurfaces({
                 language={language}
                 controller={controller}
                 limits={limits}
-                {...(updateCheck
-                  ? {
-                      sections: [
+                sections={[
+                  ...(updateCheck
+                    ? [
                         {
                           id: "updates",
                           title: message(locale, "settings.updates"),
-                          icon: "download" as const,
+                          icon: "download",
                           content: open && (
                             <UpdateCheckSetting
                               controller={updateCheck}
@@ -472,10 +474,20 @@ export function SettingsSurfaces({
                               available={available}
                             />
                           ),
-                        },
-                      ],
-                    }
-                  : {})}
+                        } satisfies SettingsSection,
+                      ]
+                    : []),
+                  ...(recovery
+                    ? [
+                        {
+                          id: "migration-recovery",
+                          title: message(locale, "migration_recovery"),
+                          icon: "database",
+                          content: open && recovery,
+                        } satisfies SettingsSection,
+                      ]
+                    : []),
+                ]}
                 workspace={workspace}
                 workspaceState={layoutState ?? workspace.state}
                 platform={platform}

@@ -530,7 +530,7 @@ export function isDiagnosticTime(value: unknown): value is string {
 function duration(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && !Object.is(value, -0);
 }
-function uuid(value: unknown): value is string {
+export function isCanonicalUuid(value: unknown): value is string {
   return (
     typeof value === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
@@ -588,7 +588,7 @@ export function makeDiagnosticRecord(
     !value ||
     !isArtifactVersion(version) ||
     !isDiagnosticTime(observed) ||
-    (correlation !== undefined && !uuid(correlation))
+    (correlation !== undefined && !isCanonicalUuid(correlation))
   )
     return;
   const spec = diagnosticCatalog[value.event_name];
@@ -684,7 +684,8 @@ export function decodeDiagnosticRecord(input: unknown): DiagnosticDecode {
     );
     if (
       !candidate ||
-      (Object.hasOwn(attrs, "ohtia.correlation.id") && !uuid(attrs["ohtia.correlation.id"])) ||
+      (Object.hasOwn(attrs, "ohtia.correlation.id") &&
+        !isCanonicalUuid(attrs["ohtia.correlation.id"])) ||
       value.severity_text !== candidate.severity_text ||
       value.severity_number !== candidate.severity_number ||
       attrs["ohtia.component"] !== candidate.attributes["ohtia.component"] ||
