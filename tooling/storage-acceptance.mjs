@@ -1,6 +1,6 @@
 // Non-shipping native acceptance; each run retains complete failed and passing observations.
+import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -220,6 +220,48 @@ async function component(mode, directory, expectedInterruption = false) {
     env: launch.env,
   });
 }
+async function withStorageReadDenied(target, operation) {
+  if (process.platform !== "win32") {
+    const mode = fs.statSync(target).mode & 0o777;
+    return withCommandCleanup(
+      async () => {
+        fs.chmodSync(target, mode & ~0o444);
+        await operation();
+      },
+      () => fs.chmodSync(target, mode),
+    );
+  }
+
+  const icacls = path.join(launch.env.SystemRoot, "System32", "icacls.exe");
+  const parent = path.dirname(target);
+  const entry = path.basename(target);
+  const scratch = fs.mkdtempSync(path.join(launch.profile.scratch_root, "storage-read-acl-"));
+  const saved = path.join(scratch, "original.acl");
+  const restored = path.join(scratch, "restored.acl");
+  const acl = (args) =>
+    execFileSync(icacls, args, { cwd: parent, stdio: "ignore", windowsHide: true });
+  return withCommandCleanup(
+    async () => {
+      acl([entry, "/save", saved]);
+      await withCommandCleanup(
+        async () => {
+          // Deny read data/list directory to Everyone on this disposable fixture.
+          acl([entry, "/deny", "*S-1-1-0:(RD)"]);
+          await operation();
+        },
+        () => {
+          acl([parent, "/restore", saved]);
+          acl([entry, "/save", restored]);
+          assert.ok(
+            fs.readFileSync(restored).equals(fs.readFileSync(saved)),
+            "The fixture must restore the original Windows DACL.",
+          );
+        },
+      );
+    },
+    () => fs.rmSync(scratch, { recursive: true, force: true }),
+  );
+}
 async function verifyManagedStoreLocation(page, locale) {
   const directory = launch.profile.research_root;
   const locator = path.join(
@@ -316,36 +358,39 @@ async function verifyManagedStoreLocation(page, locale) {
         expect(fs.readFileSync(locator, "utf8")).toBe(record);
       }
       fs.writeFileSync(locator, original);
-      const user = os.userInfo().username;
-      const icacls =
-        process.platform === "win32"
-          ? path.join(launch.env.SystemRoot, "System32", "icacls.exe")
-          : undefined;
-      for (const [target, reason, text, probe] of [
-        [locator, "locator_unreadable", "locator_unreadable", () => fs.readFileSync(locator)],
+      for (const [phase, target, reason, text, probe] of [
         [
+          "deny-managed-store-locator-read",
+          locator,
+          "locator_unreadable",
+          "locator_unreadable",
+          () => fs.readFileSync(locator),
+        ],
+        [
+          "deny-managed-store-directory-list",
           directory,
           "location_display_unavailable",
           "settings.storage.unavailable",
           () => fs.opendirSync(directory).closeSync(),
         ],
       ]) {
-        const mode = fs.statSync(target).mode & 0o777;
-        await withCommandCleanup(
-          async () => {
-            if (icacls)
-              execFileSync(icacls, [target, "/deny", `${user}:(RD)`], { stdio: "ignore" });
-            // Deny reading while preserving any existing search and write permissions.
-            else fs.chmodSync(target, mode & ~0o444);
-            expect(probe).toThrow();
-            await assertReason(reason, text);
-          },
-          () => {
-            if (icacls) execFileSync(icacls, [target, "/remove:d", user], { stdio: "ignore" });
-            else fs.chmodSync(target, mode);
-          },
-        );
+        enterPhase(`${phase}-before`, ".settings-dialog[open]");
+        probe();
+        enterPhase(`${phase}-prepare`, ".settings-dialog[open]");
+        await withStorageReadDenied(target, async () => {
+          enterPhase(phase, ".settings-dialog[open]");
+          assert.throws(
+            probe,
+            (error) => error.code === "EACCES" || error.code === "EPERM",
+            "The fixture must deny the expected read.",
+          );
+          await assertReason(reason, text);
+        });
+        enterPhase(`${phase}-restored`, ".settings-dialog[open]");
+        probe();
+        expect(await read()).toEqual(available);
       }
+      enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
     },
     () => fs.writeFileSync(locator, original, { mode: 0o600 }),
   );
