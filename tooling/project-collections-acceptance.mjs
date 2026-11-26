@@ -60,6 +60,9 @@ function seedExistingProjects() {
     const conversation = db.prepare(
       "INSERT INTO conversations (id,project_id,title,created_at,updated_at,revision) VALUES (?,?,?,?,?,1)",
     );
+    const timelineMessage = db.prepare(
+      "INSERT INTO messages (id,conversation_id,position,author_kind,content,created_at) VALUES (?,?,?,'researcher',?,?)",
+    );
     db.transaction(() => {
       for (const { number, title, language } of projects)
         project.run(
@@ -74,6 +77,8 @@ function seedExistingProjects() {
       for (let number = 1; number <= 51; ++number)
         conversation.run(bytes(100 + number), bytes(2), `Interview ${number}`, date, date);
       conversation.run(bytes(201), bytes(3), "Other project's conversation", date, date);
+      for (let position = 1; position <= 24; ++position)
+        timelineMessage.run(bytes(300 + position), bytes(151), position, `Note ${position}`, date);
     })();
   } finally {
     db.close();
@@ -114,6 +119,7 @@ try {
   const native = await app.browserWindow(page);
   await setNativeViewport(page, native, { width: 1280, height: 720, zoomFactor: 1 });
   const explorer = page.locator(".workspace-explorer .project-explorer");
+  const chat = page.locator(".workspace-chat");
   const picker = page.getByRole("combobox", { name: message("en-US", "project.current") });
   const title = explorer.locator(".project-explorer-title bdi");
   async function selectProject(project) {
@@ -192,6 +198,8 @@ try {
     "aria-current",
     "true",
   );
+  await conversations.press("Enter");
+  await expect(conversations).toHaveAttribute("aria-expanded", "false");
   const connection = await page.evaluate(
     () => window.ohtia.foundation.readConnection("chatgpt").result,
   );
@@ -206,10 +214,12 @@ try {
   await button(explorer, "memory.title").press("Enter");
   await expect(page.getByRole("tab", { name: message("en-US", "memory.title") })).toBeFocused();
   await expect(page.getByText(memory, { exact: true })).toBeVisible();
-  await button(page, "history.show").press("Enter");
-  await expect(button(page, "history.return")).toBeFocused();
-  await button(page, "history.return").press("Enter");
-  await expect(button(page, "history.show")).toBeFocused();
+  if (!(await chat.isVisible())) await button(page, "workspace.chat.open").press("Enter");
+  await expect(button(chat, "history.show")).toBeVisible();
+  await button(chat, "history.show").press("Enter");
+  await expect(button(chat, "history.return")).toBeFocused();
+  await button(chat, "history.return").press("Enter");
+  await expect(button(chat, "history.show")).toBeFocused();
   await expect(page.getByText(memory, { exact: true })).toBeVisible();
 
   for (const project of [projects[0], projects[2], projects[1]]) {
@@ -229,6 +239,146 @@ try {
     }
   }
 
+  // Re-enter the project for each layout so history starts without any pages from the explorer.
+  const heading = chat.getByRole("heading", { level: 2 });
+  const viewport = chat.locator(":scope > .workspace-panel-scroll");
+  const timeline = chat.locator(".conversation-timeline");
+  const composer = chat.getByRole("textbox");
+  const rows = chat.locator(".chat-history-row");
+  const older = button(chat, "history.loadOlder");
+  const scrollTop = (locator) => locator.evaluate((node) => node.scrollTop);
+  const withinViewport = (locator) =>
+    locator.evaluate((node) => {
+      const viewport = node.closest(".workspace-panel-scroll");
+      const { top, bottom } = node.getBoundingClientRect();
+      const scrollportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+      return top >= scrollportTop && bottom <= scrollportTop + viewport.clientHeight;
+    });
+  const stationaryLayout = () =>
+    viewport.evaluate((node) => ({
+      headerTop: node.previousElementSibling.getBoundingClientRect().top,
+      windowScroll: window.scrollY,
+      pageScrollRange:
+        document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight,
+      adjacent: [
+        ...document.querySelectorAll(
+          ".workspace-panel:not(.workspace-chat) > .workspace-panel-scroll",
+        ),
+      ]
+        .filter((panel) => panel.getClientRects().length > 0)
+        .map((panel) => [panel.getBoundingClientRect().top, panel.scrollTop]),
+    }));
+
+  const draft = "Private interview notes";
+  for (const width of [1280, 600]) {
+    await setNativeViewport(page, native, { width, height: 720, zoomFactor: 1 });
+    await selectProject(projects[2]);
+    if (width < 1024) await button(page, "command.panels.chat").press("Enter");
+    await expect(composer).toHaveValue("");
+    await button(chat, "history.show").press("Enter");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("Other project's conversation");
+    await expect(rows.first()).toHaveAttribute("aria-current", "true");
+    expect(await withinViewport(rows.first())).toBe(true);
+
+    await selectProject(projects[1]);
+    await expect(heading).toHaveText("Interview 51");
+    if (width >= 1024) await composer.fill(draft);
+    else await expect(composer).toHaveValue(draft);
+    await expect.poll(() => scrollTop(timeline)).toBeGreaterThan(0);
+    const timelineBottom = await scrollTop(timeline);
+    await timeline.hover();
+    await page.mouse.wheel(0, -250);
+    await expect.poll(() => scrollTop(timeline)).toBeLessThan(timelineBottom);
+    // Wait for Chromium's scroll animation before retaining the timeline's reading position.
+    await expect.poll(() => scrollTop(timeline)).toBe(timelineBottom - 250);
+    const readingPosition = await scrollTop(timeline);
+
+    await button(chat, "history.show").press("Enter");
+    await expect(button(chat, "history.return")).toBeFocused();
+    await expect(rows).toHaveCount(50);
+    await expect(rows.locator(".chat-history-title")).toHaveText(
+      Array.from({ length: 50 }, (_, index) => `Interview ${51 - index}`),
+    );
+    await expect(rows.first()).toHaveAttribute("aria-current", "true");
+    await expect(older).toBeEnabled();
+    expect(await scrollTop(viewport)).toBe(0);
+    expect(await withinViewport(older)).toBe(false);
+    const initialLayout = await stationaryLayout();
+    expect(initialLayout.pageScrollRange).toBe(0);
+    expect(initialLayout.adjacent).toHaveLength(width < 1024 ? 0 : 2);
+
+    // Reach the action by wheel input before moving focus to any offscreen control.
+    await viewport.hover();
+    await page.mouse.wheel(0, await viewport.evaluate((node) => node.scrollHeight));
+    await expect.poll(() => scrollTop(viewport)).toBeGreaterThan(0);
+    await expect.poll(() => withinViewport(older)).toBe(true);
+    expect(await withinViewport(rows.last())).toBe(true);
+
+    await viewport.focus();
+    await expect(viewport).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect.poll(() => scrollTop(viewport)).toBe(0);
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => scrollTop(viewport)).toBeGreaterThan(0);
+    expect(await stationaryLayout()).toEqual(initialLayout);
+    await expect(rows).toHaveCount(50);
+
+    await page.keyboard.press("Tab");
+    await expect(rows.first()).toBeFocused();
+    for (let index = 0; index < 50; ++index) await page.keyboard.press("Tab");
+    await expect(older).toBeFocused();
+    expect(await withinViewport(older)).toBe(true);
+
+    await interceptOlderPage(failure("storage_failed"));
+    await page.keyboard.press("Enter");
+    await expect(chat.getByRole("alert")).toHaveText(message("en-US", "history.olderFailed"));
+    await expect(rows).toHaveCount(50);
+    await expect(older).toBeFocused();
+    expect(await withinViewport(older)).toBe(true);
+
+    await page.keyboard.press("Enter");
+    await expect(rows).toHaveCount(51);
+    await expect(rows.last().locator(".chat-history-title")).toHaveText("Interview 1");
+    await expect(rows.nth(49)).toBeFocused();
+    expect(await withinViewport(rows.nth(49))).toBe(true);
+    await page.keyboard.press("Tab");
+    await expect(rows.last()).toBeFocused();
+    expect(await withinViewport(rows.last())).toBe(true);
+    await expect(rows.first()).toHaveAttribute("aria-current", "true");
+    await expect(older).toHaveCount(0);
+
+    if (width >= 1024) {
+      await button(page, "workspace.chat.hide").press("Enter");
+      await expect(chat).toBeHidden();
+      await expect(button(page, "workspace.chat.open")).toBeFocused();
+      await button(page, "workspace.chat.open").press("Enter");
+    } else {
+      await button(page, "workspace.contents").press("Enter");
+      await expect(chat).toBeHidden();
+      await button(page, "command.panels.chat").press("Enter");
+    }
+    await expect(heading).toHaveText(message("en-US", "history.title"));
+    await expect(rows).toHaveCount(51);
+    await button(chat, "history.return").press("Enter");
+    await expect(button(chat, "history.show")).toBeFocused();
+    await expect(composer).toHaveValue(draft);
+    expect(await scrollTop(timeline)).toBe(readingPosition);
+
+    await button(chat, "history.show").press("Enter");
+    await rows.last().press("Enter");
+    await expect(heading).toHaveText("Interview 1");
+    await expect(button(chat, "history.show")).toBeFocused();
+    await expect(composer).toHaveValue("");
+    await button(chat, "history.show").press("Enter");
+    await expect(rows.last()).toHaveAttribute("aria-current", "true");
+    await rows.first().press("Enter");
+    await expect(heading).toHaveText("Interview 51");
+    await expect(composer).toHaveValue(draft);
+    await expect.poll(() => scrollTop(timeline)).toBe(readingPosition);
+  }
+
+  await setNativeViewport(page, native, { width: 1280, height: 720, zoomFactor: 1 });
   const views = [];
   for (const [locale, theme, width] of [
     ["en-US", "light", 1280],
@@ -277,6 +427,7 @@ try {
           "V06 loading, populated, empty, unsupported, and injected page failure and retry with provider disconnected",
           "V08 late older page during A→B→A",
           "V13 history and memory independence",
+          "V13 right history wheel and keyboard scrolling, explicit pagination and retry, focus and draft/reading position in wide and narrow layouts",
         ],
       },
       null,
