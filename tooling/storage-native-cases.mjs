@@ -888,8 +888,16 @@ async function run() {
         state: "retry_required",
         checkpointProblem: "checkpoint_incompatible",
       });
-      await assert.rejects(store.retry());
-      await assert.rejects(store.restorePending(manifest));
+      await assert.rejects(
+        store.retry(),
+        /checkpoint_incompatible/,
+        "Retry accepted a conflicting release.",
+      );
+      await assert.rejects(
+        store.restorePending(manifest),
+        /checkpoint_incompatible/,
+        "Restore accepted a conflicting release.",
+      );
       assert.deepEqual(fs.readFileSync(live), liveBytes);
 
       fs.writeFileSync(gate, JSON.stringify(pending));
@@ -898,7 +906,11 @@ async function run() {
         state: "retry_required",
         checkpointProblem: "checkpoint_missing",
       });
-      await assert.rejects(store.restorePending(manifest));
+      await assert.rejects(
+        store.restorePending(manifest),
+        { code: "ENOENT" },
+        "Restore accepted a missing snapshot.",
+      );
       fs.renameSync(snapshot + ".saved", snapshot);
       if (process.platform === "win32")
         execFileSync(icacls, [snapshot, "/deny", `${os.userInfo().username}:(R)`], {
@@ -910,7 +922,10 @@ async function run() {
           state: "retry_required",
           checkpointProblem: "checkpoint_unreadable",
         });
-        await assert.rejects(store.restorePending(manifest));
+        await assert.rejects(
+          store.restorePending(manifest),
+          "Restore accepted an unreadable snapshot.",
+        );
         assert.deepEqual(fs.readFileSync(live), liveBytes);
       } finally {
         if (process.platform === "win32")
@@ -924,7 +939,11 @@ async function run() {
         state: "retry_required",
         checkpointProblem: "checkpoint_invalid",
       });
-      await assert.rejects(store.restorePending(manifest));
+      await assert.rejects(
+        store.restorePending(manifest),
+        /Checkpoint identity mismatch/,
+        "Restore accepted a corrupt snapshot.",
+      );
       assert.deepEqual(fs.readFileSync(live), liveBytes);
       fs.writeFileSync(snapshot, bytes);
       const verified = store.recoveryState();
@@ -932,36 +951,60 @@ async function run() {
       assert.equal(verified.checkpoint.operation, operation);
       await assert.rejects(
         store.restorePending({ ...verified.checkpoint, sha256: "0".repeat(64) }),
+        /recovery_stale/,
+        "Restore accepted a different verified digest.",
       );
       assert.equal(fs.existsSync(path.join(root, "restore-pending.json")), false);
       assert.deepEqual(fs.readFileSync(live), liveBytes);
 
-      const recovery = path.join(root, "recovery/migrations");
+      const liveIntent = fs.readFileSync(gate);
+      const probe = path.join(root, "restore-write-probe.db3");
+      const permissionDenied = (error) => error.code === "EACCES" || error.code === "EPERM";
       if (process.platform === "win32")
-        execFileSync(icacls, [recovery, "/deny", `${os.userInfo().username}:(OI)(CI)(W)`], {
+        execFileSync(icacls, [root, "/deny", `${os.userInfo().username}:(WD)`], {
           stdio: "ignore",
         });
-      else fs.chmodSync(recovery, 0o500);
+      else fs.chmodSync(root, 0o500);
       try {
-        await assert.rejects(store.restorePending(verified.checkpoint));
+        // Restoration materializes the snapshot in the store root before touching the failed copy.
+        assert.throws(
+          () => fs.copyFileSync(snapshot, probe, fs.constants.COPYFILE_EXCL),
+          permissionDenied,
+          "The native fixture must deny materializing a copy in the store root.",
+        );
+        await assert.rejects(
+          store.restorePending(verified.checkpoint),
+          permissionDenied,
+          "Restore accepted a denied materialization.",
+        );
         assert.equal(store.ready, false);
         assert.deepEqual(fs.readFileSync(live), liveBytes);
+        assert.deepEqual(fs.readFileSync(gate), liveIntent);
         assert.equal(fs.existsSync(path.join(root, "restore-pending.json")), false);
       } finally {
         if (process.platform === "win32")
-          execFileSync(icacls, [recovery, "/remove:d", os.userInfo().username], {
+          execFileSync(icacls, [root, "/remove:d", os.userInfo().username], {
             stdio: "ignore",
           });
-        else fs.chmodSync(recovery, 0o700);
+        else fs.chmodSync(root, 0o700);
+        fs.rmSync(probe, { force: true });
       }
       fs.writeFileSync(path.join(root, "ohtia.db3-journal"), "synthetic retained journal marker");
       fs.renameSync = function (source, target) {
         if (String(source).endsWith("-journal")) throw new Error("Interrupted journal move.");
         return rename(source, target);
       };
-      await assert.rejects(store.restorePending(verified.checkpoint));
+      await assert.rejects(
+        store.restorePending(verified.checkpoint),
+        /Interrupted journal move/,
+        "Restore accepted the interrupted journal move.",
+      );
       fs.renameSync = rename;
-      await assert.rejects(store.retry());
+      await assert.rejects(
+        store.retry(),
+        /Complete the pending checkpoint restoration first/,
+        "Retry admitted an incomplete restoration.",
+      );
       await store.restorePending(verified.checkpoint);
       assert.equal(fs.existsSync(path.join(root, "ohtia.db3-journal")), false);
       const failed = fs
