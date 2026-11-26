@@ -250,8 +250,7 @@ async function verifySettingsDeletion(application, page, locale, activeRecord, d
         zoomFactor: 4,
       });
       assert.equal(viewport.viewportWidth, 320);
-      const category = dialog.getByRole("button", { name: text("diagnostics.title"), exact: true });
-      if (await category.isVisible()) await category.press("Enter");
+      await expect(dialog.locator(".settings-back")).toBeVisible();
       await trigger.press("Enter");
       await expect(cancel).toBeFocused();
       await expect(group).toContainText(text("diagnostics.deleteScope"));
