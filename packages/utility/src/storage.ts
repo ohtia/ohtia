@@ -295,6 +295,11 @@ import {
   historySchema as projectTitleHistorySchema,
   objects as projectTitleObjects,
 } from "./migrations/0038_project_title_revision.mjs";
+import {
+  up as thesisProfileMigration,
+  tables as thesisProfileTables,
+  objects as thesisProfileObjects,
+} from "./migrations/0039_thesis_profile.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -447,6 +452,7 @@ const names = [
   "0036_openai_usage_pauses",
   "0037_update_check_preference",
   "0038_project_title_revision",
+  "0039_thesis_profile",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -682,6 +688,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 34 ? Object.keys(agentPreferenceTables) : []),
     ...(revision >= 37 ? ["update_check_receipts"] : []),
     ...(revision >= 38 ? ["project_title_history"] : []),
+    ...(revision >= 39 ? Object.keys(thesisProfileTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -925,6 +932,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 37 ? [["update_check_receipts", updateCheckReceiptsSchema]] : []),
     ...(revision >= 38 ? [["project_title_history", projectTitleHistorySchema]] : []),
+    ...(revision >= 39 ? Object.entries(thesisProfileTables) : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
     ...(revision >= 34
@@ -986,6 +994,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 35 ? anthropicObjects : {}),
                 ...(revision >= 36 ? openaiUsageObjects : {}),
                 ...(revision >= 38 ? projectTitleObjects : {}),
+                ...(revision >= 39 ? thesisProfileObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1413,6 +1422,7 @@ export class DurableStore {
                 "0036_openai_usage_pauses": { up: openaiUsagePauses },
                 "0037_update_check_preference": { up: updateCheckPreference },
                 "0038_project_title_revision": { up: projectTitleMigration },
+                "0039_thesis_profile": { up: thesisProfileMigration },
               }),
           },
         });
@@ -3081,6 +3091,7 @@ export class DurableStore {
         "development.sendToJosefa": { event_name: "ohtia.development.josefa_message_appended" },
         "project.create": { event_name: "ohtia.project.created" },
         "project.rename": { event_name: "ohtia.project.renamed" },
+        "profile.save": { event_name: "ohtia.profile.saved" },
         "project.open": { event_name: "ohtia.project.opened" },
         "project.confirmSetup": { event_name: "ohtia.project.setup_confirmed" },
         "project.rejectSetup": { event_name: "ohtia.project.setup_rejected" },

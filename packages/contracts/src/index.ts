@@ -27,3 +27,5 @@ export * from "./application-exit.js";
 export * from "./update-check.js";
 
 export * from "./research-port.js";
+export * from "./canonical-json.js";
+export * from "./thesis-profile.js";

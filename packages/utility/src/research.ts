@@ -10,6 +10,8 @@ import * as crypto from "node:crypto";
 import { type Generated, type Kysely, type Selectable, sql } from "kysely";
 import {
   isUsagePauseConnection,
+  canonicalJson,
+  isUnicodeText,
   failure,
   isConnectionId,
   isPlanConnections,
@@ -75,7 +77,15 @@ import {
 import type { ContinuationRow, PlanEventRow } from "./plan-coordination.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 import { changeResearcherMemory, undoMemory, type MemorySchema } from "./project-memory.js";
-export interface ResearchSchema extends TaskSchema, MemorySchema, AgentPreferenceSchema {
+import {
+  profileReceiptResult,
+  profileSaveHash,
+  saveProfile,
+  type ThesisProfileSchema,
+} from "./thesis-profile.js";
+
+export interface ResearchSchema
+  extends TaskSchema, MemorySchema, AgentPreferenceSchema, ThesisProfileSchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
@@ -135,12 +145,6 @@ export function newId(): Buffer {
   if (!isEntityId(id)) throw new Error("UUIDv7 generation unavailable.");
   return bytes(id);
 }
-function text(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
-  );
-}
 function object(value: unknown): value is Record<string, unknown> {
   return (
     value !== null &&
@@ -152,46 +156,7 @@ function object(value: unknown): value is Record<string, unknown> {
     })
   );
 }
-/** RFC 8785: ECMAScript primitives, UTF-16 key order, no normalization or invalid Unicode. */
-export function canonicalJson(value: unknown): string {
-  const ancestors = new Set<object>();
-  function encode(item: unknown): string {
-    if (item === null || typeof item === "boolean") return JSON.stringify(item);
-    if (typeof item === "number" && Number.isFinite(item)) return JSON.stringify(item);
-    if (text(item)) return JSON.stringify(item);
-    if (!item || typeof item !== "object" || ancestors.has(item))
-      throw new Error("Invalid canonical JSON input.");
-    ancestors.add(item);
-    try {
-      if (Array.isArray(item)) {
-        if (
-          Object.getPrototypeOf(item) !== Array.prototype ||
-          Reflect.ownKeys(item).length !== item.length + 1
-        )
-          throw new Error("Invalid JSON array.");
-        const elements: string[] = [];
-        for (let index = 0; index < item.length; index++) {
-          const descriptor = Object.getOwnPropertyDescriptor(item, String(index));
-          if (!descriptor?.enumerable || !("value" in descriptor))
-            throw new Error("Invalid JSON array element.");
-          elements.push(encode(descriptor.value));
-        }
-        return `[${elements.join(",")}]`;
-      }
-      if (!object(item)) throw new Error("Invalid JSON object.");
-      return `{${Object.keys(item)
-        .sort()
-        .map((key) => {
-          if (!text(key)) throw new Error("Invalid JSON property.");
-          return `${JSON.stringify(key)}:${encode(item[key])}`;
-        })
-        .join(",")}}`;
-    } finally {
-      ancestors.delete(item);
-    }
-  }
-  return encode(value);
-}
+export { canonicalJson };
 
 export class LanguageRegistry {
   private readonly subtags = new Map<string, Set<string>>();
@@ -329,6 +294,7 @@ const payloadKeys = {
   "task.continueAll": [],
   "task.cancelAll": [],
   "project.rename": ["projectId", "title", "expectedTitleRevision"],
+  "profile.save": ["projectId", "expectedRevision", "patch"],
   "project.confirmSetup": ["proposalId"],
   "project.rejectSetup": ["proposalId"],
   "conversation.start": ["projectId", "content"],
@@ -358,9 +324,12 @@ export async function applyResearchCommand(
     return failure("invalid_message");
   let hash: Buffer;
   try {
-    hash = payloadHash
-      ? Buffer.from(payloadHash, "hex")
-      : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
+    hash =
+      input.command === "profile.save"
+        ? Buffer.from(profileSaveHash(input.payload), "hex")
+        : payloadHash
+          ? Buffer.from(payloadHash, "hex")
+          : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
   } catch {
     return failure("invalid_message");
   }
@@ -674,6 +643,12 @@ export async function applyResearchCommand(
       }
       break;
     }
+    case "profile.save": {
+      const saved = await saveProfile(db, input.payload, input.operationId);
+      if (!saved.ok) return saved;
+      result = saved.value;
+      break;
+    }
     case "project.rename": {
       const { projectId, title, expectedTitleRevision } = input.payload;
       if (
@@ -786,7 +761,8 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (current.setup_confirmed_at === null) return failure("project_in_setup");
-      if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
+      if (!isUnicodeText(p.content) || !validResearcherMessage(p.content))
+        return failure("message_invalid");
       const agent = Object.hasOwn(p, "agentId") ? p.agentId : "virgilio";
       if (!isConversationAgent(agent)) return failure("invalid_message");
       if (!isReplyAgent(agent)) return failure("agent_unavailable");
@@ -851,7 +827,8 @@ export async function applyResearchCommand(
         .where("id", "=", bytes(p.conversationId))
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
-      if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
+      if (!isUnicodeText(p.content) || !validResearcherMessage(p.content))
+        return failure("message_invalid");
       // The development command still exercises initial Josefa replies. After a
       // handoff, the same ownership boundary applies to every ordinary reply.
       const toJosefa = input.command === "development.sendToJosefa";
@@ -906,6 +883,8 @@ export async function researchReceiptResult(
   receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id" | "operation_id">,
 ): Promise<ResearchResult> {
   const resultId = identifier(receipt.result_id);
+  if (receipt.command === "profile.save")
+    return profileReceiptResult(db, receipt.operation_id, receipt.result_id);
   if (receipt.command === "project.rename") {
     const row = await db
       .selectFrom("project_title_history")

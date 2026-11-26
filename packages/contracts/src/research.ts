@@ -147,6 +147,11 @@ export const conversationBusyReasons = [
 export type ConversationBusyReason = (typeof conversationBusyReasons)[number];
 
 export interface ResearchPayloads {
+  readonly "profile.save": {
+    readonly projectId: string;
+    readonly expectedRevision: number;
+    readonly patch: string;
+  };
   readonly "agentPreference.replace": ReplaceAgentPreference;
   readonly "handoff.accept": {
     readonly proposalId: string;
@@ -234,6 +239,7 @@ export interface ResearchResult {
   readonly resultId: string;
   readonly outcome?: PlanOutcome;
   readonly titleChange?: ProjectTitleChange;
+  readonly profileChange?: import("./thesis-profile.js").ProfileChange;
 }
 interface ProjectTitleChange {
   readonly title: string;
@@ -279,6 +285,7 @@ export const researchCommands = [
   "project.create",
   "project.open",
   "project.rename",
+  "profile.save",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",

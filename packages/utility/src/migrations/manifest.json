@@ -150,5 +150,9 @@
   {
     "name": "0038_project_title_revision",
     "sha256": "10021a648d0094148819c8a5920c29f635b6166a79d2b7a3f8d8ce0519f89ff5"
+  },
+  {
+    "name": "0039_thesis_profile",
+    "sha256": "ffea5ddb5b692fad4cc4725932a490c2cd1e9e2ca397ad16b40a5ad5d4f31fa2"
   }
 ]

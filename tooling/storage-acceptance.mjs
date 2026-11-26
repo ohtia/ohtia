@@ -10,6 +10,7 @@ import {
   confirmProjectRenameFixture,
   verifyPackagedProjectRename,
 } from "./project-rename-acceptance.mjs";
+import { verifyPackagedThesisProfile } from "./thesis-profile-acceptance.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { runStorageComponent } from "./storage-component-runner.mjs";
 import {
@@ -787,6 +788,8 @@ try {
   confirmProjectRenameFixture(databaseFile, projects);
   page = await start();
   await open(page);
+  enterPhase("verify-packaged-thesis-profile", ".project-selector-button");
+  record("packaged-thesis-profile", await verifyPackagedThesisProfile(application, page, projects));
   enterPhase("verify-packaged-project-rename", ".project-selector-button");
   record(
     "packaged-project-rename",
