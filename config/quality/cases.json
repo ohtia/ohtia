@@ -2857,7 +2857,7 @@
     "tests/settings-dialog.test.ts::compact Settings dialog > explains a native portal reduced-motion request live without changing the confirmed choice::case-0",
     "tests/settings-dialog.test.ts::compact Settings dialog > keeps the default model when another service connects and refreshes its catalog::case-0",
     "tests/settings-dialog.test.ts::compact Settings dialog > keeps zoom bounds focusable and explains pending, uncertain, rejected and conflict states::case-0",
-    "tests/settings-dialog.test.ts::compact Settings dialog > pages bounded diagnostic entries and recovers the active log after stale archives::case-0",
+    "tests/settings-dialog.test.ts::compact Settings dialog > pages bounded diagnostic entries and refreshes the selected archive after failures::case-0",
     "tests/settings-dialog.test.ts::compact Settings dialog > preserves memory controls and returns focus after the first model read recovers::case-0",
     "tests/settings-dialog.test.ts::compact Settings dialog > renders all controls and autonyms in ca-AD without untranslated placeholders::case-0",
     "tests/settings-dialog.test.ts::compact Settings dialog > renders all controls and autonyms in ca-ES without untranslated placeholders::case-0",
