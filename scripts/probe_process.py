@@ -73,12 +73,21 @@ def run_owned(
     *,
     cancelled: Callable[[], bool] | None = None,
     output=None,
+    windows_without_backup_privilege: bool = False,
 ) -> dict:
     """Use a POSIX process group or a Windows kill-on-close job before probe execution."""
     if os.name == "nt":
         if cancelled is not None:
             raise OSError("Cooperative cancellation is supported only by the POSIX supervisor.")
-        return _windows_job(command, cwd, env, timeout, grace, output=output)
+        return _windows_job(
+            command,
+            cwd,
+            env,
+            timeout,
+            grace,
+            output=output,
+            without_backup_privilege=windows_without_backup_privilege,
+        )
     if not all(
         hasattr(os, name)
         for name in (
@@ -174,7 +183,59 @@ def run_owned(
     }
 
 
-def _windows_job(command, cwd, env, timeout, grace, *, output=None):
+def _remove_windows_backup_privilege(process: int) -> None:
+    """Use ordinary file access in the Windows storage permission test and its descendants."""
+    import ctypes as c
+    from ctypes import wintypes as w
+
+    class Luid(c.Structure):
+        _fields_ = [("low", w.DWORD), ("high", w.LONG)]
+
+    class Privilege(c.Structure):
+        _fields_ = [("luid", Luid), ("attributes", w.DWORD)]
+
+    class TokenPrivileges(c.Structure):
+        _fields_ = [("count", w.DWORD), ("privilege", Privilege)]
+
+    advapi = c.WinDLL("advapi32", use_last_error=True)
+    kernel = c.WinDLL("kernel32", use_last_error=True)
+    advapi.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, c.POINTER(w.HANDLE)]
+    advapi.OpenProcessToken.restype = w.BOOL
+    advapi.LookupPrivilegeValueW.argtypes = [w.LPCWSTR, w.LPCWSTR, c.POINTER(Luid)]
+    advapi.LookupPrivilegeValueW.restype = w.BOOL
+    advapi.AdjustTokenPrivileges.argtypes = [
+        w.HANDLE,
+        w.BOOL,
+        c.POINTER(TokenPrivileges),
+        w.DWORD,
+        c.c_void_p,
+        c.c_void_p,
+    ]
+    advapi.AdjustTokenPrivileges.restype = w.BOOL
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    kernel.CloseHandle.restype = w.BOOL
+
+    luid = Luid()
+    if not advapi.LookupPrivilegeValueW(None, "SeBackupPrivilege", c.byref(luid)):
+        raise c.WinError(c.get_last_error())
+    token = w.HANDLE()
+    if not advapi.OpenProcessToken(process, 0x20, c.byref(token)):  # TOKEN_ADJUST_PRIVILEGES
+        raise c.WinError(c.get_last_error())
+    try:
+        privileges = TokenPrivileges(1, Privilege(luid, 0x4))  # SE_PRIVILEGE_REMOVED
+        c.set_last_error(0)
+        adjusted = advapi.AdjustTokenPrivileges(token, False, c.byref(privileges), 0, None, None)
+        error = c.get_last_error()
+        # ERROR_NOT_ALL_ASSIGNED also occurs for an ordinary token without the privilege.
+        if not adjusted or error not in (0, 1300):
+            raise c.WinError(error)
+        state = "absent" if error == 1300 else "removed"
+        print(f"Native Windows storage acceptance backup privilege: {state}.", flush=True)
+    finally:
+        kernel.CloseHandle(token)
+
+
+def _windows_job(command, cwd, env, timeout, grace, *, output=None, without_backup_privilege=False):
     import ctypes as c
     from ctypes import wintypes as w
 
@@ -269,9 +330,14 @@ def _windows_job(command, cwd, env, timeout, grace, *, output=None):
             stderr=output,
             creationflags=0x4,  # CREATE_SUSPENDED: assign containment before any Electron code.
         )
-        process = check(kernel.OpenProcess(0x101, False, child.pid))
+        access = 0x101
+        if without_backup_privilege:
+            access |= 0x1000  # PROCESS_QUERY_LIMITED_INFORMATION for OpenProcessToken.
+        process = check(kernel.OpenProcess(access, False, child.pid))
         try:
             check(kernel.AssignProcessToJobObject(job, process))
+            if without_backup_privilege:
+                _remove_windows_backup_privilege(process)
         finally:
             kernel.CloseHandle(process)
         snapshot = kernel.CreateToolhelp32Snapshot(4, 0)

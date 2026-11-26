@@ -508,6 +508,7 @@ const bridge: DesktopBridge = {
     replaceLayout: (change) => connection.client.port.replaceLayout(change),
     readLayoutReceipt: (operation) => connection.client.port.readLayoutReceipt(operation),
     readStatus: () => connection.client.port.readStatus(),
+    readManagedStoreLocation: () => connection.client.port.readManagedStoreLocation(),
     readAppearance: () => connection.client.port.readAppearance(),
     readAppearanceReceipt: (operation) => connection.client.port.readAppearanceReceipt(operation),
     replaceAppearance: (change, generation) =>

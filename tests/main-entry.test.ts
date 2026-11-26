@@ -812,6 +812,38 @@ describe("broker composition with synthetic Electron adapters", () => {
     h.window.emit("ready-to-show");
     expect(h.window.show).toHaveBeenCalled();
   });
+  it("serves managed location availability in main and releases each request slot", async () => {
+    const h = await launch({ locator: "locator_invalid" });
+    const { desktopChannels, encodeEnvelope, decodeText, policyId, portLimits } = h.constants;
+    const event = h.event();
+    h.ipcMain.emit(desktopChannels.session, event);
+    for (let index = 0; index <= portLimits.pending_per_window; index++) {
+      const id = `managed-location-${String(index)}`;
+      const encoded = encodeEnvelope({
+        protocol: 1,
+        policy: policyId,
+        kind: "request",
+        ...event.returnValue,
+        requestId: id,
+        operationId: id,
+        operation: "managedStore.readLocation",
+        payload: {},
+      });
+      if (!encoded.ok) throw new Error("Invalid test request");
+      h.ipcMain.emit(desktopChannels.port, event, encoded.value);
+      const sent = h.window.webContents.mainFrame.send.mock.calls.at(-1);
+      expect(sent[0]).toBe(desktopChannels.reply);
+      expect(decodeText(sent[1])).toMatchObject({
+        ok: true,
+        value: {
+          requestId: id,
+          payload: { ok: true, value: { state: "unavailable", reason: "locator_invalid" } },
+        },
+      });
+    }
+    expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
+  });
+
   it("binds actual session generations and rejects untrusted frames before dispatch", async () => {
     const h = await launch();
     const session = h.event();

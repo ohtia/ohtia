@@ -32,6 +32,7 @@ import {
   type ConversationSummary,
   type ResearchEvent,
   type FoundationPort,
+  type ManagedStoreLocation,
   type Outcome,
   type ResearchOutputs,
   type ResearchScope,
@@ -101,6 +102,12 @@ function fixture() {
   const port = {
     ...settings.port,
     listProjects: vi.fn(() => call({ ok: true, value: { items: [], next: null, hasMore: false } })),
+    readManagedStoreLocation: vi.fn(() =>
+      call<ManagedStoreLocation>({
+        ok: true,
+        value: { state: "unavailable", reason: "pending_create" },
+      }),
+    ),
     readStatus: vi.fn(() =>
       call({
         ok: true,
@@ -319,6 +326,79 @@ describe("integrated application authority", () => {
     expect(document.activeElement).toBe(language);
     expect(content.scrollTop).toBe(45);
     expect(t.port.readLayout).toHaveBeenCalledOnce();
+  });
+
+  it("inspects the managed location only on its page and discards a reply from older admission", async () => {
+    const t = fixture();
+    const first = deferred<Outcome<ManagedStoreLocation>>();
+    const cancelFirst = vi.fn();
+    const directory = "/home/Synthetic <research>/ohtia";
+    t.port.readManagedStoreLocation
+      .mockReturnValueOnce({ result: first.promise, cancel: cancelFirst })
+      .mockReturnValueOnce(call({ ok: true, value: { state: "unavailable", reason: "missing" } }))
+      .mockReturnValueOnce(call({ ok: true, value: { state: "available", directory } }));
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "storage_ready",
+      serviceGeneration: "initial",
+    });
+    await mount(t);
+    await t.intent("settings.open");
+    expect(t.port.readManagedStoreLocation).not.toHaveBeenCalled();
+    const nav = [...container.querySelectorAll<HTMLButtonElement>(".settings-pages button")].find(
+      (button) => button.textContent === message("en-US", "location"),
+    )!;
+    await act(async () => nav.click());
+    const content = container.querySelector<HTMLElement>(".settings-page:not([hidden])")!;
+    expect(content.textContent).toContain(message("en-US", "settings.storage.checking"));
+
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "storage_ready",
+      serviceGeneration: "replacement",
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(cancelFirst).toHaveBeenCalledOnce();
+    await act(async () =>
+      first.resolve({ ok: true, value: { state: "available", directory: "/old/ohtia" } }),
+    );
+    expect(content.querySelector("bdi")).toBeNull();
+    expect(content.textContent).toContain(message("en-US", "settings.storage.locatorMissing"));
+
+    const check = content.querySelector("button")!;
+    await act(async () => {
+      check.focus();
+      check.click();
+    });
+    expect(content.querySelector("bdi")?.textContent).toBe(directory);
+    expect(content.textContent).toContain(message("en-US", "settings.storage.sensitivity"));
+    expect(document.activeElement).toBe(check);
+    for (const [result, key] of [
+      [failure("busy"), "command.reason.busy"],
+      [failure("timeout"), "settings.storage.unavailable"],
+      [
+        { ok: true, value: { state: "unavailable", reason: "location_display_unavailable" } },
+        "settings.storage.unavailable",
+      ],
+      [
+        { ok: true, value: { state: "unavailable", reason: "pending_create" } },
+        "settings.storage.openData",
+      ],
+      [
+        { ok: true, value: { state: "unavailable", reason: "located" } },
+        "settings.storage.openData",
+      ],
+      [{ ok: true, value: { state: "unavailable", reason: "path_rejected" } }, "path_rejected"],
+    ] as const) {
+      t.port.readManagedStoreLocation.mockReturnValueOnce(call(result));
+      await act(async () => check.click());
+      expect(content.querySelector("[role=status]")?.textContent).toBe(message("en-US", key));
+      expect(content.querySelector(".managed-store-directory")).toBeNull();
+      expect(document.activeElement).toBe(check);
+    }
+    expect(t.bridge.bootstrap.restoreCheckpoint).not.toHaveBeenCalled();
   });
 
   it("opens Settings after the bootstrap launcher disappears at the driver's stable-click boundary", async () => {

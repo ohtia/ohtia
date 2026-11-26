@@ -1,5 +1,7 @@
 // Non-shipping native acceptance; each run retains complete failed and passing observations.
+import assert from "node:assert/strict";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -219,10 +221,296 @@ async function component(mode, directory, expectedInterruption = false) {
     env: launch.env,
   });
 }
+const everyoneSid = "*S-1-1-0";
+
+function windowsStorageAcl(cwd, args) {
+  const icacls = path.join(launch.env.SystemRoot, "System32", "icacls.exe");
+  return execFileSync(icacls, args, {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 15_000,
+    maxBuffer: 32_768,
+    windowsHide: true,
+  });
+}
+
+function denyWindowsStorageRead(acl, original) {
+  acl(["/deny", `${everyoneSid}:(RD)`]);
+  assert.ok(!acl().equals(original), "The fixture read-deny rule is missing.");
+}
+
+async function withWindowsLocatorReadDenied(locator, operation) {
+  // A same-volume move retains the original record and its ACL.
+  const { dev, ino } = fs.statSync(locator, { bigint: true });
+  const scratch = fs.mkdtempSync(path.join(path.dirname(locator), ".storage-read-acl-"));
+  const saved = path.join(scratch, "original.json");
+  const denied = path.join(scratch, "denied.json");
+  let originalMoved = false;
+  return withCommandCleanup(
+    async () => {
+      fs.copyFileSync(locator, denied, fs.constants.COPYFILE_EXCL);
+      const acl = (args = []) => windowsStorageAcl(scratch, [path.basename(denied), ...args]);
+      denyWindowsStorageRead(acl, acl());
+      fs.renameSync(locator, saved);
+      originalMoved = true;
+      await withCommandCleanup(
+        async () => {
+          fs.renameSync(denied, locator);
+          await operation();
+        },
+        () => {
+          fs.renameSync(saved, locator);
+          originalMoved = false;
+          const restored = fs.statSync(locator, { bigint: true });
+          assert.ok(
+            restored.dev === dev && restored.ino === ino,
+            "The fixture must restore the original locator file.",
+          );
+        },
+      );
+    },
+    () => {
+      if (!originalMoved) fs.rmSync(scratch, { recursive: true, force: true });
+    },
+  );
+}
+
+async function withStorageReadDenied(target, operation) {
+  if (process.platform !== "win32") {
+    const mode = fs.statSync(target).mode & 0o777;
+    return withCommandCleanup(
+      async () => {
+        fs.chmodSync(target, mode & ~0o444);
+        await operation();
+      },
+      () => fs.chmodSync(target, mode),
+    );
+  }
+  if (fs.statSync(target).isFile()) return withWindowsLocatorReadDenied(target, operation);
+
+  // The admitted directory stays in place while the test temporarily denies listing.
+  const powershell = path.join(
+    launch.env.SystemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  const helper = fileURLToPath(new URL("./windows-storage-acl.ps1", import.meta.url));
+  const scratch = fs.mkdtempSync(path.join(launch.profile.scratch_root, "storage-read-acl-"));
+  const saved = path.join(scratch, "original.acl");
+  const acl = (action) =>
+    execFileSync(
+      powershell,
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "RemoteSigned",
+        "-File",
+        helper,
+        action,
+        target,
+        saved,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"], timeout: 45_000, windowsHide: true },
+    );
+  return withCommandCleanup(
+    async () => {
+      acl("deny");
+      await operation();
+    },
+    () => {
+      if (fs.existsSync(saved)) acl("restore");
+      fs.rmSync(scratch, { recursive: true, force: true });
+    },
+  );
+}
+async function verifyManagedStoreLocation(page, locale) {
+  const directory = launch.profile.research_root;
+  const locator = path.join(
+    launch.profile.configuration_root,
+    "Ohtia",
+    "settings",
+    "data-location.json",
+  );
+  const original = fs.readFileSync(locator);
+  const dialog = page.getByRole("dialog", { name: message(locale, "settings.title"), exact: true });
+  const title = message(locale, "location");
+  const heading = dialog.getByRole("heading", { name: title, exact: true });
+  const status = dialog.locator(".settings-page:not([hidden]) [role=status]");
+  const check = dialog.getByRole("button", {
+    name: message(locale, "settings.storage.check"),
+    exact: true,
+  });
+  const shownPath = dialog.locator(".managed-store-directory");
+  const read = () => page.evaluate(() => window.ohtia.foundation.readManagedStoreLocation().result);
+  const available = { ok: true, value: { state: "available", directory } };
+  const refused = (reason) => ({ ok: true, value: { state: "unavailable", reason } });
+  const assertReason = async (reason, text = reason) => {
+    expect(await read()).toEqual(refused(reason));
+    await page.keyboard.press("Enter");
+    await expect(status).toHaveText(message(locale, text));
+    await expect(shownPath).toHaveCount(0);
+    await expect(check).toBeFocused();
+  };
+
+  await openWorkspaceSettings(page);
+  const locationPage = dialog.getByRole("button", { name: title, exact: true });
+  await locationPage.focus();
+  await page.keyboard.press("Enter");
+  await expect(locationPage).toBeFocused();
+  await expect(heading).toBeVisible();
+  await expect(shownPath).toHaveText(directory);
+  await expect(dialog.getByText(message(locale, "settings.storage.sensitivity"))).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: message(locale, "settings.updates"), exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: message(locale, "migration_recovery"), exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(check).toBeFocused();
+  expect(await read()).toEqual(available);
+
+  const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  await withCommandCleanup(
+    async () => {
+      await resizeNativeViewport(page, { width: 320, height: 600 });
+      for (const [colorScheme, forcedColors] of [
+        ["light", "none"],
+        ["dark", "none"],
+        ["light", "active"],
+      ]) {
+        await page.emulateMedia({ colorScheme, forcedColors });
+        await expect(shownPath).toBeVisible();
+        expect(
+          await dialog
+            .locator(".settings-content")
+            .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        ).toBe(true);
+        await expect(check).toBeFocused();
+      }
+    },
+    async () => {
+      await page.emulateMedia({ colorScheme: null, forcedColors: null });
+      await resizeNativeViewport(page, size);
+    },
+  );
+
+  await withCommandCleanup(
+    async () => {
+      fs.unlinkSync(locator);
+      await assertReason("missing", "settings.storage.locatorMissing");
+      expect(fs.existsSync(locator)).toBe(false);
+
+      const records = [
+        ["{", "locator_invalid"],
+        [
+          JSON.stringify({
+            version: 1,
+            data_directory: `${directory}${path.sep}..${path.sep}${path.basename(directory)}`,
+          }),
+          "path_rejected",
+        ],
+        [
+          JSON.stringify({ version: 1, data_directory: launch.profile.stable_roots.store.root }),
+          "path_rejected",
+        ],
+      ];
+      for (const [record, reason] of records) {
+        fs.writeFileSync(locator, record, { mode: 0o600 });
+        await assertReason(reason);
+        expect(fs.readFileSync(locator, "utf8")).toBe(record);
+      }
+    },
+    () => fs.writeFileSync(locator, original, { mode: 0o600 }),
+  );
+
+  for (const [phase, target, reason, text, probe] of [
+    [
+      "deny-managed-store-locator-read",
+      locator,
+      "locator_unreadable",
+      "locator_unreadable",
+      () => fs.readFileSync(locator),
+    ],
+    [
+      "deny-managed-store-directory-list",
+      directory,
+      "location_display_unavailable",
+      "settings.storage.unavailable",
+      () => fs.opendirSync(directory).closeSync(),
+    ],
+  ]) {
+    enterPhase(`${phase}-before`, ".settings-dialog[open]");
+    probe();
+    enterPhase(`${phase}-prepare`, ".settings-dialog[open]");
+    await withStorageReadDenied(target, async () => {
+      enterPhase(phase, ".settings-dialog[open]");
+      assert.throws(
+        probe,
+        (error) => {
+          assert.ok(
+            error.code === "EACCES" || error.code === "EPERM",
+            `Unexpected read error in ${phase} (${error.code ?? "no code"}).`,
+          );
+          return true;
+        },
+        `The fixture must deny the expected read in ${phase}.`,
+      );
+      await assertReason(reason, text);
+    });
+    enterPhase(`${phase}-restored`, ".settings-dialog[open]");
+    probe();
+    expect(await read()).toEqual(available);
+  }
+  enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
+  await page.keyboard.press("Enter");
+  await expect(shownPath).toHaveText(directory);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  expect(fs.readFileSync(locator)).toEqual(original);
+  verifyStableSentinels(launch.profile);
+}
+
 try {
   let page = await start();
+  const beforeAdmission = await page.evaluate(
+    () => window.ohtia.foundation.readManagedStoreLocation().result,
+  );
+  expect(beforeAdmission.ok).toBe(true);
+  expect(beforeAdmission.value.state).toBe("unavailable");
+  expect(beforeAdmission.value).not.toHaveProperty("directory");
   const locale = await open(page);
   const text = (key) => message(locale, key);
+  enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
+  const unqualified = path.join(output, "unqualified");
+  fs.mkdirSync(unqualified);
+  const unqualifiedFile = path.join(unqualified, "runtime-profile.json");
+  fs.writeFileSync(
+    unqualifiedFile,
+    JSON.stringify({
+      ...launch.profile,
+      manual_checks: { ...launch.profile.manual_checks, local_owned_unsynchronized_volumes: false },
+    }),
+    { flag: "wx", mode: 0o600 },
+  );
+  expect(() => admittedLaunch(unqualifiedFile, prepared)).toThrow(/Isolation admission refused/);
+  await verifyManagedStoreLocation(page, locale);
+  record("inspect-managed-store-location", {
+    unqualifiedProfileRejectedBeforeLaunch: true,
+    unavailableBeforeAdmission: true,
+    matchesAdmittedNativeDirectory: true,
+    refusedLocators: ["missing", "malformed", "noncanonical", "alternate", "read-denied"],
+    unreadableResearchDirectoryRefused: true,
+    stableSentinelsUnchanged: true,
+    keyboardAndNarrowReflow: true,
+    media: ["light", "dark", "forced-colors"],
+  });
   enterPhase("subscribe-appearance");
   await page.evaluate(async () => {
     window.__storageAppearanceEvents = [];

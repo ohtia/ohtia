@@ -2,7 +2,13 @@ import fs from "node:fs";
 import { promises as files } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { portLimits, type BootstrapState, type RuntimeContext } from "@ohtia/contracts";
+import {
+  isDisplayableManagedDirectory,
+  portLimits,
+  type BootstrapState,
+  type ManagedStoreLocation,
+  type RuntimeContext,
+} from "@ohtia/contracts";
 import { containsPath, readBoundedFile } from "./profile.js";
 
 type LocatorContext = Pick<RuntimeContext, "configuration_root" | "research_root" | "stable_roots">;
@@ -14,7 +20,8 @@ export interface DataLocator {
 export type LocatorRead =
   | { readonly state: "located"; readonly locator: DataLocator }
   | {
-      readonly state: Exclude<BootstrapState, "located" | "pending_create">;
+      readonly state:
+        "missing" | "locator_invalid" | "locator_newer" | "locator_unreadable" | "path_rejected";
     };
 export function parseLocator(bytes: Uint8Array): LocatorRead {
   if (bytes.byteLength > portLimits.locator_bytes) return { state: "locator_invalid" };
@@ -75,7 +82,7 @@ export function validateDataDirectory(
   settings: string,
   profile: LocatorContext,
 ): string {
-  if (!path.isAbsolute(directory) || path.resolve(directory) !== profile.research_root)
+  if (!path.isAbsolute(directory) || directory !== profile.research_root)
     throw new Error("Data location is outside the admitted research boundary.");
   const resolved = fs.realpathSync.native(directory);
   const fixedSettings = canonicalProspective(settings);
@@ -129,6 +136,44 @@ export function readLocator(settings: string, profile: LocatorContext): LocatorR
     };
   }
 }
+/** Preserve the admitted directory identity even if the same pathname is later reused. */
+export function managedStoreRootIdentity(directory: string): string | undefined {
+  try {
+    const identity = fs.lstatSync(directory, { bigint: true });
+    if (identity.isDirectory()) return `${String(identity.dev)}:${String(identity.ino)}`;
+  } catch {
+    // Access failures and removed roots carry no admitted identity.
+  }
+  return undefined;
+}
+
+export function readManagedStoreLocation(
+  settings: string,
+  context: LocatorContext,
+  state: BootstrapState,
+  admittedRoot: string | undefined,
+): ManagedStoreLocation {
+  if (state !== "storage_ready")
+    return { state: "unavailable", reason: state === "missing" ? "pending_create" : state };
+
+  const current = readLocator(settings, context);
+  if (current.state !== "located") return { state: "unavailable", reason: current.state };
+
+  const directory = current.locator.data_directory;
+  if (!admittedRoot || managedStoreRootIdentity(directory) !== admittedRoot)
+    return { state: "unavailable", reason: "path_rejected" };
+  try {
+    // Windows access checks omit ACLs. Opening the directory checks actual list access.
+    if (process.platform === "win32") fs.opendirSync(directory).closeSync();
+    else fs.accessSync(directory, fs.constants.R_OK | fs.constants.X_OK);
+  } catch {
+    return { state: "unavailable", reason: "location_display_unavailable" };
+  }
+  return isDisplayableManagedDirectory(directory)
+    ? { state: "available", directory }
+    : { state: "unavailable", reason: "location_display_unavailable" };
+}
+
 /** The storage owner supplies a qualified native publication adapter and store compatibility receipt. */
 export interface LocatorPublicationIO {
   writeSyncedExclusive(file: string, bytes: Uint8Array): Promise<void>;

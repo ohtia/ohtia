@@ -633,3 +633,8 @@
     display: block;
   }
 }
+
+.managed-store-directory {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

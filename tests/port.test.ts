@@ -361,6 +361,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "readLocale",
         "replaceLocale",
         "readLocaleReceipt",
+        "readManagedStoreLocation",
         "subscribeLocale",
         "readStatus",
         "readAppearance",
@@ -388,6 +389,37 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const read = c.port.readStatus();
     c.respond(status);
     expect(await read.result).toEqual({ ok: true, value: status });
+    c.dispose();
+  });
+  it("reads the managed location through a closed, bounded operation", async () => {
+    const c = client();
+    const read = c.port.readManagedStoreLocation();
+    const sent = c.sent.at(-1);
+    expect(sent).toMatchObject({ operation: "managedStore.readLocation", payload: {} });
+    expect(decodeEnvelope({ ...sent, payload: { directory: "/elsewhere" } }).ok).toBe(false);
+
+    for (const directory of ["/home/Thésé/<données>/ohtia", "C:\\Users\\Thésé\\ohtia"]) {
+      const value = { state: "available", directory };
+      expect(encodeEnvelope({ ...sent, kind: "result", payload: { ok: true, value } }).ok).toBe(
+        true,
+      );
+    }
+    for (const value of [
+      { state: "available", directory: "relative" },
+      { state: "available", directory: "C:relative" },
+      { state: "available", directory: "/home/\u202Eohtia" },
+      { state: "available", directory: "/home/\nohtia" },
+      { state: "available", directory: `/${"é".repeat(portLimits.string_bytes / 2)}` },
+      { state: "unavailable", reason: "missing", directory: "/home/ohtia" },
+      { state: "unavailable", reason: "filesystem exception" },
+    ])
+      expect(decodeEnvelope({ ...sent, kind: "result", payload: { ok: true, value } }).ok).toBe(
+        false,
+      );
+
+    const unavailable = { state: "unavailable", reason: "locator_unreadable" };
+    c.respond(unavailable);
+    expect(await read.result).toEqual({ ok: true, value: unavailable });
     c.dispose();
   });
   it("sends the update operations with exact payloads and refuses an invalid or stale change locally", async () => {

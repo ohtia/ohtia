@@ -279,6 +279,15 @@
       "human_linguistic_review": null
     },
     {
+      "scope": "Research location Settings messages (settings.storage.*) for issue #419 in all supported locales",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation session does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
+    },
+    {
       "scope": "Migration recovery, checkpoint details, confirmation and outcomes for STORY-004-018 in every supported locale",
       "producer": {
         "agent": "codex",

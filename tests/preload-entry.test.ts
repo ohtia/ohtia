@@ -359,6 +359,25 @@ describe("sandbox preload composition", () => {
     expect(JSON.parse(h.ipcRenderer.send.mock.calls.at(-1)![1]).serviceGeneration).toBe(
       "service-2",
     );
+    const location = h.bridge.foundation.readManagedStoreLocation();
+    const [locationChannel, locationText] = h.ipcRenderer.send.mock.calls.at(-1)!;
+    expect(locationChannel).toBe(desktopChannels.port);
+    const locationRequest = JSON.parse(locationText);
+    expect(locationRequest).toMatchObject({
+      operation: "managedStore.readLocation",
+      payload: {},
+      serviceGeneration: "service-2",
+    });
+    const locationReply = {
+      ok: true,
+      value: { state: "unavailable", reason: "locator_unreadable" },
+    };
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({ ...locationRequest, kind: "result", payload: locationReply }),
+    );
+    expect(await location.result).toEqual(locationReply);
     const planId = "019a8000-0000-7000-8000-000000000227";
     const planCalls = [
       h.bridge.foundation.readPlan({ planId }),

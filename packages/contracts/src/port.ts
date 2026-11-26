@@ -94,6 +94,39 @@ export interface FoundationStatus {
   readonly engine: "unavailable" | "verified";
   readonly interfaceLocale: InterfaceLocale;
 }
+const managedStoreUnavailableReasons = [
+  "pending_create",
+  "located",
+  "storage_opening",
+  "missing",
+  "locator_invalid",
+  "locator_newer",
+  "locator_unreadable",
+  "path_rejected",
+  "storage_failed",
+  "recovery_required",
+  "retry_required",
+  "checkpoint_restored",
+  "publication_uncertain",
+  "location_display_unavailable",
+] as const;
+export type ManagedStoreLocation =
+  | { readonly state: "available"; readonly directory: string }
+  | {
+      readonly state: "unavailable";
+      readonly reason: (typeof managedStoreUnavailableReasons)[number];
+    };
+
+export function isDisplayableManagedDirectory(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= portLimits.string_bytes &&
+    /^(?:\/|[A-Za-z]:\\|\\\\)/u.test(value) &&
+    !/[\p{Cc}\p{Bidi_Control}\p{Surrogate}]/u.test(value) &&
+    utf8Size(value) <= portLimits.string_bytes
+  );
+}
+
 export interface AppearanceRecord {
   readonly schemaVersion: 1;
   readonly revision: number;
@@ -382,6 +415,7 @@ export interface OperationInputs extends ResearchInputs {
   "layout.replace": { readonly expectedRevision: number; readonly value: WorkspaceLayout };
   "layout.receipt": { readonly targetOperationId: string };
   "status.read": Record<string, never>;
+  "managedStore.readLocation": Record<string, never>;
   "appearance.read": Record<string, never>;
   "appearance.replace": { readonly expectedRevision: number; readonly value: Appearance };
   "appearance.receipt": { readonly targetOperationId: string };
@@ -434,6 +468,7 @@ export interface OperationOutputs extends ResearchOutputs {
   "layout.replace": SavedLayoutRecord;
   "layout.receipt": LayoutReceipt;
   "status.read": FoundationStatus;
+  "managedStore.readLocation": ManagedStoreLocation;
   "appearance.read": AppearanceRecord;
   "appearance.replace": SavedAppearanceRecord;
   "appearance.receipt": AppearanceReceipt;
@@ -581,6 +616,7 @@ export interface FoundationPort extends ResearchPort {
   replaceLayout(change: LayoutChange): PortCall<SavedLayoutRecord>;
   readLayoutReceipt(operationId: string): PortCall<LayoutReceipt>;
   readStatus(): PortCall<FoundationStatus>;
+  readManagedStoreLocation(): PortCall<ManagedStoreLocation>;
   readAppearance(): PortCall<AppearanceRecord>;
   replaceAppearance(
     change: AppearanceChange,
@@ -1170,6 +1206,7 @@ export const operationErrorCodes = Object.freeze({
   "locale.receipt": readErrors,
   "locale.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
   "status.read": readErrors,
+  "managedStore.readLocation": readErrors,
   "appearance.read": [...readErrors, "preference_invalid"],
   "appearance.replace": replaceErrors,
   "layout.failureNotice": readErrors,
@@ -1246,6 +1283,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "limits.read":
     case "presentation.read":
     case "zoom.apply":
+    case "managedStore.readLocation":
     case "status.read":
     case "appearance.read":
     case "locale.read":
@@ -1399,6 +1437,15 @@ function output(operation: Operation, value: Json | undefined): boolean {
       return savedLayout(value);
     case "layout.receipt":
       return receipt(value, savedLayout);
+    case "managedStore.readLocation":
+      return (
+        (exact(value, ["state", "directory"]) &&
+          value.state === "available" &&
+          isDisplayableManagedDirectory(value.directory)) ||
+        (exact(value, ["state", "reason"]) &&
+          value.state === "unavailable" &&
+          oneOf(value.reason, managedStoreUnavailableReasons))
+      );
     case "status.read":
       return status(value);
     case "appearance.read":
@@ -1540,6 +1587,7 @@ const operations: readonly Operation[] = [
   "layout.replace",
   "layout.receipt",
   "status.read",
+  "managedStore.readLocation",
   "appearance.read",
   "appearance.replace",
   "appearance.receipt",
