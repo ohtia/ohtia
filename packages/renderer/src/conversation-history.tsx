@@ -121,21 +121,24 @@ export function ConversationHistory({
   unreadReplies?: ReadonlyMap<string, number>;
   locale: InterfaceLocale;
 }) {
-  const pending = useRef<HTMLButtonElement | null>(null);
+  const pending = useRef<{
+    button: HTMLButtonElement;
+    precedingRow: HTMLButtonElement | null;
+  } | null>(null);
   const list = useRef<HTMLUListElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (state.status === "loading" || state.loadingOlder || !pending.current) return;
-    const button = pending.current;
+    const { button, precedingRow } = pending.current;
     pending.current = null;
-    const target =
-      state.next && button === more.current ? more.current : (list.current ?? more.current);
+    const fallback = precedingRow?.isConnected ? precedingRow : (list.current ?? more.current);
+    const target = state.next && button === more.current ? button : fallback;
     if (
       target &&
       !target.closest("[hidden], [inert]") &&
       (document.activeElement === button || document.activeElement === document.body)
     )
-      target.focus({ preventScroll: true });
+      target.focus({ preventScroll: !precedingRow });
   }, [state.status, state.next, state.loadingOlder]);
 
   if (state.status === "loading")
@@ -184,7 +187,11 @@ export function ConversationHistory({
             ref={more}
             disabled={state.loadingOlder}
             onClick={(event) => {
-              pending.current = event.currentTarget;
+              pending.current = {
+                button: event.currentTarget,
+                precedingRow:
+                  list.current?.querySelector<HTMLButtonElement>("li:last-child > button") ?? null,
+              };
               if (failed) controller.reload();
               else controller.loadOlder();
             }}

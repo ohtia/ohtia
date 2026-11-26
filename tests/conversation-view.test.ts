@@ -2766,13 +2766,15 @@ it("shows first-page and older-page problems with explicit retry and restores fo
     "Ohtia couldn’t load older conversations.",
   );
   expect(container.querySelector(".chat-history-list")?.children).toHaveLength(50);
+  expect(document.activeElement).toBe(button());
+  const precedingRow = container.querySelector(".chat-history-list li:last-child button");
   page.mockReturnValueOnce(ok({ items: [older], next: null, hasMore: false }));
   await act(async () => {
     button().focus();
     button().click();
   });
   expect(button()).toBeNull();
-  expect(document.activeElement).toBe(container.querySelector(".chat-history-list"));
+  expect(document.activeElement).toBe(precedingRow);
   expect(container.querySelector("[data-status=waiting]")?.textContent).toBe("Waiting");
   await act(async () => container.querySelector<HTMLButtonElement>(".chat-history-row")!.click());
   expect(select).toHaveBeenCalledWith(latest.id);
