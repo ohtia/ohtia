@@ -7,6 +7,7 @@ import {
   admitRuntimeProfile,
   catalogs,
   decodeBootstrapSnapshot,
+  decodeStorageNotice,
   decodeText,
   messageKeys,
   portLimits,
@@ -198,6 +199,43 @@ describe("runtime launch and recovery guards", () => {
         notice: "arbitrary",
       }),
     ).toBeUndefined();
+  });
+  it("limits recovery projections to verified facts and controlled outcomes", () => {
+    const operation = "19dfd574-ee10-4aef-935c-c66afbf0cb6a";
+    const verification = "49dc7a7b-b023-4a6d-b796-ad5415bf7cc4";
+    const details = {
+      operation,
+      sourceRevision: 0,
+      targetRevision: 40,
+      release: "0.2.1",
+      bytes: 4096,
+    };
+    const checkpoint = { ...details, verification };
+    const bootstrap = { locale: "es-ES", version: 1, state: "recovery_required", checkpoint };
+    expect(decodeBootstrapSnapshot(bootstrap)).toEqual(bootstrap);
+    for (const invalid of [
+      { ...checkpoint, bytes: -1 },
+      { ...checkpoint, path: "/private/ohtia.db3" },
+      { ...checkpoint, targetRevision: 0 },
+      { ...checkpoint, verification: "/private" },
+      { ...checkpoint, sha256: "0".repeat(64) },
+    ])
+      expect(decodeBootstrapSnapshot({ ...bootstrap, checkpoint: invalid })).toBeUndefined();
+    expect(decodeBootstrapSnapshot({ ...bootstrap, state: "storage_ready" })).toBeUndefined();
+    const ipc = {
+      generation: "service-1",
+      kind: "storage",
+      state: "recovery_required",
+      checkpoint: { ...details, sha256: "0".repeat(64) },
+    };
+    expect(decodeStorageNotice(ipc)).toEqual(ipc);
+    expect(decodeStorageNotice({ ...ipc, checkpoint })).toBeUndefined();
+    expect(decodeStorageNotice({ ...ipc, checkpoint: undefined })).toBeUndefined();
+    const retry = { generation: "service-1", kind: "storage", state: "retry_required" };
+    expect(decodeStorageNotice(retry)).toBeUndefined();
+    expect(
+      decodeStorageNotice({ ...retry, checkpointProblem: "checkpoint_missing" }),
+    ).toMatchObject({ checkpointProblem: "checkpoint_missing" });
   });
   it("rejects a hard-linked locator before a descriptor content read", () => {
     const { profile, settings } = fixture();
@@ -644,7 +682,7 @@ describe("storage admission lifecycle", () => {
       retry: vi.fn(),
       restorePending: vi.fn(),
       savedLocale: async () => ({ invalid: false }),
-      recoveryState: () => "storage_failed" as const,
+      recoveryState: () => ({ state: "storage_failed" as const }),
     };
     const admission = initializeStorage(store, "open", "service-1", publish, () => false);
     expect(publish).toHaveBeenCalledTimes(1);
@@ -678,12 +716,13 @@ describe("storage admission lifecycle", () => {
         retry,
         restorePending: async () => {},
         savedLocale,
-        recoveryState: () => "storage_failed",
+        recoveryState: () => ({ state: "storage_failed" }),
       },
       "restore",
       "service-1",
       publish,
       () => false,
+      { operation: "19dfd574-ee10-4aef-935c-c66afbf0cb6a", sha256: "0".repeat(64) },
     );
     expect(retry).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();

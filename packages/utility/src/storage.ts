@@ -225,6 +225,10 @@ import {
   type LocaleChoice,
   type SavedLocaleRecord,
   isIdentifier,
+  isCanonicalUuid,
+  isArtifactVersion,
+  type StorageNotice,
+  type VerifiedCheckpoint,
   isInterfaceLocale,
   staleRevision,
   type Appearance,
@@ -418,6 +422,17 @@ interface Checkpoint {
   readonly bytes: number;
   readonly retainedObjects: readonly string[];
 }
+interface MigrationIntent {
+  readonly operation: string;
+  readonly source: number;
+  readonly release?: string;
+}
+
+function checkpointError(code: "checkpoint_incompatible" | "recovery_stale"): Error {
+  return Object.assign(new Error(code), { code });
+}
+
+type RecoveryProjection = Pick<StorageNotice, "state" | "checkpoint" | "checkpointProblem">;
 const names = [
   "0001_initial",
   "0002_receipts",
@@ -1146,7 +1161,7 @@ export class DurableStore {
   async open(): Promise<void> {
     return this.openDatabase(false);
   }
-  private async openDatabase(retrySource: boolean): Promise<void> {
+  private async openDatabase(retrySource: boolean, targetOnly = false): Promise<void> {
     if (this.active || this.database) throw new Error("Storage already active.");
     this.active = true;
     try {
@@ -1155,6 +1170,7 @@ export class DurableStore {
         throw new Error("Explicit migration recovery required.");
       const { native: db, database } = this.openConnection();
       const revision = compatibility(db, this.artifacts);
+      if (targetOnly && revision !== target) throw checkpointError("checkpoint_incompatible");
       if (revision === 0 && !this.initializationAllowed)
         throw new Error("An initialized locator cannot silently initialize an empty database.");
       if (revision < target) await this.upgrade(db, revision, retrySource);
@@ -1313,38 +1329,48 @@ export class DurableStore {
     syncDirectory(this.recovery);
     return operation;
   }
-  private verifyCheckpoint(directory: string): Checkpoint {
+  private readCheckpointManifest(directory: string): Record<string, unknown> {
     if (fs.realpathSync.native(directory) !== directory) throw new Error("Aliased checkpoint.");
     const value = readJson(path.join(directory, "manifest.json"));
-    if (!value || typeof value !== "object") throw new Error("Invalid checkpoint manifest.");
-    const record = value as Checkpoint;
-    const file = path.join(directory, "ohtia.db3");
-    regular(file);
-    const snapshot = fileIdentity(file);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Invalid checkpoint manifest.");
+    return value as Record<string, unknown>;
+  }
+  private verifyCheckpoint(directory: string): Checkpoint {
+    const manifest = this.readCheckpointManifest(directory);
+    const { sourceRevision, engine } = manifest;
     if (
-      Object.keys(record).sort().join(",") !==
+      Object.keys(manifest).sort().join(",") !==
         "bytes,engine,operation,pending,release,retainedObjects,sha256,sourceMigration,sourceRevision,targetMigration,targetRevision,version" ||
-      (value as Record<string, unknown>).version !== 1 ||
-      !Number.isInteger(record.sourceRevision) ||
-      record.sourceRevision < 0 ||
-      record.sourceRevision >= target ||
+      manifest.version !== 1 ||
+      typeof sourceRevision !== "number" ||
+      !Number.isSafeInteger(sourceRevision) ||
+      sourceRevision < 0 ||
+      sourceRevision >= target ||
+      !isCanonicalUuid(manifest.operation) ||
+      !isArtifactVersion(manifest.release) ||
+      !engine ||
+      typeof engine !== "object" ||
+      Object.keys(engine).sort().join(",") !== "compileOptions,sourceId,version" ||
+      !Array.isArray((engine as Record<string, unknown>).compileOptions) ||
+      JSON.stringify(manifest.retainedObjects) !== "[]"
+    )
+      throw new Error("Invalid checkpoint manifest.");
+    const record = manifest as unknown as Checkpoint;
+    if (
       record.targetRevision !== target ||
       record.targetMigration !== names[target - 1] ||
       record.sourceMigration !== (names[record.sourceRevision - 1] ?? null) ||
       record.release !== this.options.release ||
-      !isIdentifier(record.operation) ||
-      record.engine.version !== this.options.engine.version ||
-      record.engine.sourceId !== this.options.engine.sourceId ||
-      !Array.isArray(record.engine.compileOptions) ||
-      !this.options.engine.requiredOptions.every((item) =>
-        record.engine.compileOptions.includes(item),
-      ) ||
-      JSON.stringify(record.pending) !==
-        JSON.stringify(this.artifacts.slice(record.sourceRevision)) ||
-      JSON.stringify(record.retainedObjects) !== "[]" ||
-      record.bytes !== snapshot.bytes ||
-      record.sha256 !== snapshot.sha256
+      !this.matchesCheckpointEngine(record.engine) ||
+      JSON.stringify(record.pending) !== JSON.stringify(this.artifacts.slice(record.sourceRevision))
     )
+      throw checkpointError("checkpoint_incompatible");
+    const file = path.join(directory, "ohtia.db3");
+    if (["-wal", "-shm", "-journal"].some((suffix) => exists(file + suffix)))
+      throw new Error("Unexpected checkpoint journal.");
+    const snapshot = fileIdentity(file);
+    if (record.bytes !== snapshot.bytes || record.sha256 !== snapshot.sha256)
       throw new Error("Checkpoint identity mismatch.");
     const check = connect(this.options, file, true);
     try {
@@ -1363,6 +1389,16 @@ export class DurableStore {
     }
     return record;
   }
+  private matchesCheckpointEngine(value: unknown): boolean {
+    if (!value || typeof value !== "object") return false;
+    const { version, sourceId, compileOptions } = value as Record<string, unknown>;
+    return (
+      version === this.options.engine.version &&
+      sourceId === this.options.engine.sourceId &&
+      Array.isArray(compileOptions) &&
+      this.options.engine.requiredOptions.every((item) => compileOptions.includes(item))
+    );
+  }
   private async upgrade(
     db: Database.Database,
     source: number,
@@ -1370,7 +1406,11 @@ export class DurableStore {
   ): Promise<void> {
     // Durable intent precedes any transition; an interrupted intent requires inspection, never auto-retry.
     const operation = randomUUID();
-    writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
+    writeSynced(
+      this.gate,
+      { version: 1, operation, source, target, release: this.options.release },
+      retrySource,
+    );
     await this.checkpoint(db, source, operation);
     const rebuildsTables = source < 35;
     const selected = this.database;
@@ -1505,65 +1545,144 @@ export class DurableStore {
     if (exists(this.restoration))
       throw new Error("Complete the pending checkpoint restoration first.");
     if (!exists(this.gate)) return this.open();
-    const gate = readIntent(this.gate) as {
-      version?: unknown;
-      source?: unknown;
-      target?: unknown;
-      operation?: unknown;
-    };
-    if (
-      Object.keys(gate).sort().join(",") !== "operation,source,target,version" ||
-      gate.version !== 1 ||
-      !isIdentifier(gate.operation) ||
-      typeof gate.source !== "number" ||
-      !Number.isInteger(gate.source) ||
-      gate.source < 0 ||
-      gate.source >= target ||
-      gate.target !== target
-    )
-      throw new Error("Invalid recovery intent.");
+    const gate = this.readMigrationIntent();
+    const canMigrateSource = this.verifyRetryPlan(gate);
     regular(this.file);
-    const db = connect(this.options, this.file);
+    let db: Database.Database | undefined;
     let revision: number;
     try {
+      db = connect(this.options, this.file, !canMigrateSource);
       revision = compatibility(db, this.artifacts);
       if (revision !== gate.source && revision !== target)
         throw new Error("Unresolved migration outcome.");
+      if (!canMigrateSource && revision !== target)
+        throw checkpointError("checkpoint_incompatible");
+    } catch (error) {
+      // A legacy target probe cannot roll back a hot journal to establish compatibility.
+      if (
+        !canMigrateSource &&
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "SQLITE_READONLY_ROLLBACK"
+      )
+        throw checkpointError("checkpoint_incompatible");
+      throw error;
     } finally {
-      db.close();
+      db?.close();
     }
     if (revision === 0) this.initializationAllowed = true;
     // The validated pre-existing gate remains durable until the recovery holds commit.
-    await this.openDatabase(true);
+    await this.openDatabase(true, !canMigrateSource);
   }
-  recoveryState(): "storage_failed" | "recovery_required" | "retry_required" {
-    this.assert();
-    if (!exists(this.gate)) return "storage_failed";
+  private readMigrationIntent(): MigrationIntent {
+    const value = readIntent(this.gate);
+    if (!value || typeof value !== "object") throw new Error("Invalid migration intent.");
+    const gate = value as Record<string, unknown>;
+    const keys = Object.keys(gate).sort().join(",");
+    const release = isArtifactVersion(gate.release) ? gate.release : undefined;
+    if (
+      (keys !== "operation,source,target,version" &&
+        keys !== "operation,release,source,target,version") ||
+      gate.version !== 1 ||
+      !isIdentifier(gate.operation) ||
+      typeof gate.source !== "number" ||
+      !Number.isSafeInteger(gate.source) ||
+      gate.source < 0 ||
+      typeof gate.target !== "number" ||
+      !Number.isSafeInteger(gate.target) ||
+      gate.source >= gate.target ||
+      ("release" in gate && release === undefined)
+    )
+      throw new Error("Invalid migration intent.");
+    if (gate.target !== target) throw checkpointError("checkpoint_incompatible");
+    return { operation: gate.operation, source: gate.source, ...(release ? { release } : {}) };
+  }
+  /** An unattributed legacy intent can reopen a proven target but cannot start a source migration. */
+  private verifyRetryPlan(gate: MigrationIntent): boolean {
+    let record: Record<string, unknown> | undefined;
     try {
-      const gate = readIntent(this.gate) as { operation?: unknown };
-      if (!isIdentifier(gate.operation)) return "retry_required";
-      this.verifyCheckpoint(path.join(this.recovery, gate.operation));
-      return "recovery_required";
+      record = this.readCheckpointManifest(path.join(this.recovery, gate.operation));
     } catch {
-      return "retry_required";
+      // A missing manifest leaves the live database and any recorded build identity to inspect.
+    }
+    if (
+      record?.version !== 1 ||
+      record.operation !== gate.operation ||
+      record.sourceRevision !== gate.source ||
+      !isArtifactVersion(record.release)
+    ) {
+      if (gate.release && gate.release !== this.options.release)
+        throw checkpointError("checkpoint_incompatible");
+      return gate.release !== undefined;
+    }
+    const expected = JSON.stringify(this.artifacts.slice(gate.source));
+    const pending = Array.isArray(record.pending) ? JSON.stringify(record.pending) : undefined;
+    if (
+      (gate.release && record.release !== gate.release) ||
+      record.targetRevision !== target ||
+      (pending !== undefined && pending !== expected) ||
+      ((!gate.release || record.release !== this.options.release) &&
+        (pending !== expected || !this.matchesCheckpointEngine(record.engine)))
+    )
+      throw checkpointError("checkpoint_incompatible");
+    return true;
+  }
+  recoveryState(): RecoveryProjection {
+    this.assert();
+    if (!exists(this.gate)) return { state: "storage_failed" };
+    try {
+      const gate = this.readMigrationIntent();
+      const record = this.verifyPendingCheckpoint(gate);
+      const { operation, sourceRevision, targetRevision, release, bytes, sha256 } = record;
+      return {
+        state: "recovery_required",
+        checkpoint: { operation, sourceRevision, targetRevision, release, bytes, sha256 },
+      };
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      const checkpointProblem =
+        code === "checkpoint_incompatible"
+          ? code
+          : code === "ENOENT"
+            ? "checkpoint_missing"
+            : code === "EACCES" || code === "EPERM" || code === "SQLITE_CANTOPEN"
+              ? "checkpoint_unreadable"
+              : "checkpoint_invalid";
+      return { state: "retry_required", checkpointProblem };
     }
   }
-  async restorePending(): Promise<void> {
-    this.assert();
-    const gate = readIntent(this.gate) as { operation?: unknown };
-    if (!isIdentifier(gate.operation)) throw new Error("No verified pending checkpoint.");
-    await this.restore(gate.operation);
+  private verifyPendingCheckpoint(gate: MigrationIntent): Checkpoint {
+    if (gate.release && gate.release !== this.options.release)
+      throw checkpointError("checkpoint_incompatible");
+    const record = this.verifyCheckpoint(path.join(this.recovery, gate.operation));
+    if (record.operation !== gate.operation || record.sourceRevision !== gate.source)
+      throw new Error("Checkpoint does not match its pending migration.");
+    return record;
   }
-  /** Restore only an explicitly selected verified whole snapshot, with failed journals kept away from activation. */
-  async restore(operation: string): Promise<void> {
-    if (this.active || !isIdentifier(operation)) throw new Error("Invalid recovery action.");
+  async restorePending(verified?: Pick<VerifiedCheckpoint, "operation" | "sha256">): Promise<void> {
+    this.assert();
+    const operation = verified?.operation ?? this.readMigrationIntent().operation;
+    await this.restore(operation, verified?.sha256);
+  }
+  /** Restore a verified whole snapshot, with failed journals kept away from activation. */
+  async restore(operation: string, expectedDigest?: string): Promise<void> {
+    if (this.active || !isCanonicalUuid(operation)) throw new Error("Invalid recovery action.");
     this.active = true;
     try {
       await this.close();
       this.assert();
       const directory = path.join(this.recovery, operation);
-      const record = this.verifyCheckpoint(directory);
-      if (record.operation !== operation) throw new Error("Checkpoint operation mismatch.");
+      let record: Checkpoint;
+      if (expectedDigest !== undefined || exists(this.gate)) {
+        const gate = this.readMigrationIntent();
+        if (gate.operation !== operation) throw checkpointError("recovery_stale");
+        record = this.verifyPendingCheckpoint(gate);
+        if (expectedDigest !== undefined && record.sha256 !== expectedDigest)
+          throw checkpointError("recovery_stale");
+      } else {
+        record = this.verifyCheckpoint(directory);
+        if (record.operation !== operation) throw new Error("Checkpoint operation mismatch.");
+      }
       let plan: { operation: string; temporary: string; failed: string };
       if (exists(this.restoration)) {
         const input = readIntent(this.restoration);
@@ -1602,7 +1721,13 @@ export class DurableStore {
           fs.closeSync(fd);
         }
         if (!exists(this.gate))
-          writeSynced(this.gate, { version: 1, operation, source: record.sourceRevision, target });
+          writeSynced(this.gate, {
+            version: 1,
+            operation,
+            source: record.sourceRevision,
+            target,
+            release: record.release,
+          });
         fs.mkdirSync(path.join(this.recovery, plan.failed), { mode: 0o700 });
         syncDirectory(this.recovery);
         // The durable plan predates every move. A restart uses these same two destinations.

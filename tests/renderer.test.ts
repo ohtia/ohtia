@@ -345,7 +345,7 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     newWindow: vi.fn(async () => snapshot),
     exit: vi.fn(async () => snapshot),
     restoreCheckpoint: vi.fn(async () => {
-      snapshot = { ...snapshot, state: "retry_required" };
+      snapshot = { version: 1, locale: snapshot.locale, state: "retry_required" };
       return snapshot;
     }),
   };
@@ -441,13 +441,134 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await act(async () => {
     container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click();
   });
-  snapshot = { ...snapshot, state: "recovery_required" };
+  const checkpoint = {
+    operation: "19dfd574-ee10-4aef-935c-c66afbf0cb6a",
+    verification: "49dc7a7b-b023-4a6d-b796-ad5415bf7cc4",
+    release: "0.2.1",
+    sourceRevision: 1,
+    targetRevision: 2,
+    bytes: 4096,
+  };
+  snapshot = { ...snapshot, state: "recovery_required", checkpoint };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
   });
   expect(container.querySelector('#location-state[role="alert"]')).toBe(document.activeElement);
+  await click(container, "command.settings.open");
+  const settings = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  await click(settings, "migration_recovery");
+  await click(settings, "restore_checkpoint");
+  expect(settings.textContent).toContain(checkpoint.operation);
+  expect(settings.textContent).toContain(message("en-US", "checkpoint_rollback"));
+  expect(document.activeElement?.textContent).toBe(message("en-US", "checkpoint_cancel"));
+  await act(async () => {
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(20);
+  });
+  expect(document.activeElement?.textContent).toBe(message("en-US", "restore_checkpoint"));
+  expect(bootstrap.restoreCheckpoint).not.toHaveBeenCalled();
+
+  bootstrap.restoreCheckpoint
+    .mockResolvedValueOnce({ ...snapshot, notice: "recovery_stale" })
+    .mockRejectedValueOnce(new Error("Synthetic lost restoration response"));
+  await click(settings, "restore_checkpoint");
+  await click(settings, "checkpoint_confirmation");
+  expect(document.activeElement?.textContent).toBe(message("en-US", "recovery_stale"));
+  await click(settings, "restore_checkpoint");
+  await click(settings, "checkpoint_confirmation");
+  expect(document.activeElement?.textContent).toBe(message("en-US", "recovery_uncertain"));
+  bootstrap.retryService.mockImplementationOnce(async () => {
+    snapshot = {
+      version: 1,
+      locale: "en-US",
+      state: "retry_required",
+      checkpointProblem: "checkpoint_missing",
+      notice: "recovery_failed",
+    };
+    return snapshot;
+  });
+  await click(settings, "retry");
+  expect(settings.textContent).toContain(message("en-US", "checkpoint_missing"));
+  expect(document.activeElement?.textContent).toBe(message("en-US", "recovery_failed"));
+  expect(container.querySelector("#location-state")?.textContent).toBe(
+    message("en-US", "recovery_failed"),
+  );
+  for (const outcome of [
+    { state: "checkpoint_restored" as const },
+    { state: "recovery_required" as const, checkpoint, notice: "recovery_failed" as const },
+  ]) {
+    snapshot = { version: 1, locale: "en-US", state: "recovery_required", checkpoint };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    bootstrap.restoreCheckpoint.mockResolvedValueOnce({
+      version: 1,
+      locale: "en-US",
+      state: "storage_opening",
+      notice: "recovery_busy",
+    });
+    await click(settings, "restore_checkpoint");
+    await click(settings, "checkpoint_confirmation");
+    expect(settings.textContent).toContain(message("en-US", "recovery_busy"));
+    snapshot = { version: 1, locale: "en-US", ...outcome };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(settings.textContent).not.toContain(message("en-US", "recovery_busy"));
+    expect(settings.textContent).toContain(
+      message("en-US", "notice" in outcome ? outcome.notice : outcome.state),
+    );
+  }
+  bootstrap.restoreCheckpoint.mockClear();
+  snapshot = { version: 1, locale: "en-US", state: "recovery_required", checkpoint };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await act(async () => {
+    settings.querySelector<HTMLButtonElement>("[data-close]")!.click();
+  });
+  // A concurrent restore closes the open confirmation and returns focus to the startup status.
   await click(container, "restore_checkpoint");
-  expect(bootstrap.restoreCheckpoint).toHaveBeenCalledOnce();
+  snapshot = { version: 1, locale: "en-US", state: "storage_opening" };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.activeElement).toBe(container.querySelector("#location-state"));
+  expect(container.textContent).not.toContain(message("en-US", "checkpoint_confirmation"));
+  snapshot = { version: 1, locale: "en-US", state: "recovery_required", checkpoint };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await click(container, "restore_checkpoint");
+  expect(container.textContent).toContain(checkpoint.operation);
+  expect(document.activeElement?.textContent).toBe(message("en-US", "checkpoint_cancel"));
+  expect(bootstrap.restoreCheckpoint).not.toHaveBeenCalled();
+  const startupRetry = [...container.querySelectorAll("main[data-bootstrap-surface] button")].find(
+    (button) => button.textContent === message("en-US", "retry"),
+  );
+  expect(startupRetry?.getAttribute("aria-disabled")).toBe("true");
+  let finish!: () => void;
+  bootstrap.restoreCheckpoint.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = () => {
+          snapshot = { version: 1, locale: "en-US", state: "retry_required" };
+          resolve(snapshot);
+        };
+      }),
+  );
+  await click(container, "checkpoint_confirmation");
+  expect(document.activeElement).toBe(container.querySelector("#location-state"));
+  expect(bootstrap.restoreCheckpoint).toHaveBeenCalledExactlyOnceWith(checkpoint.verification);
+  await act(async () => {
+    finish();
+  });
   bootstrap.retryService.mockRejectedValueOnce(new Error("synthetic failure"));
   await click(container, "retry");
   expect(container.textContent).toContain(message("en-US", "startup_failed"));

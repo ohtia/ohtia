@@ -1,4 +1,5 @@
 import { isResearchId, type ResearchScope } from "./research-port.js";
+import { isArtifactVersion, isCanonicalUuid } from "./diagnostics.js";
 import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
 import { isIdentifier, type FoundationPort, type InterfaceLocale } from "./port.js";
@@ -69,7 +70,74 @@ export const bootstrapStates = [
   "publication_uncertain",
 ] as const;
 export type BootstrapState = (typeof bootstrapStates)[number];
-export type BootstrapNotice = "shutdown_uncertain" | "resource_failure" | "locale_fallback";
+const bootstrapNotices = [
+  "shutdown_uncertain",
+  "resource_failure",
+  "locale_fallback",
+  "recovery_busy",
+  "recovery_stale",
+  "recovery_failed",
+  "recovery_uncertain",
+  "recovery_unavailable",
+] as const;
+export type BootstrapNotice = (typeof bootstrapNotices)[number];
+
+export interface CheckpointDetails {
+  readonly operation: string;
+  readonly sourceRevision: number;
+  readonly targetRevision: number;
+  readonly release: string;
+  readonly bytes: number;
+}
+export interface VerifiedCheckpoint extends CheckpointDetails {
+  readonly sha256: string;
+}
+export interface BootstrapCheckpoint extends CheckpointDetails {
+  readonly verification: string;
+}
+export const checkpointProblems = [
+  "checkpoint_missing",
+  "checkpoint_invalid",
+  "checkpoint_incompatible",
+  "checkpoint_unreadable",
+] as const;
+export type CheckpointProblem = (typeof checkpointProblems)[number];
+
+export function isCheckpointDigest(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+function isCheckpointProjection(
+  value: unknown,
+  identity: "sha256" | "verification",
+): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype)
+    return false;
+  const record = value as Record<string, unknown>;
+  const { bytes, operation, release, sourceRevision, targetRevision } = record;
+  return (
+    Object.keys(record).sort().join(",") ===
+      (identity === "sha256"
+        ? "bytes,operation,release,sha256,sourceRevision,targetRevision"
+        : "bytes,operation,release,sourceRevision,targetRevision,verification") &&
+    isCanonicalUuid(operation) &&
+    isArtifactVersion(release) &&
+    typeof bytes === "number" &&
+    Number.isSafeInteger(bytes) &&
+    bytes > 0 &&
+    typeof sourceRevision === "number" &&
+    Number.isSafeInteger(sourceRevision) &&
+    sourceRevision >= 0 &&
+    typeof targetRevision === "number" &&
+    Number.isSafeInteger(targetRevision) &&
+    targetRevision > sourceRevision &&
+    (identity === "sha256"
+      ? isCheckpointDigest(record.sha256)
+      : isCanonicalUuid(record.verification))
+  );
+}
+function isCheckpointProblem(value: unknown): value is CheckpointProblem {
+  return checkpointProblems.some((problem) => problem === value);
+}
 export interface BootstrapSnapshot {
   readonly openConversation?: ResearchScope;
   readonly navigateConversation?: ResearchScope & { readonly revision: number };
@@ -79,6 +147,8 @@ export interface BootstrapSnapshot {
   readonly locale: InterfaceLocale;
   readonly state: BootstrapState;
   readonly notice?: BootstrapNotice;
+  readonly checkpoint?: BootstrapCheckpoint;
+  readonly checkpointProblem?: CheckpointProblem;
 }
 export type BootstrapAction =
   "read" | "retry_service" | "exit" | "new_window" | "restore_checkpoint" | "open_storage";
@@ -107,6 +177,8 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
       Object.keys(record)
         .filter(
           (key) =>
+            key !== "checkpoint" &&
+            key !== "checkpointProblem" &&
             key !== "restoreLastProject" &&
             key !== "navigateConversation" &&
             key !== "serviceGeneration",
@@ -126,10 +198,12 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
         !isResearchId((record.navigateConversation as ResearchScope).conversationId) ||
         !Number.isSafeInteger((record.navigateConversation as { revision: number }).revision) ||
         (record.navigateConversation as { revision: number }).revision < 1)) ||
-    ("notice" in record &&
-      record.notice !== "shutdown_uncertain" &&
-      record.notice !== "resource_failure" &&
-      record.notice !== "locale_fallback") ||
+    ("notice" in record && !bootstrapNotices.some((notice) => notice === record.notice)) ||
+    ("checkpoint" in record &&
+      (record.state !== "recovery_required" ||
+        !isCheckpointProjection(record.checkpoint, "verification"))) ||
+    ("checkpointProblem" in record &&
+      (record.state !== "retry_required" || !isCheckpointProblem(record.checkpointProblem))) ||
     ("openConversation" in record &&
       (!record.openConversation ||
         typeof record.openConversation !== "object" ||
@@ -162,6 +236,10 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
     locale: record.locale,
     state: record.state as BootstrapState,
     ...(record.notice ? { notice: record.notice as BootstrapNotice } : {}),
+    ...(record.checkpoint ? { checkpoint: record.checkpoint as BootstrapCheckpoint } : {}),
+    ...(record.checkpointProblem
+      ? { checkpointProblem: record.checkpointProblem as CheckpointProblem }
+      : {}),
   };
 }
 export interface DesktopBridge {
@@ -174,7 +252,7 @@ export interface DesktopBridge {
     retryService(): Promise<BootstrapSnapshot>;
     newWindow(): Promise<BootstrapSnapshot>;
     exit(): Promise<BootstrapSnapshot>;
-    restoreCheckpoint(): Promise<BootstrapSnapshot>;
+    restoreCheckpoint(verification: string): Promise<BootstrapSnapshot>;
     openStorage(): Promise<BootstrapSnapshot>;
   };
 }
@@ -191,17 +269,34 @@ export interface StorageNotice {
     | "checkpoint_restored";
   readonly savedLocale?: InterfaceLocale;
   readonly localeFallback?: true;
+  readonly checkpoint?: VerifiedCheckpoint;
+  readonly checkpointProblem?: CheckpointProblem;
+  readonly restoreFailure?: "recovery_failed" | "recovery_stale";
 }
 export function decodeStorageNotice(value: unknown): StorageNotice | undefined {
   if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype)
     return;
   const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).filter(
+    (key) => key !== "checkpoint" && key !== "checkpointProblem" && key !== "restoreFailure",
+  );
   if (
     ![
       "generation,kind,state",
       "generation,kind,savedLocale,state",
       "generation,kind,localeFallback,state",
-    ].includes(Object.keys(record).sort().join(",")) ||
+    ].includes(keys.sort().join(",")) ||
+    (record.state === "recovery_required"
+      ? !isCheckpointProjection(record.checkpoint, "sha256")
+      : "checkpoint" in record) ||
+    (record.state === "retry_required"
+      ? !isCheckpointProblem(record.checkpointProblem)
+      : "checkpointProblem" in record) ||
+    ("restoreFailure" in record &&
+      (record.state === "storage_ready" ||
+        record.state === "checkpoint_restored" ||
+        (record.restoreFailure !== "recovery_failed" &&
+          record.restoreFailure !== "recovery_stale"))) ||
     ("localeFallback" in record &&
       (record.localeFallback !== true || record.state !== "storage_ready")) ||
     record.kind !== "storage" ||

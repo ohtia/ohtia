@@ -178,3 +178,11 @@ select {
 .foundation-titlebar[hidden] {
   display: none;
 }
+
+.checkpoint-recovery {
+  overflow-wrap: anywhere;
+}
+
+.checkpoint-recovery .checkpoint-retry {
+  margin-block-start: var(--space-4);
+}

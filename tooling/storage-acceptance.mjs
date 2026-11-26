@@ -167,7 +167,7 @@ async function open(page, expected = "storage_ready") {
       Promise.all([
         window.ohtia.bootstrap.retryService(),
         window.ohtia.bootstrap.openStorage(),
-        window.ohtia.bootstrap.restoreCheckpoint(),
+        window.ohtia.bootstrap.restoreCheckpoint("19dfd574-ee10-4aef-935c-c66afbf0cb6a"),
       ]),
     );
     expect(attempts.map((value) => value.state)).toEqual([
@@ -693,9 +693,98 @@ try {
   page = await start();
   await open(page, "recovery_required");
   enterPhase("restore-checkpoint", 'section[aria-labelledby="location-title"] button');
-  await page
-    .getByRole("button", { name: message(recoveryLocale, "restore_checkpoint"), exact: true })
-    .click();
+  await expect(page.locator(".application-workspace:visible")).toHaveCount(0);
+  const startup = page.locator("[data-bootstrap-surface]");
+  const review = startup.getByRole("button", {
+    name: message(recoveryLocale, "restore_checkpoint"),
+    exact: true,
+  });
+  const confirm = startup.getByRole("button", {
+    name: message(recoveryLocale, "checkpoint_confirmation"),
+    exact: true,
+  });
+  const cancel = startup.getByRole("button", {
+    name: message(recoveryLocale, "checkpoint_cancel"),
+    exact: true,
+  });
+  const projected = await page.evaluate(() => window.ohtia.bootstrap.read());
+  expect(projected.checkpoint).toMatchObject({
+    operation,
+    sourceRevision: intent.source,
+    targetRevision: intent.target,
+    release: checkpointManifest.release,
+    bytes: checkpointManifest.bytes,
+  });
+  expect(projected.checkpoint).not.toHaveProperty("sha256");
+  const recoveryDialog = (window) =>
+    window.getByRole("dialog", { name: message(recoveryLocale, "settings.title"), exact: true });
+  const recoveryPage = (dialog) =>
+    dialog.getByRole("button", {
+      name: message(recoveryLocale, "migration_recovery"),
+      exact: true,
+    });
+  const dialog = recoveryDialog(page);
+  await resizeNativeViewport(page, { width: 320, height: 600 });
+  await startup.locator('[data-command-id="settings.open"] button').click();
+  await recoveryPage(dialog).press("Enter");
+  const settingsReview = dialog.getByRole("button", {
+    name: message(recoveryLocale, "restore_checkpoint"),
+    exact: true,
+  });
+  await settingsReview.press("Enter");
+  const settingsCancel = dialog.getByRole("button", {
+    name: message(recoveryLocale, "checkpoint_cancel"),
+    exact: true,
+  });
+  await expect(settingsCancel).toBeFocused();
+  const settingsConfirmation = dialog.getByRole("group", {
+    name: message(recoveryLocale, "checkpoint_confirmation"),
+    exact: true,
+  });
+  await expect(
+    settingsConfirmation.getByText(
+      message(recoveryLocale, "checkpoint_identifier", { id: operation }),
+    ),
+  ).toBeVisible();
+  for (const colorScheme of ["light", "dark"]) {
+    for (const forcedColors of ["none", "active"]) {
+      await page.emulateMedia({ colorScheme, forcedColors });
+      await expect(settingsConfirmation).toBeVisible();
+      await expect(settingsCancel).toBeFocused();
+      expect(
+        await settingsConfirmation.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      ).toBe(true);
+    }
+  }
+  await page.emulateMedia({ colorScheme: null, forcedColors: null });
+  await page.keyboard.press("Escape");
+  await expect(settingsReview).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  const stale = await page.evaluate(() =>
+    window.ohtia.bootstrap.restoreCheckpoint("19dfd574-ee10-4aef-935c-c66afbf0cb6a"),
+  );
+  expect(stale).toMatchObject({ state: "recovery_required", notice: "recovery_stale" });
+  await review.focus();
+  await page.keyboard.press("Enter");
+  await expect(cancel).toBeFocused();
+  await expect(
+    startup.getByText(message(recoveryLocale, "checkpoint_identifier", { id: operation })),
+  ).toBeVisible();
+  await expect(startup.getByText(message(recoveryLocale, "checkpoint_rollback"))).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(review).toBeFocused();
+  await expect(confirm).toHaveCount(0);
+  expect(await page.evaluate(() => window.ohtia.bootstrap.read())).toEqual(projected);
+  await review.press("Enter");
+  await expect(
+    startup.getByRole("button", { name: message(recoveryLocale, "retry"), exact: true }),
+  ).toBeDisabled();
+  await confirm.press("Enter");
+  await expect(page.locator("#location-state")).toBeFocused();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.bootstrap.read())).state, {
       timeout: 20000,
@@ -755,7 +844,27 @@ try {
     value: { revision: 0, value: "system", source: "default" },
   });
   await expect(page.locator(".workspace-skip")).toBeFocused();
+  await application.close();
+  application = undefined;
+  page = await start();
+  await open(page);
+  expect(await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).toEqual(
+    restored,
+  );
   enterPhase("open-settings", ".settings-dialog[open]");
+  await openWorkspaceSettings(page);
+  const reopenedSettings = recoveryDialog(page);
+  await recoveryPage(reopenedSettings).click();
+  await expect(
+    reopenedSettings.getByText(message(recoveryLocale, "recovery_unavailable")),
+  ).toBeVisible();
+  await expect(
+    reopenedSettings.getByRole("button", {
+      name: message(recoveryLocale, "restore_checkpoint"),
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await openWorkspaceSettings(page);
   enterPhase("restore-korean-locale", 'select[aria-describedby="language-help"]');
   const restoredLocale = "ko-KR";
@@ -780,6 +889,12 @@ try {
   record("graphical-checkpoint-restoration", {
     restored,
     sourceRevision: checkpointManifest.sourceRevision,
+    projectedOperation: operation,
+    explicitConfirmation: true,
+    sameProjectionInSettings: true,
+    settingsRecoveryUnavailableAfterAdmission: true,
+    persistedAfterRestart: true,
+    reflowAt320BothThemesAndForcedColors: true,
   });
   enterPhase("prepare-project-rename-fixtures");
   const projects = await createProjectRenameFixture(page);

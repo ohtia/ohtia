@@ -12,6 +12,8 @@ import {
   dataServiceExitCodes,
   decodeServiceShutdown,
   isArtifactVersion,
+  isCheckpointDigest,
+  isCanonicalUuid,
   isDevelopmentExecutable,
   isIdentifier,
   isInterfaceLocale,
@@ -42,7 +44,10 @@ async function start(): Promise<void> {
       };
     }
   ).parentPort;
-  const [runtimeArgument, generation, locale, mode, release] = process.argv.slice(2);
+  const [runtimeArgument, generation, locale, mode, release, operation, sha256] =
+    process.argv.slice(2);
+  const verified =
+    isCanonicalUuid(operation) && isCheckpointDigest(sha256) ? { operation, sha256 } : undefined;
   const selected = parseRuntimeArgument(runtimeArgument);
   if (
     !parent ||
@@ -51,7 +56,8 @@ async function start(): Promise<void> {
     !isIdentifier(generation) ||
     !isInterfaceLocale(locale) ||
     !["create", "open", "retry", "restore", "blocked"].includes(mode ?? "") ||
-    !isArtifactVersion(release)
+    !isArtifactVersion(release) ||
+    (mode === "restore" ? !verified : operation !== undefined || sha256 !== undefined)
   )
     throw new Error("Invalid utility context.");
   const user = os.userInfo();
@@ -303,6 +309,7 @@ async function start(): Promise<void> {
       );
     },
     isStopping,
+    verified,
   );
   await initialization;
 }
