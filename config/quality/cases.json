@@ -3451,6 +3451,7 @@
     "test_desktop_probes.ArtifactTests.test_signal_permission_denial_requires_observed_darwin_zombie_only_group",
     "test_desktop_probes.ArtifactTests.test_timeout_signals_term_then_kill_before_reaping",
     "test_desktop_probes.ArtifactTests.test_unreapable_child_never_falls_back_to_an_unbounded_context_wait",
+    "test_desktop_probes.ArtifactTests.test_windows_storage_probe_removes_only_its_backup_privilege",
     "test_desktop_probes.CommandTests.test_common_command_forwards_native_scenario_flags",
     "test_desktop_probes.ControllerTests.test_controller_refusals_retain_tool_identity_without_launching_a_runtime",
     "test_desktop_probes.ReportTests.test_agent_case_review_accepts_only_complete_evidence",

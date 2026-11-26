@@ -981,6 +981,11 @@ def smoke(
                 900,
                 5,
                 **({"cancelled": cancelled} if cancelled is not None else {}),
+                **(
+                    {"windows_without_backup_privilege": True}
+                    if suite == "storage" and sys.platform == "win32"
+                    else {}
+                ),
             )
             while not future.done():
                 known_file = output / "native-processes.json"

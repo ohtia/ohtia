@@ -732,6 +732,50 @@ print(json.dumps(result))
             self.assertFalse(receipt["contained_processes_remaining_before_cleanup"])
             self.assertFalse(receipt["contained_processes_remaining_at_exit"])
 
+    def test_windows_storage_probe_removes_only_its_backup_privilege(self):
+        import ctypes
+        from unittest.mock import MagicMock
+
+        import probe_process
+
+        for adjusted, error in ((True, 0), (True, 1300), (False, 5)):
+            with self.subTest(adjusted=adjusted, error=error):
+                advapi, kernel = MagicMock(), MagicMock()
+                advapi.LookupPrivilegeValueW.return_value = True
+
+                def open_token(process, access, output):
+                    self.assertEqual((process, access), (123, 0x20))
+                    output._obj.value = 321
+                    return True
+
+                def adjust_token(token, disable_all, privileges, length, previous, returned):
+                    self.assertEqual(token.value, 321)
+                    self.assertFalse(disable_all)
+                    self.assertEqual(privileges._obj.count, 1)
+                    self.assertEqual(privileges._obj.privilege.attributes, 0x4)
+                    self.assertEqual((length, previous, returned), (0, None, None))
+                    return adjusted
+
+                advapi.OpenProcessToken.side_effect = open_token
+                advapi.AdjustTokenPrivileges.side_effect = adjust_token
+                with (
+                    patch.object(ctypes, "WinDLL", side_effect=(advapi, kernel), create=True),
+                    patch.object(ctypes, "set_last_error", create=True) as reset_error,
+                    patch.object(ctypes, "get_last_error", return_value=error, create=True),
+                    patch.object(ctypes, "WinError", side_effect=OSError, create=True),
+                    patch("builtins.print"),
+                ):
+                    if adjusted:
+                        probe_process._remove_windows_backup_privilege(123)
+                    else:
+                        with self.assertRaises(OSError):
+                            probe_process._remove_windows_backup_privilege(123)
+                self.assertEqual(
+                    advapi.LookupPrivilegeValueW.call_args.args[1], "SeBackupPrivilege"
+                )
+                reset_error.assert_called_once_with(0)
+                self.assertEqual(kernel.CloseHandle.call_args.args[0].value, 321)
+
     def test_darwin_group_observation_excludes_only_the_zombie_leader(self):
         from unittest.mock import MagicMock
 

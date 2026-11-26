@@ -232,34 +232,70 @@ async function withStorageReadDenied(target, operation) {
     );
   }
 
-  const icacls = path.join(launch.env.SystemRoot, "System32", "icacls.exe");
-  const parent = path.dirname(target);
-  const entry = path.basename(target);
-  const scratch = fs.mkdtempSync(path.join(launch.profile.scratch_root, "storage-read-acl-"));
-  const saved = path.join(scratch, "original.acl");
-  const restored = path.join(scratch, "restored.acl");
-  const acl = (args) =>
-    execFileSync(icacls, args, { cwd: parent, stdio: "ignore", windowsHide: true });
+  const powershell = path.join(
+    launch.env.SystemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  const script = [
+    '$ErrorActionPreference="Stop";',
+    "$target=$env:OHTIA_TEST_ACL_TARGET;",
+    "$directory=$env:OHTIA_TEST_ACL_DIRECTORY -eq '1';",
+    "$sid=[System.Security.Principal.SecurityIdentifier]::new('S-1-1-0');",
+    "$sections=[System.Security.AccessControl.AccessControlSections]::Access;",
+    "function Read-Acl(){if($directory){[System.IO.Directory]::GetAccessControl($target,$sections)}else{[System.IO.File]::GetAccessControl($target,$sections)}};",
+    "function Write-Acl($acl){if($directory){[System.IO.Directory]::SetAccessControl($target,$acl)}else{[System.IO.File]::SetAccessControl($target,$acl)}};",
+    "$acl=Read-Acl;",
+    "$action=$env:OHTIA_TEST_ACL_ACTION;",
+    "if($action -eq 'deny'){$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid,'ReadData','Deny')); Write-Acl $acl; $acl=Read-Acl;",
+    "$deny=@($acl.GetAccessRules($true,$false,[System.Security.Principal.SecurityIdentifier]) | Where-Object {$_.IdentityReference.Value -eq $sid.Value -and $_.AccessControlType -eq 'Deny' -and ($_.FileSystemRights -band 1) -and $_.InheritanceFlags -eq 'None' -and $_.PropagationFlags -eq 'None'});",
+    "if(!$deny.Count){throw 'The fixture read-deny rule is missing.'}",
+    "}elseif($action -eq 'restore'){$acl.SetSecurityDescriptorSddlForm($env:OHTIA_TEST_ACL_ORIGINAL,$sections); Write-Acl $acl; $acl=Read-Acl};",
+    "$rules=@($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]) | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.IdentityReference.Value,[int]$_.FileSystemRights,[int]$_.AccessControlType,[int]$_.InheritanceFlags,[int]$_.PropagationFlags,$_.IsInherited });",
+    "[Console]::WriteLine(([ordered]@{sddl=$acl.GetSecurityDescriptorSddlForm($sections); protected=$acl.AreAccessRulesProtected; rules=$rules} | ConvertTo-Json -Compress));",
+  ].join(" ");
+  const directory = fs.statSync(target).isDirectory() ? "1" : "0";
+  const acl = (action, original = "") =>
+    JSON.parse(
+      execFileSync(
+        powershell,
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-EncodedCommand",
+          Buffer.from(script, "utf16le").toString("base64"),
+        ],
+        {
+          env: {
+            ...launch.env,
+            OHTIA_TEST_ACL_TARGET: target,
+            OHTIA_TEST_ACL_DIRECTORY: directory,
+            OHTIA_TEST_ACL_ACTION: action,
+            OHTIA_TEST_ACL_ORIGINAL: original,
+          },
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 15_000,
+          maxBuffer: 32_768,
+        },
+      ),
+    );
+  const original = acl("snapshot");
   return withCommandCleanup(
     async () => {
-      acl([entry, "/save", saved]);
-      await withCommandCleanup(
-        async () => {
-          // Deny read data/list directory to Everyone on this disposable fixture.
-          acl([entry, "/deny", "*S-1-1-0:(RD)"]);
-          await operation();
-        },
-        () => {
-          acl([parent, "/restore", saved]);
-          acl([entry, "/save", restored]);
-          assert.ok(
-            fs.readFileSync(restored).equals(fs.readFileSync(saved)),
-            "The fixture must restore the original Windows DACL.",
-          );
-        },
+      acl("deny");
+      await operation();
+    },
+    () => {
+      const restored = acl("restore", original.sddl);
+      assert.ok(
+        restored.protected === original.protected &&
+          JSON.stringify(restored.rules) === JSON.stringify(original.rules),
+        "The fixture must restore the original Windows access rules.",
       );
     },
-    () => fs.rmSync(scratch, { recursive: true, force: true }),
   );
 }
 async function verifyManagedStoreLocation(page, locale) {
@@ -381,8 +417,14 @@ async function verifyManagedStoreLocation(page, locale) {
           enterPhase(phase, ".settings-dialog[open]");
           assert.throws(
             probe,
-            (error) => error.code === "EACCES" || error.code === "EPERM",
-            "The fixture must deny the expected read.",
+            (error) => {
+              assert.ok(
+                error.code === "EACCES" || error.code === "EPERM",
+                `Unexpected read error in ${phase} (${error.code ?? "no code"}).`,
+              );
+              return true;
+            },
+            `The fixture must deny the expected read in ${phase}.`,
           );
           await assertReason(reason, text);
         });
