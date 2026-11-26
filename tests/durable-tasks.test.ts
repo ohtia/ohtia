@@ -621,7 +621,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(40);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(41);
       upgraded.close();
     },
   );
@@ -1187,7 +1187,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>, legacy = false): str
       version: 1,
       operation: "synthetic-recovery",
       source: 9,
-      target: 40,
+      target: 41,
       ...(legacy ? {} : { release: f.options.release }),
     }),
   );

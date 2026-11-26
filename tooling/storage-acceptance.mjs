@@ -1195,6 +1195,7 @@ try {
   const research = await verifyPackagedThesisProfile(application, page, projects);
   record("packaged-thesis-profile", research.profile);
   record("packaged-research-stage", research.stage);
+  record("packaged-manuscript-revisions", research.manuscripts);
   enterPhase("verify-packaged-project-rename", ".project-selector-button");
   record(
     "packaged-project-rename",

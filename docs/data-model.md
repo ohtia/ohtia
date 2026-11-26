@@ -2,6 +2,10 @@
 type: Specification
 title: "Data model"
 description: "Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite."
+generated:
+  by: codex/gpt-6.2-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: biblatex
     resource: "https://www.ctan.org/tex-archive/macros/latex/contrib/biblatex/"
@@ -233,11 +237,15 @@ The initial manuscript language comes from the researcher's explicit choice or s
 
 The researcher edits only through Ohtia. A generated `draft.md` is an output, not a file watched for external changes. Editor JSON and ASTs are working representations; they are not the only stored manuscript. The first implementation preserves complete revision text rather than relying exclusively on patch-chain reconstruction. Diffs for comparison can be computed later.
 
-Creating a revision and advancing `drafts.current_revision_id` occur in one transaction after checking the expected predecessor. A stale save yields conflict instead of overwriting a newer revision. Initial creation installs the manuscript and its first revision in the same command; an externally observable committed manuscript cannot have a dangling current pointer. Repeated delivery of the same idempotent command cannot create duplicate revisions.
+The [revision persistence and receipt contract](storage.md#manuscript-revisions) defines the scoped operations, codec bounds and recovery behavior. Creating a revision and advancing `drafts.current_revision_id` occur in one transaction after checking the expected predecessor. A stale save yields conflict instead of overwriting a newer revision. Initial creation installs the manuscript and its first revision in the same command; an externally observable committed manuscript cannot have a dangling current pointer. Repeated delivery of the same idempotent command cannot create duplicate revisions.
 
 Restoration creates a new revision based on the old text while retaining the current predecessor and recording restoration origin. It does not delete intermediate history or move earlier comments/reviews to the restored text. Group autosaves rather than creating a full revision per keystroke. No pruning policy is selected here: any future compaction must preserve revision-chain integrity and content needed by deliveries, comments, reviews and historical evidence.
 
 Observation and research-review storage is defined with its feature's commands and lifecycle, rather than introducing a generic comment table here. Its targets must retain the exact manuscript revisions, source content identities and input evidence examined. A comment or stable block ID cannot stand in for a human confirmation or make an old observation current after an edit.
+
+### `draft_unit_ids`
+
+The pair of manuscript ID and unit ID records the first revision in which a section or block identity appeared. The first revision belongs to the same manuscript. The record reserves the identifier across that manuscript's history, including after retirement. An ordinary save retains identities from its current predecessor and records new identities for new units.
 
 ## Referential and lifecycle invariants
 

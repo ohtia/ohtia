@@ -1,3 +1,9 @@
+import {
+  listManuscripts,
+  readManuscript,
+  readManuscriptPart,
+  readManuscriptReceipt,
+} from "./manuscript-revisions.js";
 import { inferenceModelUnavailable } from "./agent-preferences.js";
 import { listProviderModels, readAgentPreferences } from "./agent-preferences.js";
 import {
@@ -721,6 +727,14 @@ export async function readResearch(
         ? { ok: true, value }
         : failure("invalid_service_result");
     }
+    case "manuscript.list":
+      return listManuscripts(db, request.payload);
+    case "manuscript.read":
+      return readManuscript(db, request.payload);
+    case "manuscript.readPart":
+      return readManuscriptPart(db, request.payload);
+    case "manuscript.receipt":
+      return readManuscriptReceipt(db, request.payload);
     case "stage.read":
       return readStage(db, request.payload);
     case "stage.history":

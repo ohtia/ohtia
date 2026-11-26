@@ -48,7 +48,8 @@
     "integrated-application-root",
     "packaged-project-rename",
     "packaged-thesis-profile",
-    "packaged-research-stage"
+    "packaged-research-stage",
+    "packaged-manuscript-revisions"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }

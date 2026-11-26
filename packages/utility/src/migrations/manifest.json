@@ -158,5 +158,9 @@
   {
     "name": "0040_research_stages",
     "sha256": "97cfa55494a633023dd705a5a27becc1cd2217e1084d884d207c88d0d87622b2"
+  },
+  {
+    "name": "0041_manuscript_revisions",
+    "sha256": "9436790568a4202ecd1b66cf5be3de127a2b21f2a1c583b4c844bd349a7a6d72"
   }
 ]

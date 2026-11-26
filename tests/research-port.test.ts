@@ -3088,3 +3088,98 @@ it("scopes thesis profile reads, parts, changes and receipt replay to the active
       .profile?.revisionId,
   ).toBe(newer.resultId);
 });
+
+it("saves a bounded manuscript through scoped preload and reconciles its lost acknowledgement", async () => {
+  const h = await harness();
+  const other = h.openWindow("manuscript-second-window").port;
+  const { projectId, conversationId } = h;
+  const first = h.port.subscribeResearch({ projectId, conversationId }, () => {});
+  const second = other.subscribeResearch({ projectId, conversationId }, () => {});
+  const a = { projectId, ...value(await first.ready) };
+  const b = { projectId, ...value(await second.ready) };
+  const title = "Workspace label";
+  const initial = value(await h.port.createManuscript("new-manuscript", { ...a, title }).result);
+  const { draftId, revisionId } = initial.manuscriptChange.revision;
+  expect(
+    value(
+      await other.readManuscriptReceipt({
+        ...b,
+        operationId: "new-manuscript",
+        intent: { kind: "create", title },
+      }).result,
+    ).receipt,
+  ).toEqual(initial);
+
+  const header = value(await h.port.readManuscript({ ...a, draftId, revisionId }).result).markdown;
+  if (typeof header !== "string") throw new Error("Expected an inline manuscript header.");
+  const markdown =
+    header +
+    "\n# Heading {#sec_test}\n\n::: {#blk_port .ohtia-block}\n" +
+    "ñ".repeat(3000) +
+    "\n:::\n";
+  const parts = splitText(markdown);
+  const sha256 = digest(markdown);
+  const descriptor = { parts: parts.length, bytes: utf8Size(markdown), sha256 };
+  const expected = { draftId, expectedRevisionId: revisionId, saveReason: "manual" } as const;
+  const input = { ...a, ...expected, markdown: descriptor };
+  const operationId = "write-manuscript";
+  expect(await h.port.saveManuscript(operationId, input).result).toEqual(
+    failure("parts_incomplete"),
+  );
+  for (const [index, text] of parts.entries()) {
+    expect(
+      value(
+        await h.port.stageManuscriptPart(operationId, {
+          ...a,
+          index: index + 1,
+          text,
+          count: parts.length,
+          bytes: descriptor.bytes,
+          sha256,
+        }).result,
+      ),
+    ).toEqual({ accepted: true });
+  }
+  h.dropAcknowledgement(operationId);
+  const pending = h.port.saveManuscript(operationId, input);
+  await h.service.drain();
+  pending.cancel();
+  expect(await pending.result).toEqual(failure("uncertain"));
+  const retained = value(
+    await other.readManuscriptReceipt({
+      ...b,
+      operationId,
+      intent: { ...expected, kind: "save", contentSha256: sha256 },
+    }).result,
+  ).receipt;
+  expect(retained).toMatchObject({
+    manuscriptChange: {
+      kind: "committed",
+      revision: { parentRevisionId: revisionId, contentSha256: sha256 },
+    },
+  });
+  expect(value(await other.saveManuscript(operationId, { ...input, ...b }).result)).toEqual(
+    retained,
+  );
+  const read = value(await other.readManuscript({ ...b, draftId, revisionId: null }).result);
+  expect(read.markdown).toEqual({ ...descriptor, source: read.revision.revisionId });
+  const exact = await Promise.all(
+    parts.map(
+      async (_text, index) =>
+        value(
+          await other.readManuscriptPart({
+            ...b,
+            draftId,
+            revisionId: read.revision.revisionId,
+            index: index + 1,
+          }).result,
+        ).text,
+    ),
+  );
+  expect(exact.join("")).toBe(markdown);
+  expect(
+    await other.readManuscript({ ...b, projectId: entity(9999), draftId, revisionId: null }).result,
+  ).toEqual(failure("unauthorized"));
+  first.dispose();
+  expect((await h.port.listManuscripts({ ...a, after: null }).result).ok).toBe(false);
+});

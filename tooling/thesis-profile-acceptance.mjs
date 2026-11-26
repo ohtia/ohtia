@@ -1,6 +1,7 @@
 // Non-shipping verification using Electron's actual isolated preload and utility process.
 import { expect } from "@playwright/test";
 import { desktopChannels, encodeProfileContent } from "../packages/contracts/dist/index.js";
+import { verifyPackagedManuscripts } from "./manuscript-revision-acceptance.mjs";
 import { verifyPackagedResearchStage } from "./research-stage-acceptance.mjs";
 import { originalTitle, otherTitle, selectProject } from "./project-rename-acceptance.mjs";
 
@@ -108,7 +109,13 @@ export async function verifyPackagedThesisProfile(application, page, projects) {
       subscriptionId,
       profileRevisionId: result.saved.value.resultId,
     });
+    const manuscripts = await verifyPackagedManuscripts(page, {
+      projectId,
+      otherProjectId,
+      subscriptionId,
+    });
     return {
+      manuscripts,
       profile: { unsetProfile: true, scopedRead: true, exactRevision: true, durableReceipt: true },
       stage,
     };

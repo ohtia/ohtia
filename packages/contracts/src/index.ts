@@ -31,12 +31,4 @@ export * from "./canonical-json.js";
 export * from "./thesis-profile.js";
 export * from "./research-stage.js";
 
-export {
-  manuscriptFormat,
-  manuscriptLimits,
-  type CanonicalManuscript,
-  type ManuscriptDiagnostic,
-  type ManuscriptLine,
-  type ManuscriptParagraph,
-  type ManuscriptResult,
-} from "./manuscript.js";
+export * from "./manuscript.js";
