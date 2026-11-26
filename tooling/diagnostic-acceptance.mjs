@@ -520,7 +520,11 @@ try {
   logs();
   assert.ok(!mainOutput.includes(marker));
   record("automatic-capture-private-markers");
-  await verifySettingsViewer(application, page, state.locale, logs()[0], logDirectory, marker);
+  const language = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  assert.equal(language.ok, true);
+  const locale = language.value.effectiveLocale;
+  await expect(page.locator("html")).toHaveAttribute("lang", locale);
+  await verifySettingsViewer(application, page, locale, logs()[0], logDirectory, marker);
   record("settings-bounded-diagnostic-viewer");
   const quitOffsets = new Map();
   for (let slot = 0; slot < 5; slot++) {
