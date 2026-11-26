@@ -102,7 +102,7 @@ export function storageFixture(emitDiagnostic?: StorageOptions["emitDiagnostic"]
     bindingSha256: createHash("sha256").update(fs.readFileSync(binding)).digest("hex"),
     engine,
     migrationDirectory,
-    release: "synthetic-0",
+    release: "0.0.0-synthetic",
     allowCreate: true,
     assertAdmission: () => {},
     ...(emitDiagnostic ? { emitDiagnostic } : {}),

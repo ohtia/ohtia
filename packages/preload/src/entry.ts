@@ -19,6 +19,7 @@ import {
   projectLinks,
   desktopChannels,
   isIdentifier,
+  isCanonicalUuid,
   failure,
   portLimits,
   type ConnectionEvent,
@@ -201,8 +202,12 @@ const preferencesReady = (_event: unknown, generation: unknown) => {
   }
 };
 ipcRenderer.on(desktopChannels.preferencesReady, preferencesReady);
-async function bootstrap(action: BootstrapAction) {
-  const result: unknown = await ipcRenderer.invoke(desktopChannels.bootstrap, action);
+async function bootstrap(action: BootstrapAction, verification?: string) {
+  const result: unknown = await ipcRenderer.invoke(
+    desktopChannels.bootstrap,
+    action,
+    ...(verification === undefined ? [] : [verification]),
+  );
   const snapshot = decodeBootstrapSnapshot(result);
   if (!snapshot) throw new Error("Invalid bootstrap response.");
   return snapshot;
@@ -515,7 +520,10 @@ const bridge: DesktopBridge = {
     retryService: () => bootstrap("retry_service"),
     newWindow: () => bootstrap("new_window"),
     exit: () => bootstrap("exit"),
-    restoreCheckpoint: () => bootstrap("restore_checkpoint"),
+    restoreCheckpoint: async (verification) => {
+      if (!isCanonicalUuid(verification)) throw new Error("Invalid checkpoint verification.");
+      return bootstrap("restore_checkpoint", verification);
+    },
     openStorage: () => bootstrap("open_storage"),
   },
 };

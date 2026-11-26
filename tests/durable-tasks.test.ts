@@ -1179,11 +1179,17 @@ async function sourceNine(f: Awaited<ReturnType<typeof setup>>): Promise<void> {
   );
   db.close();
 }
-function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
+function recoveryGate(f: Awaited<ReturnType<typeof setup>>, legacy = false): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 40 }),
+    JSON.stringify({
+      version: 1,
+      operation: "synthetic-recovery",
+      source: 9,
+      target: 40,
+      ...(legacy ? {} : { release: f.options.release }),
+    }),
   );
   return gate;
 }
@@ -1256,7 +1262,7 @@ describe("reply-control migration and shared recovery handoff", () => {
       value(await f.append("Pending"));
       if (kind === "source") await sourceNine(f);
       else await f.store.close();
-      const gate = recoveryGate(f);
+      const gate = recoveryGate(f, kind === "target");
       await f.store.retry();
       seedDefaultModel(f.raw, "first-model");
       expect(fs.existsSync(gate)).toBe(false);
