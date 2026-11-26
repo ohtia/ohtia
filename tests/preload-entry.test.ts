@@ -1330,20 +1330,21 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
   const { digest } = await import("../packages/utility/src/research-text.js");
   const fixture = storageFixture();
   await fixture.store.open();
-  let holdStageReply = false;
-  let heldStageReply: string | undefined;
+  let holdScopedReplies = false;
+  const heldScopedReplies = new Map<string, string>();
   const service = createStatusService(
     "service-1",
     "en-US",
     (text) => {
-      if (holdStageReply) {
+      if (holdScopedReplies) {
         const reply = decodeText(text);
         if (
           reply.ok &&
           reply.value.kind === "result" &&
-          reply.value.operation === "stage.transition"
+          (reply.value.operation === "stage.transition" ||
+            reply.value.operation === "manuscript.save")
         ) {
-          heldStageReply = text;
+          heldScopedReplies.set(reply.value.operation, text);
           return;
         }
       }
@@ -1427,6 +1428,67 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       projectId,
       receipt: savedProfile,
     });
+    const manuscript = await expectValue(
+      port.createManuscript("entry-create-draft", { ...profileScope, title: "Manuscript label" }),
+    );
+    const draftId = manuscript.manuscriptChange.revision.draftId;
+    const reference = { ...profileScope, draftId };
+    const firstRevision = await expectValue(
+      port.readManuscript({ ...reference, revisionId: manuscript.resultId }),
+    );
+    expect(firstRevision.revision).toMatchObject({ language: "en", saveReason: "initial" });
+    if (typeof firstRevision.markdown !== "string") throw new Error("Expected an inline header.");
+    const markdown = firstRevision.markdown + "\n# Independent heading {#sec_preload}\n";
+    const entrySave = {
+      ...reference,
+      markdown,
+      expectedRevisionId: manuscript.resultId,
+      saveReason: "manual",
+    } as const;
+    const savedDraft = await expectValue(port.saveManuscript("entry-save-draft", entrySave));
+    expect(await expectValue(port.listManuscripts({ ...profileScope, after: null }))).toMatchObject(
+      {
+        manuscripts: [
+          { draftId, title: "Manuscript label", currentRevisionId: savedDraft.resultId },
+        ],
+      },
+    );
+    expect(
+      await expectValue(
+        port.readManuscriptPart({
+          ...reference,
+          revisionId: savedDraft.resultId,
+          index: 1,
+        }),
+      ),
+    ).toMatchObject({ text: markdown });
+    expect(
+      await expectValue(
+        port.readManuscriptReceipt({
+          ...profileScope,
+          operationId: "entry-save-draft",
+          intent: {
+            kind: "save",
+            draftId,
+            expectedRevisionId: manuscript.resultId,
+            saveReason: "manual",
+            contentSha256: digest(markdown),
+          },
+        }),
+      ),
+    ).toMatchObject({ receipt: savedDraft });
+    expect(
+      await expectValue(
+        port.stageManuscriptPart("entry-draft-part", {
+          ...profileScope,
+          index: 1,
+          count: 2,
+          bytes: 4097,
+          sha256: digest("x".repeat(4097)),
+          text: "x".repeat(4096),
+        }),
+      ),
+    ).toEqual({ accepted: true });
     const stageScope = { ...profileScope, stageId: "onboarding" } as const;
     const stageInput = {
       ...stageScope,
@@ -1497,10 +1559,17 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       titleRevision: 2,
     });
     const alternate = await expectValue(port.createProject("entry-stage-alternate-project"));
-    holdStageReply = true;
+    holdScopedReplies = true;
     const late = port.transitionResearchStage(stageOperation, stageInput);
+    const lateOperationId = "entry-late-draft-save";
+    const lateMarkdown = markdown.replace("Independent heading", "Revised heading");
+    const lateSave = port.saveManuscript(lateOperationId, {
+      ...entrySave,
+      expectedRevisionId: savedDraft.resultId,
+      markdown: lateMarkdown,
+    });
     await service.drain();
-    expect(heldStageReply).toBeDefined();
+    expect(heldScopedReplies.size).toBe(2);
     projectScope.dispose();
     const alternateScope = port.subscribeResearch(
       { projectId: alternate.resultId, conversationId: null },
@@ -1510,9 +1579,32 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     alternateScope.dispose();
     const renewedScope = port.subscribeResearch({ projectId, conversationId: null }, () => {});
     const renewed = await expectValue({ result: renewedScope.ready });
-    holdStageReply = false;
-    h.ipcRenderer.emit(desktopChannels.reply, {}, heldStageReply);
+    holdScopedReplies = false;
+    for (const held of heldScopedReplies.values())
+      h.ipcRenderer.emit(desktopChannels.reply, {}, held);
     expect(await late.result).toEqual(failure("uncertain"));
+    expect(await lateSave.result).toEqual(failure("uncertain"));
+    const contentSha256 = digest(lateMarkdown);
+    expect(
+      await expectValue(
+        port.readManuscriptReceipt({
+          projectId,
+          subscriptionId: renewed.subscriptionId,
+          operationId: lateOperationId,
+          intent: {
+            kind: "save",
+            draftId,
+            expectedRevisionId: savedDraft.resultId,
+            saveReason: "manual",
+            contentSha256,
+          },
+        }),
+      ),
+    ).toMatchObject({
+      receipt: {
+        manuscriptChange: { kind: "committed", revision: { draftId, projectId, contentSha256 } },
+      },
+    });
     expect(
       await expectValue(
         port.readStageReceipt({

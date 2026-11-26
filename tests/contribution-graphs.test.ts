@@ -2100,14 +2100,14 @@ it(
     const plans = await fillSynthesisLimit(f);
     const waiting = plans[20]!;
     await f.store.close(true);
-    // Revision 24 committed before the migration gate's restart review did.
+    // The target schema committed before the migration gate's restart review did.
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
       JSON.stringify({
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 40,
+        target: 41,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);

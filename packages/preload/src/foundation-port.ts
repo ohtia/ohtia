@@ -287,7 +287,7 @@ export function createFoundationPort(
     ) {
       settle(
         entry,
-        failure(entry.request.operation === "stage.transition" ? "uncertain" : "stale_generation"),
+        failure(isResearchMutation(entry.request.operation) ? "uncertain" : "stale_generation"),
       );
       return;
     }
@@ -305,7 +305,9 @@ export function createFoundationPort(
           entry,
           failure(
             entry.request.operation === "profile.save" ||
-              entry.request.operation === "stage.transition"
+              entry.request.operation === "stage.transition" ||
+              entry.request.operation === "manuscript.create" ||
+              entry.request.operation === "manuscript.save"
               ? "uncertain"
               : "invalid_service_result",
           ),
@@ -617,6 +619,13 @@ export function createFoundationPort(
     createProject: (id) => call("project.create", {}, id),
     openProject: (id, input) => call("project.open", input, id),
     renameProject: (id, input) => call("project.rename", input, id),
+    listManuscripts: (input) => call("manuscript.list", input),
+    readManuscript: (input) => call("manuscript.read", input),
+    readManuscriptPart: (input) => call("manuscript.readPart", input),
+    stageManuscriptPart: (id, input) => call("manuscript.stagePart", input, id),
+    createManuscript: (id, input) => call("manuscript.create", input, id),
+    saveManuscript: (id, input) => call("manuscript.save", input, id),
+    readManuscriptReceipt: (input) => call("manuscript.receipt", input),
     readResearchStage: (input) => call("stage.read", input),
     readStageDecision: (input) => call("stage.history", input),
     transitionResearchStage: (id, input) => call("stage.transition", input, id),

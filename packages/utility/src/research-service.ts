@@ -15,6 +15,7 @@ import { canonicalJson } from "./research.js";
 import { TextStaging } from "./research-text.js";
 import { profileSaveHash } from "./thesis-profile.js";
 import { stageTransitionHash, stageTransitionPayload } from "./research-stage.js";
+import { manuscriptIntentHash, manuscriptSaveIntent } from "./manuscript-revisions.js";
 import { fitsResearchResult } from "./research-reads.js";
 import type { DurableStore } from "./storage.js";
 import type { DurableProvider } from "./durable-provider.js";
@@ -233,7 +234,7 @@ export class ResearchService {
       respond(failure("unauthorized"));
       return true;
     }
-    if (request.operation === "profile.stagePart") {
+    if (request.operation === "profile.stagePart" || request.operation === "manuscript.stagePart") {
       respond(
         this.staging.part(
           request.windowGeneration,
@@ -241,6 +242,58 @@ export class ResearchService {
           request.payload,
           request.payload.subscriptionId,
         ),
+      );
+      return true;
+    }
+    if (request.operation === "manuscript.create" || request.operation === "manuscript.save") {
+      const { operation, operationId, windowGeneration } = request;
+      const { projectId, subscriptionId } = request.payload;
+      const intent =
+        request.operation === "manuscript.create"
+          ? { kind: "create" as const, title: request.payload.title }
+          : manuscriptSaveIntent(request.payload);
+      const receipt = await this.storage.readResearchReceipt(
+        operationId,
+        operation,
+        manuscriptIntentHash(projectId, intent),
+      );
+      if (scopeKey && this.streams.get(scopeKey) !== selected) {
+        respond(failure("stale_generation"));
+        return true;
+      }
+      if (!receipt.ok || receipt.value) {
+        this.staging.discard(windowGeneration, operationId, subscriptionId);
+        respond(receipt);
+        return true;
+      }
+      if (request.operation === "manuscript.create") {
+        respond(
+          await this.storage.executeResearchCommand({
+            command: request.operation,
+            operationId,
+            payload: { projectId, title: request.payload.title },
+          }),
+          true,
+        );
+        return true;
+      }
+      const { draftId, expectedRevisionId, saveReason, markdown } = request.payload;
+      const text =
+        typeof markdown === "string"
+          ? { ok: true as const, value: markdown }
+          : this.staging.take(windowGeneration, operationId, markdown, subscriptionId);
+      this.staging.discard(windowGeneration, operationId, subscriptionId);
+      if (!text.ok) {
+        respond(text);
+        return true;
+      }
+      respond(
+        await this.storage.executeResearchCommand({
+          command: request.operation,
+          operationId,
+          payload: { projectId, draftId, expectedRevisionId, saveReason, markdown: text.value },
+        }),
+        true,
       );
       return true;
     }

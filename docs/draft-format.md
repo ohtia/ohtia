@@ -4,6 +4,8 @@ title: "Draft format"
 description: "Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references, stable anchors and a bounded title and paragraph codec."
 generated:
   by: codex/gpt-6.2-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: pandoc-manual
     resource: "https://github.com/jgm/pandoc/blob/main/MANUAL.txt"
@@ -125,7 +127,7 @@ Then continue the same paragraph.
 
 The codec limits the complete serialization to 128 KiB, the serialized document to 256 paragraph blocks, and each serialized title or paragraph body to 8 KiB, measured in UTF-8. The title and body limits exclude structural prefixes, attributes, wrapper lines and the final LF of each unit. Within the body, inter-line LF and the two spaces for hard breaks count. Escapes count toward all applicable byte limits. The working AST accepts up to 257 paragraph entries to accommodate an empty UI paragraph at the serialized block limit.
 
-The trusted caller supplies the expected draft ID and can provide IDs unavailable in the revision context, such as IDs owned by another manuscript or retired before the revision being saved. The codec validates the prefix, suffix, uniqueness and availability of supplied IDs and preserves them on success. Each refusal returns one typed diagnostic with a bounded location and no manuscript text. Parsing never changes input bytes. Serialization either returns the complete document or returns a refusal with the caller's working AST still available. A successful canonical round trip preserves the AST with empty working paragraphs omitted.
+The trusted caller supplies the expected draft ID and can provide IDs unavailable in the revision context, such as IDs retired in the manuscript before the revision being saved. The codec validates the prefix, suffix, uniqueness and availability of supplied IDs and preserves them on success. Each refusal returns one typed diagnostic with a bounded location and no manuscript text. Parsing never changes input bytes. Serialization either returns the complete document or returns a refusal with the caller's working AST still available. A successful canonical round trip preserves the AST with empty working paragraphs omitted.
 
 ## Bibliographic citations
 

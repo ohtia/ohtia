@@ -212,6 +212,8 @@ export interface ResearchPayloads {
     readonly title: string;
     readonly expectedTitleRevision: number;
   };
+  readonly "manuscript.create": import("./manuscript.js").ManuscriptCreatePayload;
+  readonly "manuscript.save": import("./manuscript.js").ManuscriptSavePayload;
   readonly "stage.transition": import("./research-stage.js").StageTransitionPayload;
   readonly "project.confirmSetup": { readonly proposalId: string };
   readonly "project.rejectSetup": { readonly proposalId: string };
@@ -241,6 +243,7 @@ export interface ResearchResult {
   readonly outcome?: PlanOutcome;
   readonly titleChange?: ProjectTitleChange;
   readonly profileChange?: import("./thesis-profile.js").ProfileChange;
+  readonly manuscriptChange?: import("./manuscript.js").ManuscriptWriteResult["manuscriptChange"];
   readonly stageDecision?: import("./research-stage.js").StageTransitionResult["stageDecision"];
 }
 interface ProjectTitleChange {
@@ -288,6 +291,8 @@ export const researchCommands = [
   "project.open",
   "project.rename",
   "profile.save",
+  "manuscript.create",
+  "manuscript.save",
   "stage.transition",
   "project.confirmSetup",
   "project.rejectSetup",

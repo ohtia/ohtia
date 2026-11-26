@@ -187,7 +187,7 @@ describe("research stage decisions in file-backed SQLite", () => {
     prior.close();
     await f.store.open();
     const upgraded = f.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(40);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(41);
     upgraded.close();
     const checkpointDir = path.join(f.root, "recovery", "migrations");
     expect(

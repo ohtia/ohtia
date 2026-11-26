@@ -309,6 +309,11 @@ import {
   tables as researchStageTables,
   objects as researchStageObjects,
 } from "./migrations/0040_research_stages.mjs";
+import {
+  up as manuscriptMigration,
+  tables as manuscriptTables,
+  objects as manuscriptObjects,
+} from "./migrations/0041_manuscript_revisions.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -474,6 +479,7 @@ const names = [
   "0038_project_title_revision",
   "0039_thesis_profile",
   "0040_research_stages",
+  "0041_manuscript_revisions",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -711,6 +717,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 38 ? ["project_title_history"] : []),
     ...(revision >= 39 ? Object.keys(thesisProfileTables) : []),
     ...(revision >= 40 ? Object.keys(researchStageTables) : []),
+    ...(revision >= 41 ? Object.keys(manuscriptTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -956,6 +963,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 38 ? [["project_title_history", projectTitleHistorySchema]] : []),
     ...(revision >= 39 ? Object.entries(thesisProfileTables) : []),
     ...(revision >= 40 ? Object.entries(researchStageTables) : []),
+    ...(revision >= 41 ? Object.entries(manuscriptTables) : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
     ...(revision >= 34
@@ -1019,6 +1027,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 38 ? projectTitleObjects : {}),
                 ...(revision >= 39 ? thesisProfileObjects : {}),
                 ...(revision >= 40 ? researchStageObjects : {}),
+                ...(revision >= 41 ? manuscriptObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1473,6 +1482,7 @@ export class DurableStore {
                 "0038_project_title_revision": { up: projectTitleMigration },
                 "0039_thesis_profile": { up: thesisProfileMigration },
                 "0040_research_stages": { up: researchStageMigration },
+                "0041_manuscript_revisions": { up: manuscriptMigration },
               }),
           },
         });
@@ -3263,7 +3273,8 @@ export class DurableStore {
         "task.cancelAll": { event_name: "ohtia.task.cancel_all_requested" },
         "usagePause.resume": { event_name: "ohtia.usage_pause.resume_requested" },
       } as const;
-      this.researchDiagnostic(events[command.command]);
+      if (command.command !== "manuscript.create" && command.command !== "manuscript.save")
+        this.researchDiagnostic(events[command.command]);
     } else {
       this.researchFailure(outcome.error.code);
     }

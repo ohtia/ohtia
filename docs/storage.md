@@ -1,9 +1,11 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist project titles and opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, bounded transfers, pause-count invalidation and verified migration recovery through startup and Settings.
+description: Persist research records, manuscript revisions and preferences with scoped operations, durable receipts, bounded transfers and verified migration recovery.
 generated:
   by: codex/gpt-6.2-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -99,6 +101,16 @@ In the development runtime, `--ohtia-dev-command=create-project` prints an ordin
 ## Project title changes
 
 Migration `0038_project_title_revision` adds the checked `title_revision` column to `projects` and initializes existing rows at revision 1. It admits `project.rename` in the existing command receipt registry and adds `project_title_history`, whose immutable rows reference the matching receipt and project. The reserved transaction writes the title change, the history row and the receipt together. A failed history insert rolls back the command. The [data model](data-model.md#projects) owns the revision rule and [the application port](application-port.md#envelopes-and-named-operations) owns the inputs and scoped reads.
+
+## Manuscript revisions
+
+Migration `0041_manuscript_revisions` adds the [manuscript and revision records](data-model.md#manuscripts-and-revisions) through the verified checkpoint procedure. The utility owns the committed reads and writes. A confirmed thesis can create a manuscript with a trimmed workspace label of 1–200 Unicode scalar values, excluding U+0000, using the project-title validation rules. Creation writes the label and a header-only revision with its current pointer. A text save verifies the exact retained predecessor and appends a complete immutable revision before advancing the same-manuscript pointer. The revision records the project's confirmed document language, the UTC save instant, the save reason, SHA-256 of the exact UTF-8 content, the researcher as author and the utility as recorder (PRIN-002, PRIN-004 and PRIN-013). Reads return the revision's stored language, including an explicit null for unknown language. Local creation and editing always use the confirmed project language.
+
+The utility validates the [canonical title and paragraph subset](draft-format.md) before committing. The codec allows 128 KiB UTF-8 per document, 256 paragraphs, and 8 KiB UTF-8 per title or paragraph. The service checks the manuscript header, exact canonical bytes and semantic parse–serialize–parse equality. Sections and blocks retain their identities across changes from the current predecessor. Unit IDs belong to their manuscript. An ordinary save cannot reintroduce a unit ID retired in that manuscript. Each revision retains its exact text and identities for historical reads. The schema reserves a separate same-manuscript restoration origin. Restoring or importing content requires a separately admitted action.
+
+The scoped application port exposes `manuscript.list` in pages of 20 ordered by manuscript UUID and `manuscript.read` for the current or a specific retained revision. Long content uses the shared text transfer as `manuscript.stagePart` on save and `manuscript.readPart` for an exact revision. Read descriptors bind the revision ID, byte count and hash. The create and save operations return metadata for the immutable result. Malformed or unsupported text is refused before a revision is written. Reads reject corrupt text or a mismatched content hash.
+
+A successful `manuscript.create` or `manuscript.save` commits its revision and receipt together. A save against a retained same-manuscript predecessor that has since lost current status records a conflict receipt with the observed head and leaves both versions intact. An operation fingerprint binds the project, command intent, submitted label or expected revision and save reason, and, for a save, the content hash. The window subscription only authorizes the live request. Replaying identical intent returns its recorded result even after the pointer has advanced. Changed intent with the same operation ID yields `operation_conflict`. After an uncertain acknowledgement, use `manuscript.receipt` with the original operation and intent, including the content digest for a save. A missing receipt permits retrying that operation. Validation and scope refusals leave no receipt or revision, and an aborted transaction preserves the prior current pointer (PRIN-006).
 
 ## Execution-limit receipts
 

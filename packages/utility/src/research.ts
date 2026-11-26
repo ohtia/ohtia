@@ -1,3 +1,5 @@
+import { isManuscriptSaveReason } from "@ohtia/contracts";
+import { digest } from "./research-text.js";
 import { isEntityId } from "./entity-id.js";
 import { replaceAgentPreference, type AgentPreferenceSchema } from "./agent-preferences.js";
 import type {
@@ -92,13 +94,22 @@ import {
   type ResearchStageSchema,
 } from "./research-stage.js";
 
+import {
+  applyManuscriptCommand,
+  manuscriptIntentHash,
+  manuscriptReceiptResult,
+  manuscriptSaveIntent,
+  type ManuscriptSchema,
+} from "./manuscript-revisions.js";
+
 export interface ResearchSchema
   extends
     TaskSchema,
     MemorySchema,
     AgentPreferenceSchema,
     ThesisProfileSchema,
-    ResearchStageSchema {
+    ResearchStageSchema,
+    ManuscriptSchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
@@ -304,6 +315,8 @@ const payloadKeys = {
   "project.rename": ["projectId", "title", "expectedTitleRevision"],
   "profile.save": ["projectId", "expectedRevision", "patch"],
   "stage.transition": ["projectId", "stageId", "expectedRevision", "decision"],
+  "manuscript.create": ["projectId", "title"],
+  "manuscript.save": ["projectId", "draftId", "expectedRevisionId", "saveReason", "markdown"],
   "project.confirmSetup": ["proposalId"],
   "project.rejectSetup": ["proposalId"],
   "conversation.start": ["projectId", "content"],
@@ -333,14 +346,45 @@ export async function applyResearchCommand(
     return failure("invalid_message");
   let hash: Buffer;
   try {
-    hash =
-      input.command === "profile.save"
-        ? Buffer.from(profileSaveHash(input.payload), "hex")
-        : input.command === "stage.transition"
-          ? Buffer.from(stageTransitionHash(input.payload), "hex")
-          : payloadHash
-            ? Buffer.from(payloadHash, "hex")
-            : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
+    let hex: string;
+    switch (input.command) {
+      case "profile.save":
+        hex = profileSaveHash(input.payload);
+        break;
+      case "stage.transition":
+        hex = stageTransitionHash(input.payload);
+        break;
+      case "manuscript.create": {
+        const { projectId, title } = input.payload;
+        if (
+          Object.keys(input.payload).sort().join(",") !== "projectId,title" ||
+          !isEntityId(projectId) ||
+          typeof title !== "string" ||
+          title.length > 4096
+        )
+          return failure("invalid_message");
+        hex = manuscriptIntentHash(projectId, { kind: "create", title });
+        break;
+      }
+      case "manuscript.save": {
+        const { projectId, draftId, expectedRevisionId, saveReason, markdown } = input.payload;
+        if (
+          Object.keys(input.payload).sort().join(",") !==
+            "draftId,expectedRevisionId,markdown,projectId,saveReason" ||
+          !isEntityId(projectId) ||
+          !isEntityId(draftId) ||
+          !isEntityId(expectedRevisionId) ||
+          !isManuscriptSaveReason(saveReason) ||
+          typeof markdown !== "string"
+        )
+          return failure("invalid_message");
+        hex = manuscriptIntentHash(projectId, manuscriptSaveIntent(input.payload));
+        break;
+      }
+      default:
+        hex = payloadHash ?? digest(canonicalJson(input.payload));
+    }
+    hash = Buffer.from(hex, "hex");
   } catch {
     return failure("invalid_message");
   }
@@ -654,6 +698,13 @@ export async function applyResearchCommand(
       }
       break;
     }
+    case "manuscript.create":
+    case "manuscript.save": {
+      const saved = await applyManuscriptCommand(db, input, now);
+      if (!saved.ok) return saved;
+      result = saved.value;
+      break;
+    }
     case "stage.transition": {
       const recorded = await applyStageTransition(db, input.payload, input.operationId, now);
       if (!recorded.ok) return recorded;
@@ -900,6 +951,8 @@ export async function researchReceiptResult(
   receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id" | "operation_id">,
 ): Promise<ResearchResult> {
   const resultId = identifier(receipt.result_id);
+  if (receipt.command === "manuscript.create" || receipt.command === "manuscript.save")
+    return manuscriptReceiptResult(db, receipt.command, receipt.operation_id, receipt.result_id);
   if (receipt.command === "stage.transition")
     return stageReceiptResult(db, receipt.operation_id, receipt.result_id);
   if (receipt.command === "profile.save")

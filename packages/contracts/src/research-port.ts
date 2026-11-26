@@ -62,6 +62,19 @@ import {
   type StageTransitionResult,
 } from "./research-stage.js";
 import { canonicalJson } from "./canonical-json.js";
+import {
+  isManuscriptLanguage,
+  isManuscriptSaveReason,
+  manuscriptLimits,
+  manuscriptPageSize,
+  type ManuscriptIntent,
+  type ManuscriptPage,
+  type ManuscriptReceipt,
+  type ManuscriptRevision,
+  type ManuscriptSummary,
+  type ManuscriptSavePayload,
+  type ManuscriptWriteResult,
+} from "./manuscript.js";
 
 export const researchOperations = [
   "agentPreference.list",
@@ -80,6 +93,13 @@ export const researchOperations = [
   "profile.stagePart",
   "profile.save",
   "profile.receipt",
+  "manuscript.list",
+  "manuscript.read",
+  "manuscript.readPart",
+  "manuscript.stagePart",
+  "manuscript.create",
+  "manuscript.save",
+  "manuscript.receipt",
   "stage.read",
   "stage.history",
   "stage.transition",
@@ -701,6 +721,26 @@ type SaveProfileInput = ProjectResearchScope & {
   readonly patch: string | TextDescriptor;
 };
 export interface ResearchInputs {
+  "manuscript.list": ProjectResearchScope & { readonly after: string | null };
+  "manuscript.read": ProjectResearchScope & {
+    readonly draftId: string;
+    readonly revisionId: string | null;
+  };
+  "manuscript.readPart": ProjectResearchScope & {
+    readonly draftId: string;
+    readonly revisionId: string;
+    readonly index: number;
+  };
+  "manuscript.stagePart": ProjectResearchScope & TextPart;
+  "manuscript.create": ProjectResearchScope & ResearchPayloads["manuscript.create"];
+  "manuscript.save": ProjectResearchScope &
+    Omit<ManuscriptSavePayload, "markdown"> & {
+      readonly markdown: string | TextDescriptor;
+    };
+  "manuscript.receipt": ProjectResearchScope & {
+    readonly operationId: string;
+    readonly intent: ManuscriptIntent;
+  };
   "stage.read": ProjectResearchScope & { readonly stageId: ResearchStageId };
   "stage.history": ResearchInputs["stage.read"] & { readonly revision: number };
   "stage.transition": ProjectResearchScope & StageTransitionPayload;
@@ -796,6 +836,19 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "manuscript.list": ManuscriptPage;
+  "manuscript.read": { readonly revision: ManuscriptRevision; readonly markdown: PortText };
+  "manuscript.readPart": {
+    readonly projectId: string;
+    readonly draftId: string;
+    readonly revisionId: string;
+    readonly index: number;
+    readonly text: string;
+  };
+  "manuscript.stagePart": { readonly accepted: true };
+  "manuscript.create": ManuscriptWriteResult;
+  "manuscript.save": ManuscriptWriteResult;
+  "manuscript.receipt": ManuscriptReceipt;
   "stage.read": StageSnapshot;
   "stage.history": StageDecision;
   "stage.transition": StageTransitionResult;
@@ -867,6 +920,26 @@ export interface ResearchOutputs {
   "reply.details": ReplyDetails;
 }
 export interface ResearchPort {
+  listManuscripts(input: ResearchInputs["manuscript.list"]): PortCall<ManuscriptPage>;
+  readManuscript(
+    input: ResearchInputs["manuscript.read"],
+  ): PortCall<ResearchOutputs["manuscript.read"]>;
+  readManuscriptPart(
+    input: ResearchInputs["manuscript.readPart"],
+  ): PortCall<ResearchOutputs["manuscript.readPart"]>;
+  stageManuscriptPart(
+    operationId: string,
+    input: ResearchInputs["manuscript.stagePart"],
+  ): PortCall<ResearchOutputs["manuscript.stagePart"]>;
+  createManuscript(
+    operationId: string,
+    input: ResearchInputs["manuscript.create"],
+  ): PortCall<ManuscriptWriteResult>;
+  saveManuscript(
+    operationId: string,
+    input: ResearchInputs["manuscript.save"],
+  ): PortCall<ManuscriptWriteResult>;
+  readManuscriptReceipt(input: ResearchInputs["manuscript.receipt"]): PortCall<ManuscriptReceipt>;
   readResearchStage(input: ResearchInputs["stage.read"]): PortCall<StageSnapshot>;
   readStageDecision(input: ResearchInputs["stage.history"]): PortCall<StageDecision>;
   transitionResearchStage(
@@ -1039,6 +1112,8 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "project.open",
     "project.rename",
     "profile.save",
+    "manuscript.create",
+    "manuscript.save",
     "stage.transition",
     "project.confirmSetup",
     "project.rejectSetup",
@@ -1226,6 +1301,13 @@ function cursor(value: unknown): boolean {
 }
 export function projectResearchScope(request: Request): ProjectResearchScope | undefined {
   switch (request.operation) {
+    case "manuscript.list":
+    case "manuscript.read":
+    case "manuscript.readPart":
+    case "manuscript.stagePart":
+    case "manuscript.create":
+    case "manuscript.save":
+    case "manuscript.receipt":
     case "stage.read":
     case "stage.history":
     case "stage.transition":
@@ -1237,6 +1319,100 @@ export function projectResearchScope(request: Request): ProjectResearchScope | u
     case "profile.receipt":
       return request.payload;
   }
+}
+function manuscriptIntent(value: unknown): value is ManuscriptIntent {
+  return (
+    (exact(value, ["kind", "title"]) &&
+      value.kind === "create" &&
+      typeof value.title === "string") ||
+    (exact(value, ["kind", "draftId", "expectedRevisionId", "saveReason", "contentSha256"]) &&
+      value.kind === "save" &&
+      isResearchId(value.draftId) &&
+      isResearchId(value.expectedRevisionId) &&
+      isManuscriptSaveReason(value.saveReason) &&
+      hash(value.contentSha256))
+  );
+}
+function manuscriptSummary(value: unknown): value is ManuscriptSummary {
+  return (
+    exact(value, ["draftId", "title", "currentRevisionId"]) &&
+    isResearchId(value.draftId) &&
+    isResearchId(value.currentRevisionId) &&
+    typeof value.title === "string" &&
+    projectTitleError(value.title) === null
+  );
+}
+function manuscriptPage(value: unknown): value is ManuscriptPage {
+  if (
+    !exact(value, ["projectId", "manuscripts", "next"]) ||
+    !isResearchId(value.projectId) ||
+    !Array.isArray(value.manuscripts)
+  )
+    return false;
+  const rows: readonly unknown[] = value.manuscripts;
+  if (rows.length > manuscriptPageSize) return false;
+  let last: string | null = null;
+  for (const row of rows) {
+    if (!manuscriptSummary(row) || (last !== null && last >= row.draftId)) return false;
+    last = row.draftId;
+  }
+  return value.next === null || (rows.length === manuscriptPageSize && value.next === last);
+}
+function manuscriptRevision(value: unknown): value is ManuscriptRevision {
+  return (
+    exact(value, [
+      "projectId",
+      "draftId",
+      "revisionId",
+      "parentRevisionId",
+      "restorationOriginId",
+      "language",
+      "createdAt",
+      "saveReason",
+      "contentSha256",
+      "authorKind",
+      "recordingActor",
+    ]) &&
+    isResearchId(value.projectId) &&
+    isResearchId(value.draftId) &&
+    isResearchId(value.revisionId) &&
+    nullable(value.parentRevisionId, isResearchId) &&
+    nullable(value.restorationOriginId, isResearchId) &&
+    value.parentRevisionId !== value.revisionId &&
+    value.restorationOriginId !== value.revisionId &&
+    isManuscriptLanguage(value.language) &&
+    date(value.createdAt) &&
+    (isManuscriptSaveReason(value.saveReason) ||
+      value.saveReason === "initial" ||
+      value.saveReason === "restoration") &&
+    (value.saveReason === "initial") === (value.parentRevisionId === null) &&
+    (value.saveReason === "restoration") === (value.restorationOriginId !== null) &&
+    hash(value.contentSha256) &&
+    value.authorKind === "researcher" &&
+    value.recordingActor === "utility"
+  );
+}
+function manuscriptWrite(value: unknown): value is ManuscriptWriteResult {
+  return (
+    exact(value, ["resultId", "manuscriptChange"]) &&
+    exact(value.manuscriptChange, ["kind", "revision"]) &&
+    (value.manuscriptChange.kind === "committed" || value.manuscriptChange.kind === "conflict") &&
+    manuscriptRevision(value.manuscriptChange.revision) &&
+    value.resultId === value.manuscriptChange.revision.revisionId
+  );
+}
+function manuscriptWriteMatches(result: unknown, projectId: unknown, intent: unknown): boolean {
+  if (!obj(intent) || !manuscriptWrite(result)) return false;
+  const { kind, revision } = result.manuscriptChange;
+  if (revision.projectId !== projectId) return false;
+  if (intent.kind === "create") return kind === "committed" && revision.saveReason === "initial";
+  if (revision.draftId !== intent.draftId) return false;
+  if (kind === "conflict") return revision.revisionId !== intent.expectedRevisionId;
+  return (
+    revision.parentRevisionId === intent.expectedRevisionId &&
+    revision.saveReason === intent.saveReason &&
+    (typeof intent.contentSha256 !== "string" || revision.contentSha256 === intent.contentSha256)
+  );
 }
 function profilePatch(value: unknown): boolean {
   return typeof value === "string"
@@ -1380,6 +1556,83 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       );
     case "project.create":
       return exact(value, []);
+    case "manuscript.list":
+      return (
+        exact(value, ["projectId", "subscriptionId", "after"]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        nullable(value.after, isResearchId)
+      );
+    case "manuscript.read":
+    case "manuscript.readPart":
+      return (
+        exact(
+          value,
+          operation === "manuscript.read"
+            ? ["projectId", "subscriptionId", "draftId", "revisionId"]
+            : ["projectId", "subscriptionId", "draftId", "revisionId", "index"],
+        ) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        isResearchId(value.draftId) &&
+        (operation === "manuscript.read"
+          ? nullable(value.revisionId, isResearchId)
+          : isResearchId(value.revisionId) && integer(value.index, 1, 64))
+      );
+    case "manuscript.stagePart":
+      return (
+        exact(value, [
+          "projectId",
+          "subscriptionId",
+          "index",
+          "count",
+          "bytes",
+          "sha256",
+          "text",
+        ]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        integer(value.index, 1, 64) &&
+        integer(value.count, 2, 64) &&
+        value.index <= value.count &&
+        integer(value.bytes, 4097, manuscriptLimits.documentBytes) &&
+        hash(value.sha256) &&
+        typeof value.text === "string" &&
+        value.text.length > 0
+      );
+    case "manuscript.create":
+      return (
+        exact(value, ["projectId", "subscriptionId", "title"]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        typeof value.title === "string"
+      );
+    case "manuscript.save":
+      return (
+        exact(value, [
+          "projectId",
+          "subscriptionId",
+          "draftId",
+          "expectedRevisionId",
+          "saveReason",
+          "markdown",
+        ]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        isResearchId(value.draftId) &&
+        isResearchId(value.expectedRevisionId) &&
+        isManuscriptSaveReason(value.saveReason) &&
+        (typeof value.markdown === "string" ||
+          (descriptor(value.markdown) && value.markdown.bytes <= manuscriptLimits.documentBytes))
+      );
+    case "manuscript.receipt":
+      return (
+        exact(value, ["projectId", "subscriptionId", "operationId", "intent"]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        opaque(value.operationId) &&
+        manuscriptIntent(value.intent)
+      );
     case "stage.read":
     case "stage.history":
       return (
@@ -2081,6 +2334,38 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       Array.isArray(value.versions) &&
       value.versions.length <= memoryPageSize &&
       value.versions.every(isMemoryVersion)
+    );
+  if (operation === "manuscript.list") return manuscriptPage(value);
+  if (operation === "manuscript.read")
+    return (
+      exact(value, ["revision", "markdown"]) &&
+      manuscriptRevision(value.revision) &&
+      (typeof value.markdown === "string" ||
+        (isTextReference(value.markdown) &&
+          value.markdown.bytes <= manuscriptLimits.documentBytes &&
+          value.markdown.source === value.revision.revisionId &&
+          value.markdown.sha256 === value.revision.contentSha256))
+    );
+  if (operation === "manuscript.readPart")
+    return (
+      exact(value, ["projectId", "draftId", "revisionId", "index", "text"]) &&
+      isResearchId(value.projectId) &&
+      isResearchId(value.draftId) &&
+      isResearchId(value.revisionId) &&
+      integer(value.index, 1, 64) &&
+      typeof value.text === "string" &&
+      value.text.length > 0
+    );
+  if (operation === "manuscript.stagePart")
+    return exact(value, ["accepted"]) && value.accepted === true;
+  if (operation === "manuscript.create" || operation === "manuscript.save")
+    return manuscriptWrite(value);
+  if (operation === "manuscript.receipt")
+    return (
+      exact(value, ["projectId", "operationId", "receipt"]) &&
+      isResearchId(value.projectId) &&
+      opaque(value.operationId) &&
+      nullable(value.receipt, manuscriptWrite)
     );
   if (operation === "stage.read") return isStageSnapshot(value);
   if (operation === "stage.history") return isStageDecision(value);
@@ -2816,6 +3101,47 @@ export function researchResultMatches(
       )
     );
   }
+  if (operation === "manuscript.list") {
+    if (output.projectId !== input.projectId || !Array.isArray(output.manuscripts)) return false;
+    const first: unknown = output.manuscripts[0];
+    return (
+      input.after === null ||
+      output.manuscripts.length === 0 ||
+      (obj(first) &&
+        typeof first.draftId === "string" &&
+        typeof input.after === "string" &&
+        first.draftId > input.after)
+    );
+  }
+  if (operation === "manuscript.read")
+    return (
+      obj(output.revision) &&
+      output.revision.projectId === input.projectId &&
+      output.revision.draftId === input.draftId &&
+      (input.revisionId === null || output.revision.revisionId === input.revisionId)
+    );
+  if (operation === "manuscript.readPart")
+    return (
+      output.projectId === input.projectId &&
+      output.draftId === input.draftId &&
+      output.revisionId === input.revisionId &&
+      output.index === input.index
+    );
+  if (operation === "manuscript.create")
+    return manuscriptWriteMatches(output, input.projectId, { kind: "create" });
+  if (operation === "manuscript.save")
+    return manuscriptWriteMatches(output, input.projectId, {
+      ...input,
+      kind: "save",
+      contentSha256: descriptor(input.markdown) ? input.markdown.sha256 : undefined,
+    });
+  if (operation === "manuscript.receipt")
+    return (
+      output.projectId === input.projectId &&
+      output.operationId === input.operationId &&
+      (output.receipt === null ||
+        manuscriptWriteMatches(output.receipt, input.projectId, input.intent))
+    );
   if (operation === "stage.read" || operation === "stage.history")
     return (
       output.projectId === input.projectId &&
