@@ -6,6 +6,7 @@ import {
   isResearchMutation,
   isResearchOperation,
   researchResultMatches,
+  profileScope,
   decodeAppearanceChange,
   decodeUpdateCheckChange,
   decodePresentationChange,
@@ -278,6 +279,15 @@ export function createFoundationPort(
       );
       return;
     }
+    const scope = profileScope(entry.request);
+    if (
+      scope &&
+      entry.request.operation !== "profile.save" &&
+      !streams.get(scope.subscriptionId)?.active
+    ) {
+      settle(entry, failure("stale_generation"));
+      return;
+    }
     if (message.payload.ok) {
       if (
         isResearchOperation(entry.request.operation) &&
@@ -287,7 +297,12 @@ export function createFoundationPort(
           message.payload.value,
         )
       ) {
-        settle(entry, failure("invalid_service_result"));
+        settle(
+          entry,
+          failure(
+            entry.request.operation === "profile.save" ? "uncertain" : "invalid_service_result",
+          ),
+        );
         return;
       }
       if (
@@ -595,6 +610,11 @@ export function createFoundationPort(
     createProject: (id) => call("project.create", {}, id),
     openProject: (id, input) => call("project.open", input, id),
     renameProject: (id, input) => call("project.rename", input, id),
+    readThesisProfile: (input) => call("profile.read", input),
+    readThesisProfilePart: (input) => call("profile.readPart", input),
+    stageThesisProfilePart: (id, input) => call("profile.stagePart", input, id),
+    saveThesisProfile: (id, input) => call("profile.save", input, id),
+    readThesisProfileReceipt: (input) => call("profile.receipt", input),
     readProject: (input) => call("project.read", input),
     confirmProjectSetup: (id, input) => call("project.confirmSetup", input, id),
     rejectProjectSetup: (id, input) => call("project.rejectSetup", input, id),

@@ -12,6 +12,7 @@ import {
   confirmProjectRenameFixture,
   verifyPackagedProjectRename,
 } from "./project-rename-acceptance.mjs";
+import { verifyPackagedThesisProfile } from "./thesis-profile-acceptance.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { runStorageComponent } from "./storage-component-runner.mjs";
 import {
@@ -220,6 +221,60 @@ async function component(mode, directory, expectedInterruption = false) {
     env: launch.env,
   });
 }
+const everyoneSid = "*S-1-1-0";
+
+function windowsStorageAcl(cwd, args) {
+  const icacls = path.join(launch.env.SystemRoot, "System32", "icacls.exe");
+  return execFileSync(icacls, args, {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 15_000,
+    maxBuffer: 32_768,
+    windowsHide: true,
+  });
+}
+
+function denyWindowsStorageRead(acl, original) {
+  acl(["/deny", `${everyoneSid}:(RD)`]);
+  assert.ok(!acl().equals(original), "The fixture read-deny rule is missing.");
+}
+
+async function withWindowsLocatorReadDenied(locator, operation) {
+  // A same-volume move retains the original record and its ACL.
+  const { dev, ino } = fs.statSync(locator, { bigint: true });
+  const scratch = fs.mkdtempSync(path.join(path.dirname(locator), ".storage-read-acl-"));
+  const saved = path.join(scratch, "original.json");
+  const denied = path.join(scratch, "denied.json");
+  let originalMoved = false;
+  return withCommandCleanup(
+    async () => {
+      fs.copyFileSync(locator, denied, fs.constants.COPYFILE_EXCL);
+      const acl = (args = []) => windowsStorageAcl(scratch, [path.basename(denied), ...args]);
+      denyWindowsStorageRead(acl, acl());
+      fs.renameSync(locator, saved);
+      originalMoved = true;
+      await withCommandCleanup(
+        async () => {
+          fs.renameSync(denied, locator);
+          await operation();
+        },
+        () => {
+          fs.renameSync(saved, locator);
+          originalMoved = false;
+          const restored = fs.statSync(locator, { bigint: true });
+          assert.ok(
+            restored.dev === dev && restored.ino === ino,
+            "The fixture must restore the original locator file.",
+          );
+        },
+      );
+    },
+    () => {
+      if (!originalMoved) fs.rmSync(scratch, { recursive: true, force: true });
+    },
+  );
+}
+
 async function withStorageReadDenied(target, operation) {
   if (process.platform !== "win32") {
     const mode = fs.statSync(target).mode & 0o777;
@@ -231,41 +286,47 @@ async function withStorageReadDenied(target, operation) {
       () => fs.chmodSync(target, mode),
     );
   }
+  if (fs.statSync(target).isFile()) return withWindowsLocatorReadDenied(target, operation);
 
-  const icacls = path.join(launch.env.SystemRoot, "System32", "icacls.exe");
+  // The admitted directory must retain its identity while the test is running.
   const parent = path.dirname(target);
   const entry = path.basename(target);
-  const acl = (args) =>
-    execFileSync(icacls, args, {
-      cwd: parent,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 15_000,
-      maxBuffer: 32_768,
-      windowsHide: true,
-    });
-  // Compare the displayed access rules rather than the serialized descriptor.
-  const original = acl([entry]);
+  const acl = (args = []) => windowsStorageAcl(parent, [entry, ...args]);
+  const original = acl();
   const scratch = fs.mkdtempSync(path.join(launch.profile.scratch_root, "storage-read-acl-"));
   const saved = path.join(scratch, "original.acl");
+  let restorePending = false;
   return withCommandCleanup(
     async () => {
-      acl([entry, "/save", saved]);
+      acl(["/save", saved]);
+      restorePending = true;
       await withCommandCleanup(
         async () => {
-          acl([entry, "/deny", "*S-1-1-0:(RD)"]);
-          assert.ok(!acl([entry]).equals(original), "The fixture read-deny rule is missing.");
+          denyWindowsStorageRead(acl, original);
           await operation();
         },
         () => {
-          acl([parent, "/restore", saved]);
-          assert.ok(
-            acl([entry]).equals(original),
-            "The fixture must restore the original Windows access rules.",
-          );
+          let restored = false;
+          try {
+            acl(["/remove:d", everyoneSid]);
+            restored = acl().equals(original);
+          } catch {
+            // Restore the saved descriptor if targeted removal or its readback failed.
+          }
+          if (!restored) {
+            windowsStorageAcl(parent, [parent, "/restore", saved]);
+            assert.ok(
+              acl().equals(original),
+              "The fixture must restore the original Windows access rules.",
+            );
+          }
+          restorePending = false;
         },
       );
     },
-    () => fs.rmSync(scratch, { recursive: true, force: true }),
+    () => {
+      if (!restorePending) fs.rmSync(scratch, { recursive: true, force: true });
+    },
   );
 }
 async function verifyManagedStoreLocation(page, locale) {
@@ -363,49 +424,49 @@ async function verifyManagedStoreLocation(page, locale) {
         await assertReason(reason);
         expect(fs.readFileSync(locator, "utf8")).toBe(record);
       }
-      fs.writeFileSync(locator, original);
-      for (const [phase, target, reason, text, probe] of [
-        [
-          "deny-managed-store-locator-read",
-          locator,
-          "locator_unreadable",
-          "locator_unreadable",
-          () => fs.readFileSync(locator),
-        ],
-        [
-          "deny-managed-store-directory-list",
-          directory,
-          "location_display_unavailable",
-          "settings.storage.unavailable",
-          () => fs.opendirSync(directory).closeSync(),
-        ],
-      ]) {
-        enterPhase(`${phase}-before`, ".settings-dialog[open]");
-        probe();
-        enterPhase(`${phase}-prepare`, ".settings-dialog[open]");
-        await withStorageReadDenied(target, async () => {
-          enterPhase(phase, ".settings-dialog[open]");
-          assert.throws(
-            probe,
-            (error) => {
-              assert.ok(
-                error.code === "EACCES" || error.code === "EPERM",
-                `Unexpected read error in ${phase} (${error.code ?? "no code"}).`,
-              );
-              return true;
-            },
-            `The fixture must deny the expected read in ${phase}.`,
-          );
-          await assertReason(reason, text);
-        });
-        enterPhase(`${phase}-restored`, ".settings-dialog[open]");
-        probe();
-        expect(await read()).toEqual(available);
-      }
-      enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
     },
     () => fs.writeFileSync(locator, original, { mode: 0o600 }),
   );
+
+  for (const [phase, target, reason, text, probe] of [
+    [
+      "deny-managed-store-locator-read",
+      locator,
+      "locator_unreadable",
+      "locator_unreadable",
+      () => fs.readFileSync(locator),
+    ],
+    [
+      "deny-managed-store-directory-list",
+      directory,
+      "location_display_unavailable",
+      "settings.storage.unavailable",
+      () => fs.opendirSync(directory).closeSync(),
+    ],
+  ]) {
+    enterPhase(`${phase}-before`, ".settings-dialog[open]");
+    probe();
+    enterPhase(`${phase}-prepare`, ".settings-dialog[open]");
+    await withStorageReadDenied(target, async () => {
+      enterPhase(phase, ".settings-dialog[open]");
+      assert.throws(
+        probe,
+        (error) => {
+          assert.ok(
+            error.code === "EACCES" || error.code === "EPERM",
+            `Unexpected read error in ${phase} (${error.code ?? "no code"}).`,
+          );
+          return true;
+        },
+        `The fixture must deny the expected read in ${phase}.`,
+      );
+      await assertReason(reason, text);
+    });
+    enterPhase(`${phase}-restored`, ".settings-dialog[open]");
+    probe();
+    expect(await read()).toEqual(available);
+  }
+  enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
   await page.keyboard.press("Enter");
   await expect(shownPath).toHaveText(directory);
   await page.keyboard.press("Escape");
@@ -1013,6 +1074,8 @@ try {
   confirmProjectRenameFixture(databaseFile, projects);
   page = await start();
   await open(page);
+  enterPhase("verify-packaged-thesis-profile", ".project-selector-button");
+  record("packaged-thesis-profile", await verifyPackagedThesisProfile(application, page, projects));
   enterPhase("verify-packaged-project-rename", ".project-selector-button");
   record(
     "packaged-project-rename",

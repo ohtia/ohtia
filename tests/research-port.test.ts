@@ -22,6 +22,8 @@ import {
   decodeProviderDispatch,
   decodeLateUsageReceipt,
   decodeText,
+  encodeProfileContent,
+  profileRevisionBytes,
   encodeEnvelope,
   failure,
   policyId,
@@ -2910,4 +2912,179 @@ it("checks active thesis scope in each session and reconciles a lost rename ackn
   expect(
     await h.port.renameProject("unconfirmed", { ...payload, projectId: otherProject }).result,
   ).toEqual(failure("project_in_setup"));
+});
+
+it("scopes thesis profile reads, parts, changes and receipt replay to the active selection", async () => {
+  const h = await harness();
+  const other = h.openWindow("profile-second-window").port;
+  const outside = value(await other.createProject("profile-other-project").result).resultId;
+  const events: Outcome<ResearchEvent>[] = [];
+  const projectId = h.projectId;
+  const scope = { projectId, conversationId: h.conversationId };
+  const opening = h.port.subscribeResearch(scope, (event) => events.push(event));
+  const selected = other.subscribeResearch(scope, () => {});
+  const a = { projectId, ...value(await opening.ready) };
+  const b = { projectId, ...value(await selected.ready) };
+  const elsewhere = h.openWindow("profile-other-window").port;
+  const outsideStream = elsewhere.subscribeResearch(
+    { projectId: outside, conversationId: null },
+    () => {},
+  );
+  const c = { projectId: outside, ...value(await outsideStream.ready) };
+
+  expect(value(await h.port.readThesisProfile({ ...a, revisionId: null }).result)).toEqual({
+    projectId,
+    profile: null,
+  });
+  expect(
+    await h.port.readThesisProfile({ ...a, projectId: outside, revisionId: null }).result,
+  ).toEqual(failure("unauthorized"));
+  expect(await other.readThesisProfile({ ...a, revisionId: null }).result).toEqual(
+    failure("stale_generation"),
+  );
+  expect(await elsewhere.readThesisProfile({ ...c, revisionId: null }).result).toEqual(
+    failure("project_in_setup"),
+  );
+
+  const origin = { kind: "researcher_statement" } as const;
+  const fact = (value: string) => ({ state: "known", value, origin }) as const;
+  const fullProfile = (topic: string) =>
+    encodeProfileContent({
+      schemaVersion: 1,
+      fields: {
+        topic: fact(topic),
+        bibliography: {
+          state: "known",
+          items: Array.from({ length: 15 }, () => fact("📚".repeat(512))),
+        },
+      },
+    });
+  const text = fullProfile("a".repeat(1 + profileRevisionBytes - utf8Size(fullProfile("a"))));
+  expect(utf8Size(text)).toBe(profileRevisionBytes);
+  const pieces = splitText(text);
+  const descriptor = { parts: pieces.length, bytes: utf8Size(text), sha256: digest(text) };
+  const payload = { ...a, expectedRevision: 0, patch: descriptor };
+  expect(await h.port.saveThesisProfile("profile-save", payload).result).toEqual(
+    failure("parts_incomplete"),
+  );
+  for (const [index, part] of pieces.entries()) {
+    value(
+      await h.port.stageThesisProfilePart("profile-save", {
+        ...a,
+        index: index + 1,
+        count: descriptor.parts,
+        bytes: descriptor.bytes,
+        sha256: descriptor.sha256,
+        text: part,
+      }).result,
+    );
+  }
+  h.dropAcknowledgement("profile-save");
+  const pending = h.port.saveThesisProfile("profile-save", payload);
+  await h.service.drain();
+  pending.cancel();
+  expect(await pending.result).toEqual(failure("uncertain"));
+  const receiptInput = {
+    ...b,
+    expectedRevision: 0,
+    patch: descriptor,
+    operationId: "profile-save",
+  };
+  expect(
+    value(
+      await other.readThesisProfileReceipt({ ...receiptInput, operationId: "missing-profile-save" })
+        .result,
+    ).receipt,
+  ).toBeNull();
+  const receipt = value(await other.readThesisProfileReceipt(receiptInput).result).receipt!;
+  expect(receipt.profileChange).toEqual({
+    projectId,
+    revision: {
+      revisionId: receipt.resultId,
+      revision: 1,
+      previousRevisionId: null,
+      changedFields: ["bibliography", "topic"],
+    },
+  });
+  expect(value(await h.port.saveThesisProfile("profile-save", payload).result)).toEqual(receipt);
+  await vi.waitFor(() =>
+    expect(events).toContainEqual({
+      ok: true,
+      value: { kind: "changed", record: "profile", id: projectId, revision: 1 },
+    }),
+  );
+  const profile = value(
+    await h.port.readThesisProfile({ ...a, revisionId: receipt.resultId }).result,
+  ).profile!;
+  expect(profile.content).toEqual({ source: receipt.resultId, ...descriptor });
+  const output: string[] = [];
+  for (let index = 1; index <= descriptor.parts; index++) {
+    output.push(
+      value(
+        await h.port.readThesisProfilePart({ ...a, revisionId: receipt.resultId, index }).result,
+      ).text,
+    );
+  }
+  expect(output.join("")).toBe(text);
+  expect(
+    await h.port.readThesisProfilePart({ ...a, revisionId: receipt.resultId, index: 64 }).result,
+  ).toEqual(failure("record_not_found"));
+
+  const patch = encodeProfileContent({
+    schemaVersion: 1,
+    fields: { deadline: { state: "unknown" }, topic: fact("Revised topic") },
+  });
+  expect(await other.readThesisProfileReceipt({ ...receiptInput, patch }).result).toEqual(
+    failure("operation_conflict"),
+  );
+  expect(
+    await other.saveThesisProfile("competing-profile", { ...b, expectedRevision: 0, patch }).result,
+  ).toMatchObject({
+    ok: false,
+    error: { code: "stale_revision", parameters: { currentRevision: 1 } },
+  });
+  const newer = value(
+    await other.saveThesisProfile("profile-next", { ...b, expectedRevision: 1, patch }).result,
+  );
+  expect(newer.profileChange.revision.previousRevisionId).toBe(receipt.resultId);
+  expect(value(await other.readThesisProfileReceipt(receiptInput).result).receipt).toEqual(receipt);
+
+  const staged = {
+    index: 1,
+    count: descriptor.parts,
+    bytes: descriptor.bytes,
+    sha256: descriptor.sha256,
+    text: pieces[0]!,
+  };
+  value(await h.port.stageThesisProfilePart("old-selection-staging", { ...a, ...staged }).result);
+  expect(await h.port.sendTextPart("old-selection-staging", staged).result).toEqual(
+    failure("invalid_message"),
+  );
+  const oldRead = h.port.readThesisProfile({ ...a, revisionId: null });
+  opening.dispose();
+  const switchAway = h.port.subscribeResearch(
+    { projectId: outside, conversationId: null },
+    () => {},
+  );
+  value(await switchAway.ready);
+  switchAway.dispose();
+  const returned = h.port.subscribeResearch(scope, () => {});
+  expect(await oldRead.result).toEqual(failure("stale_generation"));
+  expect(await h.port.saveThesisProfile("profile-save", payload).result).toEqual(
+    failure("unauthorized"),
+  );
+  const current = value(await returned.ready);
+  expect(
+    value(
+      await h.port.stageThesisProfilePart("old-selection-staging", {
+        projectId,
+        ...current,
+        ...staged,
+      }).result,
+    ),
+  ).toEqual({ accepted: true });
+  expect(
+    value(await h.port.readThesisProfile({ projectId, ...current, revisionId: null }).result)
+      .profile?.revisionId,
+  ).toBe(newer.resultId);
 });

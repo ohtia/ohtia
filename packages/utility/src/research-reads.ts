@@ -55,6 +55,12 @@ import {
 } from "./project-memory.js";
 import { readReplyDetails } from "./reply-details.js";
 import { storedText } from "./research-text.js";
+import {
+  currentProfileNumber,
+  readProfile,
+  readProfilePart,
+  readProfileReceipt,
+} from "./thesis-profile.js";
 
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
 export function fitsResearchResult(request: Request, value: unknown): boolean {
@@ -708,6 +714,12 @@ export async function readResearch(
         ? { ok: true, value }
         : failure("invalid_service_result");
     }
+    case "profile.read":
+      return readProfile(db, request.payload);
+    case "profile.readPart":
+      return readProfilePart(db, request.payload);
+    case "profile.receipt":
+      return readProfileReceipt(db, request.payload);
     case "project.read": {
       const row = await db
         .selectFrom("projects")
@@ -1002,6 +1014,11 @@ export async function researchRevisions(
     });
     if (scope.projectId === id)
       result.push({ kind: "changed", record: "projectTitle", id, revision: row.title_revision });
+  }
+  if (scope.projectId) {
+    const revision = await currentProfileNumber(db, bytes(scope.projectId));
+    if (revision !== undefined)
+      result.push({ kind: "changed", record: "profile", id: scope.projectId, revision });
   }
   for (const row of await db
     .selectFrom("usage_limit_pauses")

@@ -218,7 +218,7 @@ describe("restart admission and durable service runs", () => {
     await f.store.close(true);
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "diagnostic-recovery", source: 10, target: 38 }),
+      JSON.stringify({ version: 1, operation: "diagnostic-recovery", source: 10, target: 39 }),
     );
     const events: string[] = [];
     const recovered = new DurableStore({
@@ -465,7 +465,7 @@ describe("restart admission and durable service runs", () => {
       const gate = path.join(f.root, "migration-pending.json");
       fs.writeFileSync(
         gate,
-        JSON.stringify({ version: 1, operation: "recovery", source: 10, target: 38 }),
+        JSON.stringify({ version: 1, operation: "recovery", source: 10, target: 39 }),
       );
       await expect(f.store.open()).rejects.toThrow(/recovery/);
       if (failure === "before-commit") {

@@ -4,6 +4,7 @@ import {
   isResearchMutation,
   isResearchOperation,
   policyId,
+  profileScope,
   type Request,
   type ResearchCommand,
   type ResearchEvent,
@@ -12,6 +13,7 @@ import {
 } from "@ohtia/contracts";
 import { canonicalJson } from "./research.js";
 import { TextStaging } from "./research-text.js";
+import { profileSaveHash } from "./thesis-profile.js";
 import { fitsResearchResult } from "./research-reads.js";
 import type { DurableStore } from "./storage.js";
 import type { DurableProvider } from "./durable-provider.js";
@@ -118,10 +120,11 @@ export class ResearchService {
   }
   unsubscribe(window: string, subscription: string): void {
     this.streams.delete(`${window}/${subscription}`);
+    this.staging.closeSubscription(window, subscription);
   }
   revokeWindow(window: string): void {
-    for (const [key, stream] of this.streams)
-      if (stream.window === window) this.streams.delete(key);
+    for (const stream of this.streams.values())
+      if (stream.window === window) this.unsubscribe(window, stream.id);
   }
   closeWindow(window: string): void {
     this.revokeWindow(window);
@@ -222,18 +225,59 @@ export class ResearchService {
         return true;
       }
     }
+    const scope = profileScope(request);
+    if (
+      scope &&
+      this.streams.get(`${request.windowGeneration}/${scope.subscriptionId}`)?.scope.projectId !==
+        scope.projectId
+    ) {
+      respond(failure("unauthorized"));
+      return true;
+    }
+    if (request.operation === "profile.stagePart") {
+      respond(
+        this.staging.part(
+          request.windowGeneration,
+          request.operationId,
+          request.payload,
+          request.payload.subscriptionId,
+        ),
+      );
+      return true;
+    }
     if (isResearchMutation(request.operation)) {
       let payload: unknown = request.payload;
-      const payloadHash = createHash("sha256").update(canonicalJson(payload)).digest("hex");
+      const payloadHash =
+        request.operation === "profile.save"
+          ? profileSaveHash(request.payload)
+          : createHash("sha256").update(canonicalJson(payload)).digest("hex");
       const receipt = await this.storage.readResearchReceipt(
         request.operationId,
         request.operation,
         payloadHash,
       );
       if (!receipt.ok || receipt.value) {
-        this.staging.discard(request.windowGeneration, request.operationId);
+        this.staging.discard(request.windowGeneration, request.operationId, scope?.subscriptionId);
         respond(receipt);
         return true;
+      }
+      if (request.operation === "profile.save") {
+        const { projectId, expectedRevision, patch, subscriptionId } = request.payload;
+        let text = patch;
+        if (typeof patch !== "string") {
+          const staged = this.staging.take(
+            request.windowGeneration,
+            request.operationId,
+            patch,
+            subscriptionId,
+          );
+          if (!staged.ok) {
+            respond(staged);
+            return true;
+          }
+          text = staged.value;
+        } else this.staging.discard(request.windowGeneration, request.operationId, subscriptionId);
+        payload = { projectId, expectedRevision, patch: text };
       }
       if (request.operation === "message.append" || request.operation === "conversation.start") {
         if (typeof request.payload.content !== "string") {
@@ -296,7 +340,8 @@ export class ResearchService {
         });
       }
       try {
-        if (request.operation !== "project.rename") await this.provider.pump();
+        if (request.operation !== "project.rename" && request.operation !== "profile.save")
+          await this.provider.pump();
         await this.publish();
       } catch {
         this.providerFailure();

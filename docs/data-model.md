@@ -1,9 +1,7 @@
 ---
 type: Specification
 title: "Data model"
-description: "Source entities, research-project relationships, and versions of project titles and Markdown manuscripts in SQLite."
-generated:
-  by: codex/gpt-6.2-sol
+description: "Source entities, research-project relationships, and versions of project titles, thesis profiles and Markdown manuscripts in SQLite."
 sources:
   - id: biblatex
     resource: "https://www.ctan.org/tex-archive/macros/latex/contrib/biblatex/"
@@ -178,6 +176,26 @@ The diagram defines manuscript ownership and cardinality. A project title is not
 Library existence and project incorporation are different acts. A user can add an existing source to another project without downloading its files again. That does not transfer notes, arguments, scoped reviews or prior human confirmations. Any reusable analysis must satisfy its exact input/configuration and current-restriction contract and keep its original provenance.
 
 A command or agent attempt can access only the project's authorized source associations and deliberately selected library material. Access to application storage does not grant blanket permission to transmit library content to a connected provider. Removing an association leaves other projects and the library source intact.
+
+## Thesis profile
+
+A setup-confirmed thesis has at most one row in `thesis_profile_heads`. Before the first save, the profile is unset. The project owns the setup-confirmed working title and immutable document language. The profile's reported target-language needs and the interface locale are independent. Recording research context leaves the manuscript and project setup history intact ([PRIN-002, PRIN-004–007 and PRIN-013](product-definition.md#product-principles)).
+
+Each immutable `thesis_profile_revisions` row has a UUIDv7, owning project, positive sequence number, immediate predecessor, complete encoded snapshot, changed field keys and a durable command receipt. SQLite requires the head and predecessor to point to revisions of the same project. A save checks the expected revision, using zero for an unset profile, and replaces only the submitted fields. Omitted fields retain their prior values. The stored change set lists fields whose encoded values actually changed, including attribution, in lexical order. An accepted save with identical values appends a revision with an empty change set. History, the new head and the receipt commit in one transaction. Reusing the operation identity and equivalent canonical payload reconciles to the original receipt and its revision.
+
+### Profile schema version 1
+
+The canonical UTF-8 JSON body contains `schemaVersion` and a sparse `fields` object with these keys.
+
+- Attributed text fields are `thesis_level`, `modality`, `institution`, `program`, `discipline`, `approach`, `working_point`, `topic`, `estimated_length`, `citation_practice`, `experience` and `autonomy`.
+- Lists of attributed text are `interests`, `goals`, `target_languages`, `questions`, `objectives`, `institutional_requirements`, `integrity_conditions`, `ai_use_conditions`, `restrictions`, `academic_support`, `tools`, `difficulties`, `adaptations`, `bibliography`, `corpus`, `data`, `methods`, `passages` and `decisions`.
+- `deadline` takes an attributed Gregorian calendar date in `YYYY-MM-DD` form. `milestones` is a list of attributed values with a title and an optional date in the same form. `weekly_availability_minutes` takes an attributed integer between 0 and 10,080 inclusive.
+
+Every field may be explicitly `unknown` or `inapplicable`. A missing key represents an unrecorded field. A `known` scalar carries a `value` and an `origin`. A `known` list carries `items`, each with its own known value and origin. Known zero availability and a known empty list are explicit values.
+
+Supported origins are a researcher statement, a description of supporting material, an exact same-project conversation message revision, and explicit adoption of a stored proposal. A description preserves what the researcher reported about the material. The utility resolves message links to saved researcher messages or complete agent replies and checks project ownership. A stored proposal has its own UUIDv7, project, completed producing attempt, base profile revision, field and proposed value. Adoption matches that project, attempt, field, value and base. A later edit to a list can preserve already adopted items with their original provenance. Adopting a value records a researcher action and the agent's contribution. It grants no institutional approval or broader evidence coverage.
+
+Each text fact, milestone title and material description is limited to 2 KiB UTF-8. Each list is limited to 16 items. The complete canonical revision body, including its provenance and schema version, is limited to 32 KiB UTF-8. A rejected request leaves confirmed history intact. The receipt contains the exact revision identity, predecessor, sequence and changed fields. See [the bounded application port](application-port.md#research-operations-and-text-parts) for the scoped reads, save and receipt.
 
 ## Manuscripts and revisions
 

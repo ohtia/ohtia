@@ -36,7 +36,17 @@ import {
   type ProviderModelPageInput,
   type ProviderModelPage,
 } from "./connections.js";
-import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
+import { utf8Size, type PortCall, type Request, type Subscription, type Outcome } from "./port.js";
+import {
+  decodeProfileContent,
+  isProfileField,
+  profileRevisionBytes,
+  type ProfileReadResult,
+  type ProfileChange,
+  type ProfileReceiptResult,
+  type ProfileRevision,
+  type ProfileSaveResult,
+} from "./thesis-profile.js";
 
 export const researchOperations = [
   "agentPreference.list",
@@ -50,6 +60,11 @@ export const researchOperations = [
   "project.open",
   "project.rename",
   "project.read",
+  "profile.read",
+  "profile.readPart",
+  "profile.stagePart",
+  "profile.save",
+  "profile.receipt",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",
@@ -631,6 +646,7 @@ export type ResearchEvent =
       readonly record:
         | "project"
         | "projectTitle"
+        | "profile"
         | "conversation"
         | "timeline"
         | "usagePause"
@@ -656,7 +672,20 @@ export const researcherMessageLimit = 20_000;
 export function validResearcherMessage(text: string): boolean {
   return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
 }
+interface ProfileScope {
+  readonly projectId: string;
+  readonly subscriptionId: string;
+}
+type SaveProfileInput = ProfileScope & {
+  readonly expectedRevision: number;
+  readonly patch: string | TextDescriptor;
+};
 export interface ResearchInputs {
+  "profile.read": ProfileScope & { readonly revisionId: string | null };
+  "profile.stagePart": ProfileScope & TextPart;
+  "profile.readPart": ProfileScope & { readonly revisionId: string; readonly index: number };
+  "profile.save": SaveProfileInput;
+  "profile.receipt": SaveProfileInput & { readonly operationId: string };
   "agentPreference.list": { readonly operationId?: string };
   "agentPreference.replace": ResearchPayloads["agentPreference.replace"];
   "providerModel.list": ProviderModelPageInput;
@@ -740,6 +769,16 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "profile.read": ProfileReadResult;
+  "profile.readPart": {
+    readonly projectId: string;
+    readonly revisionId: string;
+    readonly index: number;
+    readonly text: string;
+  };
+  "profile.stagePart": ResearchOutputs["text.part"];
+  "profile.save": ProfileSaveResult;
+  "profile.receipt": ProfileReceiptResult;
   "agentPreference.list": AgentPreferences;
   "agentPreference.replace": ResearchResult;
   "providerModel.list": ProviderModelPage;
@@ -797,6 +836,21 @@ export interface ResearchOutputs {
   "reply.details": ReplyDetails;
 }
 export interface ResearchPort {
+  readThesisProfile(input: ResearchInputs["profile.read"]): PortCall<ProfileReadResult>;
+  readThesisProfilePart(
+    input: ResearchInputs["profile.readPart"],
+  ): PortCall<ResearchOutputs["profile.readPart"]>;
+  stageThesisProfilePart(
+    operationId: string,
+    input: ResearchInputs["profile.stagePart"],
+  ): PortCall<ResearchOutputs["profile.stagePart"]>;
+  saveThesisProfile(
+    operationId: string,
+    input: SaveProfileInput,
+  ): PortCall<ResearchOutputs["profile.save"]>;
+  readThesisProfileReceipt(
+    input: ResearchInputs["profile.receipt"],
+  ): PortCall<ProfileReceiptResult>;
   listAgentPreferences(operationId?: string): PortCall<AgentPreferences>;
   replaceAgentPreference(
     operationId: string,
@@ -946,6 +1000,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "project.create",
     "project.open",
     "project.rename",
+    "profile.save",
     "project.confirmSetup",
     "project.rejectSetup",
     "conversation.start",
@@ -1130,6 +1185,64 @@ function cursor(value: unknown): boolean {
     isResearchId(value.id)
   );
 }
+export function profileScope(request: Request): ProfileScope | undefined {
+  switch (request.operation) {
+    case "profile.read":
+    case "profile.readPart":
+    case "profile.stagePart":
+    case "profile.save":
+    case "profile.receipt":
+      return request.payload;
+  }
+}
+function profilePatch(value: unknown): boolean {
+  return typeof value === "string"
+    ? !!decodeProfileContent(value)
+    : descriptor(value) && value.bytes <= profileRevisionBytes;
+}
+function profileRevision(value: unknown): value is ProfileRevision {
+  return (
+    exact(value, ["revisionId", "revision", "previousRevisionId", "changedFields"]) &&
+    isResearchId(value.revisionId) &&
+    integer(value.revision) &&
+    (value.revision === 1
+      ? value.previousRevisionId === null
+      : isResearchId(value.previousRevisionId) && value.previousRevisionId !== value.revisionId) &&
+    Array.isArray(value.changedFields) &&
+    value.changedFields.every(
+      (field: unknown, index: number, fields: unknown[]) =>
+        isProfileField(field) && (index === 0 || String(fields[index - 1]) < field),
+    )
+  );
+}
+function profileChange(value: unknown): value is ProfileChange {
+  return (
+    exact(value, ["projectId", "revision"]) &&
+    isResearchId(value.projectId) &&
+    profileRevision(value.revision)
+  );
+}
+function profileSaveResult(value: unknown): value is ProfileSaveResult {
+  return (
+    exact(value, ["resultId", "profileChange"]) &&
+    profileChange(value.profileChange) &&
+    value.resultId === value.profileChange.revision.revisionId
+  );
+}
+function profileReadResult(value: unknown): boolean {
+  if (!exact(value, ["projectId", "profile"]) || !isResearchId(value.projectId)) return false;
+  if (value.profile === null) return true;
+  if (!obj(value.profile)) return false;
+  const { content: encoded, ...revision } = value.profile;
+  return (
+    profileRevision(revision) &&
+    (typeof encoded === "string"
+      ? !!decodeProfileContent(encoded)
+      : isTextReference(encoded) &&
+        encoded.source === revision.revisionId &&
+        encoded.bytes <= profileRevisionBytes)
+  );
+}
 export function researchInput(operation: ResearchOperation, value: unknown): boolean {
   switch (operation) {
     case "agentPreference.list":
@@ -1224,6 +1337,55 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       );
     case "project.create":
       return exact(value, []);
+    case "profile.read":
+      return (
+        exact(value, ["projectId", "subscriptionId", "revisionId"]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        nullable(value.revisionId, isResearchId)
+      );
+    case "profile.readPart":
+      return (
+        exact(value, ["projectId", "subscriptionId", "revisionId", "index"]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        isResearchId(value.revisionId) &&
+        integer(value.index, 1, 64)
+      );
+    case "profile.stagePart":
+      return (
+        exact(value, [
+          "projectId",
+          "subscriptionId",
+          "index",
+          "count",
+          "bytes",
+          "sha256",
+          "text",
+        ]) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        integer(value.index, 1, 64) &&
+        integer(value.count, 2, 64) &&
+        integer(value.bytes, 4097, profileRevisionBytes) &&
+        hash(value.sha256) &&
+        typeof value.text === "string"
+      );
+    case "profile.save":
+    case "profile.receipt":
+      return (
+        exact(
+          value,
+          operation === "profile.save"
+            ? ["projectId", "subscriptionId", "expectedRevision", "patch"]
+            : ["projectId", "subscriptionId", "expectedRevision", "patch", "operationId"],
+        ) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        integer(value.expectedRevision, 0) &&
+        profilePatch(value.patch) &&
+        (operation === "profile.save" || opaque(value.operationId))
+      );
     case "project.open":
     case "project.read":
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
@@ -1852,6 +2014,26 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       value.versions.length <= memoryPageSize &&
       value.versions.every(isMemoryVersion)
     );
+  if (operation === "profile.read") return profileReadResult(value);
+  if (operation === "profile.readPart")
+    return (
+      exact(value, ["projectId", "revisionId", "index", "text"]) &&
+      isResearchId(value.projectId) &&
+      isResearchId(value.revisionId) &&
+      integer(value.index, 1, 64) &&
+      typeof value.text === "string" &&
+      value.text.length > 0
+    );
+  if (operation === "profile.save") return profileSaveResult(value);
+  if (operation === "profile.receipt")
+    return (
+      exact(value, ["projectId", "operationId", "receipt"]) &&
+      isResearchId(value.projectId) &&
+      opaque(value.operationId) &&
+      (value.receipt === null ||
+        (profileSaveResult(value.receipt) &&
+          value.receipt.profileChange.projectId === value.projectId))
+    );
   if (operation === "project.read") return project(value, false);
   if (operation === "project.rename")
     return (
@@ -1866,7 +2048,8 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
     return exact(value, ["resultId"]) && isResearchId(value.resultId);
   if (operation === "research.subscribe")
     return exact(value, ["subscriptionId"]) && opaque(value.subscriptionId);
-  if (operation === "text.part") return exact(value, ["accepted"]) && value.accepted === true;
+  if (operation === "text.part" || operation === "profile.stagePart")
+    return exact(value, ["accepted"]) && value.accepted === true;
   if (operation === "text.readPart")
     return exact(value, ["text"]) && typeof value.text === "string";
   if (operation === "reply.details")
@@ -2448,6 +2631,7 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
     [
       "project",
       "projectTitle",
+      "profile",
       "conversation",
       "timeline",
       "usagePause",
@@ -2523,6 +2707,35 @@ export function researchResultMatches(
       )
     );
   }
+  if (operation === "profile.read")
+    return (
+      output.projectId === input.projectId &&
+      (input.revisionId === null ||
+        (obj(output.profile) && output.profile.revisionId === input.revisionId))
+    );
+  if (operation === "profile.readPart")
+    return (
+      output.projectId === input.projectId &&
+      output.revisionId === input.revisionId &&
+      output.index === input.index
+    );
+  if (operation === "profile.save")
+    return (
+      obj(output.profileChange) &&
+      output.profileChange.projectId === input.projectId &&
+      obj(output.profileChange.revision) &&
+      output.profileChange.revision.revision === Number(input.expectedRevision) + 1
+    );
+  if (operation === "profile.receipt")
+    return (
+      output.projectId === input.projectId &&
+      output.operationId === input.operationId &&
+      (output.receipt === null ||
+        (obj(output.receipt) &&
+          obj(output.receipt.profileChange) &&
+          obj(output.receipt.profileChange.revision) &&
+          output.receipt.profileChange.revision.revision === Number(input.expectedRevision) + 1))
+    );
   if (operation === "project.read") return output.id === input.projectId;
   if (operation === "project.rename") {
     const { title, titleRevision } = (output as unknown as RenameProjectResult).titleChange;

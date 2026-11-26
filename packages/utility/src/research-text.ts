@@ -23,6 +23,7 @@ export function storedText(text: string, source: string): PortText {
 }
 interface Staged {
   readonly descriptor: TextDescriptor;
+  readonly subscription: string | undefined;
   readonly parts: Map<number, string>;
   bytes: number;
   stop: () => void;
@@ -39,23 +40,36 @@ export class TextStaging {
       };
     },
   ) {}
-  discard(window: string, operation: string): void {
+  discard(window: string, operation: string, subscription?: string): void {
     const texts = this.windows.get(window);
-    texts?.get(operation)?.stop();
+    const staged = texts?.get(operation);
+    if (!staged || staged.subscription !== subscription) return;
+    staged.stop();
     texts?.delete(operation);
     if (!texts?.size) this.windows.delete(window);
   }
+  closeSubscription(window: string, subscription: string): void {
+    for (const [id, staged] of this.windows.get(window) ?? [])
+      if (staged.subscription === subscription) this.discard(window, id, subscription);
+  }
   closeWindow(window: string): void {
-    for (const id of this.windows.get(window)?.keys() ?? []) this.discard(window, id);
+    for (const [id, staged] of this.windows.get(window) ?? [])
+      this.discard(window, id, staged.subscription);
   }
   dispose(): void {
     for (const window of this.windows.keys()) this.closeWindow(window);
   }
-  part(window: string, operation: string, input: TextPart): Outcome<{ readonly accepted: true }> {
+  part(
+    window: string,
+    operation: string,
+    input: TextPart,
+    subscription?: string,
+  ): Outcome<{ readonly accepted: true }> {
     const texts = this.windows.get(window) ?? new Map<string, Staged>();
     const previous = texts.get(operation);
+    if (previous && previous.subscription !== subscription) return failure("invalid_message");
     const invalid = () => {
-      this.discard(window, operation);
+      this.discard(window, operation, subscription);
       return failure("invalid_message");
     };
     const { index, count, bytes, sha256, text } = input;
@@ -83,6 +97,7 @@ export class TextStaging {
     )
       return failure("busy");
     const staged = previous ?? {
+      subscription,
       descriptor: { parts: count, bytes, sha256 },
       parts: new Map<number, string>(),
       bytes: 0,
@@ -92,17 +107,23 @@ export class TextStaging {
     staged.parts.set(index, text);
     staged.bytes += added;
     staged.stop = this.after(portLimits.staged_text_idle_ms, () => {
-      this.discard(window, operation);
+      this.discard(window, operation, subscription);
     });
     texts.set(operation, staged);
     this.windows.set(window, texts);
     return { ok: true, value: { accepted: true } };
   }
-  take(window: string, operation: string, descriptor: TextDescriptor): Outcome<string> {
+  take(
+    window: string,
+    operation: string,
+    descriptor: TextDescriptor,
+    subscription?: string,
+  ): Outcome<string> {
     const staged = this.windows.get(window)?.get(operation);
-    this.discard(window, operation);
+    this.discard(window, operation, subscription);
     if (
       !staged ||
+      staged.subscription !== subscription ||
       JSON.stringify(staged.descriptor) !==
         JSON.stringify({
           parts: descriptor.parts,
