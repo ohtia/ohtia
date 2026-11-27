@@ -137,9 +137,14 @@ export function ConversationHistory({
       target &&
       !target.closest("[hidden], [inert]") &&
       (document.activeElement === button || document.activeElement === document.body)
-    )
+    ) {
       target.focus({ preventScroll: !precedingRow });
-  }, [state.status, state.next, state.loadingOlder]);
+      // The failure notice renders above the focused action; focusing it again does not scroll,
+      // so bring the action back into the history's scrollport without moving focus.
+      if (target === button && state.failedOlder && typeof target.scrollIntoView === "function")
+        target.scrollIntoView({ block: "nearest" });
+    }
+  }, [state.status, state.next, state.loadingOlder, state.failedOlder]);
 
   if (state.status === "loading")
     return (

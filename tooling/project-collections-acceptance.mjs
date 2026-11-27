@@ -296,7 +296,10 @@ try {
     await page.mouse.wheel(0, -250);
     await expect.poll(() => scrollTop(timeline)).toBeLessThan(timelineBottom);
     // Wait for Chromium's scroll animation before retaining the timeline's reading position.
-    await expect.poll(() => scrollTop(timeline)).toBe(timelineBottom - 250);
+    // Chromium can settle on a fractional offset, so accept 1 CSS px.
+    await expect
+      .poll(async () => Math.abs((await scrollTop(timeline)) - (timelineBottom - 250)))
+      .toBeLessThanOrEqual(1);
     const readingPosition = await scrollTop(timeline);
 
     await button(chat, "history.show").press("Enter");
