@@ -1,6 +1,7 @@
 import { contributorNames } from "./contributor-identity.js";
 import { useId, useSyncExternalStore } from "react";
 import { latestProject, ProjectCollections, ProjectController } from "./project-controller.js";
+import type { ProjectSelectionLease } from "./pending-project-work.js";
 import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { ProjectRename, ProjectRenameStatus } from "./project-rename.js";
@@ -82,6 +83,24 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     });
     return { collections: new ProjectCollections(conversation), conversation, projects };
   }, [bridge.foundation]);
+  useLayoutEffect(() => {
+    let lease: ProjectSelectionLease | undefined;
+    let unregister: (() => void) | undefined;
+    const update = () => {
+      const next = projects.selectionLease();
+      if (lease === next) return;
+      unregister?.();
+      lease = next;
+      unregister =
+        next && projects.pendingWork.register(next, conversation.composer.beforeProjectDetach);
+    };
+    const unsubscribe = projects.subscribe(update);
+    update();
+    return () => {
+      unsubscribe();
+      unregister?.();
+    };
+  }, [conversation, projects]);
   const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
   const history = useSyncExternalStore(
     conversation.history.subscribe,
