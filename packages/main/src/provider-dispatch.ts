@@ -3,6 +3,7 @@ import {
   dispatchPermitPolicy,
   isProviderEvent,
   isAccountFingerprint,
+  isServedBy,
   isProviderToolLabel,
   isCollaborationProposal,
   isHandoffTool,
@@ -50,6 +51,8 @@ interface Dispatched {
   released: boolean;
   done: boolean;
   closing?: ProviderResult;
+  /** The first company an adapter named as serving the released request. */
+  servedBy?: string;
   timer?: ReturnType<typeof setTimeout>;
   readonly limits: ProviderRequestLimits;
   inputBytes: number;
@@ -562,7 +565,16 @@ export class ProviderDispatch {
         version: providerMessageVersion,
         generation: record.generation,
         attempt: record.attempt,
-        event: { type: "result", sequence: ++record.sequence, result: record.closing },
+        event: {
+          type: "result",
+          sequence: ++record.sequence,
+          result: record.closing,
+          ...(record.servedBy &&
+          record.releasedAt !== undefined &&
+          !(record.closing.status === "failed" && !record.closing.dispatched)
+            ? { served_by: record.servedBy }
+            : {}),
+        },
         work:
           record.releasedAt === undefined ||
           (record.closing.status === "failed" && !record.closing.dispatched)
@@ -604,6 +616,11 @@ export class ProviderDispatch {
       Object.hasOwn(body.result, "conversation_title")
     )
       body = { type: "result", result: { status: "completed" } };
+    if (body.type === "served_by") {
+      // Only the first name counts; a malformed one is dropped, never reported.
+      if (record.released && !record.servedBy && isServedBy(body.name)) record.servedBy = body.name;
+      return;
+    }
     if (body.type === "tool_start") {
       if (
         !body.id ||

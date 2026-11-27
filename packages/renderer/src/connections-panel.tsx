@@ -15,7 +15,6 @@ import {
   keyCheckReasons,
   openrouterConnection,
   projectLinks,
-  sendsRequests,
   type ProjectLink,
   type FoundationPort,
   type InterfaceLocale,
@@ -126,11 +125,6 @@ export function ConnectionsPanel({
     };
     const models = async (event: ConnectionEvent) => {
       const work = ++probeVersion;
-      // A service that sends no request offers no model, so its list is not named.
-      if (!sendsRequests(event.connection)) {
-        setProbe({ kind: "listed", models: [] });
-        return;
-      }
       let revision = event.model_list_revision;
       let cursor = 0;
       const names: string[] = [];
@@ -481,16 +475,14 @@ export function ConnectionsPanel({
                           service,
                         })}
                       </p>
-                      {sendsRequests(connection) && (
-                        <p>
-                          {message(locale, "connection.models", {
-                            models: new Intl.ListFormat(locale, {
-                              style: "long",
-                              type: "conjunction",
-                            }).format(probe.models),
-                          })}
-                        </p>
-                      )}
+                      <p>
+                        {message(locale, "connection.models", {
+                          models: new Intl.ListFormat(locale, {
+                            style: "long",
+                            type: "conjunction",
+                          }).format(probe.models),
+                        })}
+                      </p>
                       {!apiKey && <p>{message(locale, "connection.unknownPlan", { service })}</p>}
                     </>
                   ) : (

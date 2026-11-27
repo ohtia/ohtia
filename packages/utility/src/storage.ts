@@ -1,4 +1,10 @@
 import {
+  attempts as servedAttempts,
+  usageTable as openrouterUsageTable,
+  objects as openrouterObjects,
+  up as openrouterRequests,
+} from "./migrations/0042_openrouter_requests.mjs";
+import {
   usageTable as openaiUsageTable,
   usageObjects as openaiUsageObjects,
   up as openaiUsagePauses,
@@ -480,6 +486,7 @@ const names = [
   "0039_thesis_profile",
   "0040_research_stages",
   "0041_manuscript_revisions",
+  "0042_openrouter_requests",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -888,7 +895,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 : consultationTasks
             : revision >= 25 && name === "attempts"
               ? revision >= 35
-                ? anthropicTables.attempts
+                ? revision >= 42
+                  ? servedAttempts
+                  : anthropicTables.attempts
                 : revision >= 31
                   ? revision >= 34
                     ? addColumns(
@@ -951,7 +960,11 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       ? [
           [
             "usage_limit_pauses",
-            revision >= 36 ? openaiUsageTable : anthropicTables.usage_limit_pauses,
+            revision >= 42
+              ? openrouterUsageTable
+              : revision >= 36
+                ? openaiUsageTable
+                : anthropicTables.usage_limit_pauses,
           ],
         ]
       : revision >= 9
@@ -1028,6 +1041,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 39 ? thesisProfileObjects : {}),
                 ...(revision >= 40 ? researchStageObjects : {}),
                 ...(revision >= 41 ? manuscriptObjects : {}),
+                ...(revision >= 42 ? openrouterObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1483,6 +1497,7 @@ export class DurableStore {
                 "0039_thesis_profile": { up: thesisProfileMigration },
                 "0040_research_stages": { up: researchStageMigration },
                 "0041_manuscript_revisions": { up: manuscriptMigration },
+                "0042_openrouter_requests": { up: openrouterRequests },
               }),
           },
         });
@@ -3430,7 +3445,10 @@ export class DurableStore {
     }
   }
   readPauses(): Promise<Outcome<import("@ohtia/contracts").PauseCounts>> {
-    return this.researchRead(async (db) => ({ ok: true, value: await readPauseCounts(db) }));
+    return this.researchRead(async (db) => ({
+      ok: true,
+      value: await readPauseCounts(db, this.taskContext.connections),
+    }));
   }
   readResearch(request: Request): Promise<Outcome<unknown>> {
     return this.researchRead(

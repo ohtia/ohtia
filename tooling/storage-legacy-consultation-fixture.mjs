@@ -115,11 +115,29 @@ import {
   objects as usagePauseObjects,
 } from "../packages/utility/src/migrations/0009_usage_limit_pauses.mjs";
 import { addColumns } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
+import {
+  usageTable as openaiUsageTable,
+  usageObjects as openaiUsageObjects,
+} from "../packages/utility/src/migrations/0036_openai_usage_pauses.mjs";
 import { preferencesSchema as entryTextPreferencesSchema } from "../packages/utility/src/migrations/0033_entry_text_preference.mjs";
 
 const preferenceAttemptFields =
   attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preOpenrouterSql = `
+  DROP TRIGGER attempts_served_by;
+  DROP TRIGGER usage_one_open_key;
+  ALTER TABLE attempts DROP COLUMN served_by;
+  ALTER TABLE usage_limit_pauses RENAME TO usage_limit_pauses_after_openrouter;
+  ${openaiUsageTable};
+  INSERT INTO usage_limit_pauses SELECT * FROM usage_limit_pauses_after_openrouter;
+  DROP TABLE usage_limit_pauses_after_openrouter;
+  ${Object.values(openaiUsageObjects).join(";\n  ")};
+  DELETE FROM kysely_migration WHERE name='0042_openrouter_requests';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0042_openrouter_requests';
+  PRAGMA user_version=41;
+`;
 export const preManuscriptSql = `
+  ${preOpenrouterSql}
   DROP TRIGGER draft_receipt_scope;
   DROP TABLE draft_unit_ids;
   DROP TABLE draft_revisions;

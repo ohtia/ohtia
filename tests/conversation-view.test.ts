@@ -39,6 +39,7 @@ import {
   compareConversations,
   chatgptConnection,
   openaiApiKeyConnection,
+  openrouterConnection,
   type TimelineTask,
   type TimelineConsultation,
   type TimelineHandoffProposal,
@@ -1544,6 +1545,50 @@ describe("task notices", () => {
     expect(container.querySelector("a")).not.toBeNull();
     expect(container.querySelector(".conversation-notice a")).toBeNull();
   });
+  it("pauses OpenRouter with its api_key texts, its resume count and its Check usage link", async () => {
+    const openLink = vi.fn(async () => true);
+    const perform = await show(
+      task({ connection: "openrouter", outcomeReason: "billing_limit_reached" }),
+      {
+        connection: openrouterConnection,
+        commands: { openLink },
+        pauses: { revision: 1, restart: 0, usage: [{ connection: "openrouter", count: 4 }] },
+      },
+    );
+    expect(container.querySelector(".conversation-notice")?.textContent).toContain(
+      "OpenRouter says this key’s account has no credit or reached its spending limit. Ohtia paused new requests to OpenRouter.",
+    );
+    expect(
+      [...container.querySelectorAll(".task-notice-actions button")].map((b) => b.textContent),
+    ).toEqual(["Resume OpenRouter requests (4)", "Try again"]);
+    const link = container.querySelector<HTMLAnchorElement>(".task-notice-actions a")!;
+    expect(link.textContent).toContain("Check usage");
+    expect(link.getAttribute("href")).toBe("https://openrouter.ai/settings/credits");
+    await act(async () => link.click());
+    expect(openLink).toHaveBeenCalledExactlyOnceWith("openrouterUsage");
+    await act(async () => buttonNamed("Resume OpenRouter requests (4)").click());
+    expect(perform).toHaveBeenCalledWith(
+      expect.any(String),
+      "resume",
+      expect.objectContaining({ connection: "openrouter" }),
+    );
+    await show(
+      task({
+        connection: "openrouter",
+        state: "blocked",
+        outcomeReason: null,
+        blockingReason: "usage_limit_reached",
+      }),
+      {
+        connection: openrouterConnection,
+        pauses: { revision: 2, restart: 0, usage: [{ connection: "openrouter", count: 4 }] },
+      },
+    );
+    expect(buttonNamed("Resume OpenRouter requests (4)")).toBeDefined();
+    expect(container.querySelector(".task-notice-actions a")?.getAttribute("href")).toBe(
+      "https://openrouter.ai/settings/credits",
+    );
+  });
   it.each(["resume", "continue", "retry", "restart"] as const)(
     "replays an unconfirmed %s with the same identity and guards double clicks",
     async (action) => {
@@ -1639,6 +1684,29 @@ it("rereads global pause counts on a new revision and after a sequence gap", asy
   h.emit(failure("sequence_gap"));
   await settle();
   expect(h.port.readPauses).toHaveBeenCalledTimes(3);
+  h.controller.dispose();
+});
+it("rereads pause counts when a connection changes without a new pause revision", async () => {
+  const h = controllerHarness();
+  await settle();
+  vi.mocked(h.port.readPauses).mockReturnValueOnce(
+    ok({ revision: 1, restart: 0, usage: [{ connection: "openrouter", count: 0 }] }),
+  );
+  h.emit({ ok: true, value: { kind: "destinationChanged", connection: "openrouter" } });
+  await settle();
+  expect(h.controller.snapshot().pauses?.usage).toEqual([{ connection: "openrouter", count: 0 }]);
+  // A replaced key ends its pause: the same revision now reads no pause.
+  h.emit({ ok: true, value: { kind: "destinationChanged", connection: "openrouter" } });
+  await settle();
+  expect(h.controller.snapshot().pauses?.usage).toEqual([]);
+  expect(h.port.readPauses).toHaveBeenCalledTimes(3);
+  // A failed reread keeps the last counts and the conversation.
+  vi.mocked(h.port.readPauses).mockReturnValueOnce(failure("unavailable"));
+  h.emit({ ok: true, value: { kind: "destinationChanged", connection: "openrouter" } });
+  await settle();
+  expect(h.port.readPauses).toHaveBeenCalledTimes(4);
+  expect(h.controller.snapshot().status).toBe("ready");
+  expect(h.controller.snapshot().pauses?.usage).toEqual([]);
   h.controller.dispose();
 });
 it("recovers a held task's saved partial reply above the latest page after a gap", async () => {
@@ -5895,6 +5963,84 @@ it("shows add-to-memory last on saved project messages and omits it during setup
     f.controller.dispose();
   }
 });
+
+it.each([
+  ["Moonshot AI", true],
+  [undefined, false],
+] as const)(
+  "shows the OpenRouter company that served a reply in Details: %s",
+  async (servedBy, shown) => {
+    const taskId = id(382);
+    const replyId = id(383);
+    const completed = reviewTask({
+      id: taskId,
+      state: "completed",
+      outcomeReason: null,
+      agentId: "josefa",
+      connection: "openrouter",
+      replyMessageId: replyId,
+    });
+    const reply = {
+      ...message(383, "Routed library reply"),
+      id: replyId,
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId,
+    } as TimelineItem;
+    const readReplyDetails = vi.fn(() =>
+      ok({
+        agentId: "josefa",
+        operation: "search_strategy_planning",
+        instructionVersion: 1,
+        connectionId: "openrouter",
+        connectionKind: "api_key",
+        account: "same",
+        requestedModel: "Kimi K3.1 Pro",
+        observedModel: "moonshotai/kimi-k3.1-pro",
+        ...(servedBy ? { servedBy } : {}),
+        requestedEffort: null,
+        observedEffort: null,
+        attempts: 1,
+        startedAt: null,
+        endedAt: null,
+        durationMs: null,
+        tokens: {
+          input_tokens: 10,
+          cached_input_tokens: 0,
+          output_tokens: 4,
+          reasoning_tokens: null,
+        },
+        usage: "reported",
+        memory: [],
+      }),
+    );
+    const port = {
+      readReplyDetails,
+    } as unknown as import("../packages/renderer/src/reply-details.js").ReplyDetailsPort;
+    const controller = {
+      connections: [openrouterConnection],
+    } as unknown as ConversationController;
+    await render(state([reply, completed]), controller, "en-US", undefined, port);
+    const trigger = container.querySelector<HTMLButtonElement>(
+      `[data-timeline-id="${replyId}"] [aria-label="Show details"]`,
+    )!;
+    await act(async () => trigger.click());
+    expect(readReplyDetails).toHaveBeenCalledWith({ projectId: scope.projectId, taskId });
+    const terms = [...container.querySelectorAll(".reply-details dt")];
+    const labels = terms.map((term) => term.textContent);
+    expect(labels).toContain("Observed model");
+    if (!shown) {
+      expect(labels).not.toContain("Served by");
+      return;
+    }
+    expect(labels.indexOf("Served by")).toBe(labels.indexOf("Observed model") + 1);
+    const value = terms[labels.indexOf("Served by")]!.nextElementSibling!;
+    expect(value.textContent).toBe(servedBy);
+    const company = value.querySelector("bdi")!;
+    expect(company.getAttribute("lang")).toBe("");
+    expect(company.textContent).toBe(servedBy);
+  },
+);
 
 it.each([false, true])(
   "shows unknown OpenAI usage after Stop with saved text = %s",

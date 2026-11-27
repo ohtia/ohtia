@@ -91,6 +91,7 @@
     "replyDetails.account": "Compte",
     "replyDetails.requestedModel": "Modèle demandé",
     "replyDetails.observedModel": "Modèle observé",
+    "replyDetails.servedBy": "Servi par",
     "replyDetails.attempts": "Tentatives",
     "replyDetails.started": "Début",
     "replyDetails.ended": "Fin",

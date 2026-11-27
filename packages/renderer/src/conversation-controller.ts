@@ -1409,6 +1409,10 @@ export class ConversationController {
         epoch,
         true,
       );
+      // A pause can follow the key that caused it, so a connection change can end or restore one
+      // without a stored change that advances the pause revision. A failed read keeps the last
+      // counts: the next pause revision or sequence gap reads them again.
+      if (event.kind === "destinationChanged") await this.refreshPauses().catch(() => undefined);
       if (this.live(epoch)) this.publish();
       return;
     }

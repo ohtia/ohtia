@@ -1422,7 +1422,7 @@ describe("OpenRouter group", () => {
   });
 });
 
-it("offers no connected service that sends no request in an agent's Service select", async () => {
+it("offers a connected OpenRouter in an agent's Service select", async () => {
   const call = <T>(value: T) => ({
     result: Promise.resolve({ ok: true as const, value }),
     cancel() {},
@@ -1480,7 +1480,7 @@ it("offers no connected service that sends no request in an agent's Service sele
   roots.push(root);
   await act(async () => root.render(createElement(Host)));
   const select = container.querySelector<HTMLSelectElement>('[data-agent-service="default"]')!;
-  expect([...select.options].map((option) => option.value)).toEqual(["", "chatgpt"]);
+  expect([...select.options].map((option) => option.value)).toEqual(["", "chatgpt", "openrouter"]);
 });
 
 describe("agent rows in Settings › Agents", () => {

@@ -11,7 +11,6 @@ import {
 } from "./agents-settings.js";
 import {
   defaultProviderConnections,
-  sendsRequests,
   type ProjectLink,
   type ProviderDeclaration,
 } from "@ohtia/contracts";
@@ -898,7 +897,6 @@ export function SettingsDialog({
                           settings={agentSettings}
                           showConnected={
                             justConnected &&
-                            sendsRequests(service.id) &&
                             agentSettings.data?.preferences.some(
                               (row) =>
                                 row.target === "default" &&
@@ -912,7 +910,7 @@ export function SettingsDialog({
                       locale={locale}
                       available={available}
                     />
-                    {agentsAvailable && sendsRequests(service.id) && (
+                    {agentsAvailable && (
                       <ModelListRefresh
                         port={port}
                         settings={agentSettings}
@@ -932,7 +930,7 @@ export function SettingsDialog({
                 locale={locale}
                 available={available}
                 connections={connections
-                  .filter(({ id }) => sendsRequests(id) && snapshots[id]?.state === "connected")
+                  .filter(({ id }) => snapshots[id]?.state === "connected")
                   .map(({ id, displayName, kind }) => ({
                     id,
                     name: displayName,

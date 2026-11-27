@@ -16,6 +16,8 @@ import {
   policyId,
   encodeEnvelope,
   decodeProviderDispatch,
+  decodeProviderEvent,
+  type ProviderDispatchMessage,
   decodeDevelopmentAction,
   decodeDevelopmentReport,
   type TimelineItem,
@@ -35,6 +37,15 @@ import {
 } from "../packages/contracts/src/index.js";
 import { parseDevelopmentSwitches } from "../packages/main/src/development-command.js";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
+import { ConnectionManager } from "../packages/main/src/connection-manager.js";
+import { CredentialStore } from "../packages/main/src/credential-store.js";
+import { OpenRouterProvider } from "../packages/main/src/openrouter-provider.js";
+import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
+import { transportFailure, type ProviderTransport } from "../packages/main/src/provider-https.js";
+import {
+  chunk as openrouterChunk,
+  usage as openrouterUsage,
+} from "./fixtures/openrouter-streams.js";
 import { objects as taskObjects } from "../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
 import { objects as replyObjects } from "../packages/utility/src/migrations/0010_reply_control.mjs";
 import {
@@ -2107,7 +2118,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 41,
+        target: 42,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2897,6 +2908,7 @@ async function reportPlanModels(
   generation: string,
   connection: string,
   model: string,
+  fingerprint?: string,
 ) {
   connections.receive({
     kind: "connection_state",
@@ -2904,7 +2916,8 @@ async function reportPlanModels(
     snapshot: {
       connection,
       state: "connected",
-      connection_kind: connection === "openai_api_key" ? "api_key" : "subscription",
+      connection_kind: connection === "chatgpt" ? "subscription" : "api_key",
+      ...(fingerprint ? { account_fingerprint: fingerprint } : {}),
       reason: null,
       probing: false,
       probe_id: null,
@@ -2929,13 +2942,15 @@ async function reportPlanModels(
 }
 
 it("routes Josefa to the OpenAI API and Virgilio to ChatGPT in the same plan", async () => {
+  const service = "openai_api_key";
+  const model = "gpt-6.1-sol";
   const f = await fixture();
   const projectId = await confirmedProject(f);
   const connections = new ServiceConnections();
   const generation = "mixed-plan";
   f.store.setTaskContext({ generation, mode: "development", connections });
   await reportPlanModels(f, connections, generation, "chatgpt", "first");
-  await reportPlanModels(f, connections, generation, "openai_api_key", "gpt-6.1-sol");
+  await reportPlanModels(f, connections, generation, service, model);
   value(
     await f.run({
       command: "agentPreference.replace",
@@ -2943,8 +2958,8 @@ it("routes Josefa to the OpenAI API and Virgilio to ChatGPT in the same plan", a
       payload: {
         target: "josefa",
         expectedRevision: 0,
-        connection: "openai_api_key",
-        model: "gpt-6.1-sol",
+        connection: service,
+        model,
         effort: null,
         inherit: false,
         source: "researcher",
@@ -2973,17 +2988,260 @@ it("routes Josefa to the OpenAI API and Virgilio to ChatGPT in the same plan", a
   );
   const research = await f.next();
   expect(research.dispatch.request).toMatchObject({
-    connection: "openai_api_key",
-    model: "gpt-6.1-sol",
+    connection: service,
+    model,
     operation: "search_strategy_planning",
   });
   await f.settle(research, undefined, unresolved);
-  expect((await f.next()).dispatch.request).toMatchObject({
+  const synthesis = await f.next();
+  expect(synthesis.dispatch.request).toMatchObject({
     connection: "chatgpt",
     model: "first",
     operation: "contribution_synthesis",
   });
-  expect((await readPlan(f, plan)).contributions[0]?.agentId).toBe("josefa");
+  await f.settle(synthesis, undefined, "Both sources still need a shared catalog term.");
+  const settled = await readPlan(f, plan);
+  expect(settled.contributions[0]?.agentId).toBe("josefa");
+  expect(settled.outcome).toBe("complete");
+  expect(await f.prepare()).toBeNull();
+});
+
+it("completes a plan with Virgilio on ChatGPT and Josefa on OpenRouter through main's adapters", async () => {
+  const kimi = "moonshotai/kimi-k3.1-pro";
+  const entries = new Map<string, string>();
+  const credentials = new CredentialStore({
+    service: "Synthetic",
+    userData: "/unused",
+    platform: "linux",
+    entry: (_service, account) => ({
+      getPassword: async () => entries.get(account) ?? null,
+      setPassword: async (value) => {
+        entries.set(account, value);
+      },
+      deleteCredential: async () => entries.delete(account),
+    }),
+  });
+  const bodies: Record<string, unknown>[] = [];
+  const sse = (items: readonly (Record<string, unknown> | string)[]) =>
+    new Response(
+      items
+        .map((item) =>
+          typeof item !== "string"
+            ? `data: ${JSON.stringify(item)}\n\n`
+            : item.startsWith(":")
+              ? `${item}\n\n`
+              : `data: ${item}\n\n`,
+        )
+        .join(""),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+  // A fake OpenRouter server: the key check, the account's model list and streamed replies.
+  const transport = vi.fn<ProviderTransport>(async (outgoing, release) => {
+    const url = new URL(outgoing.url);
+    expect(url.origin).toBe("https://openrouter.ai");
+    if (!release()) throw transportFailure(false);
+    if (url.pathname === "/api/v1/key")
+      return new Response(JSON.stringify({ data: { expires_at: null } }), { status: 200 });
+    if (url.pathname === "/api/v1/models/user")
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: kimi,
+              name: "Kimi K3.1 Pro",
+              context_length: 1_048_576,
+              architecture: { output_modalities: ["text"], tokenizer: "Other" },
+              top_provider: { max_completion_tokens: 65_536 },
+              supported_parameters: ["tools", "reasoning"],
+              reasoning: { mandatory: false, supported_efforts: ["high"], default_effort: "high" },
+              expiration_date: null,
+              endpoints: ["/api/v1/chat/completions"],
+            },
+          ],
+          total_count: 1,
+        }),
+        { status: 200 },
+      );
+    expect(url.pathname).toBe("/api/v1/chat/completions");
+    bodies.push(JSON.parse(outgoing.body!) as Record<string, unknown>);
+    return sse([
+      ": OPENROUTER PROCESSING",
+      openrouterChunk({ content: unresolved, role: "assistant" }),
+      openrouterChunk({ content: "", role: "assistant" }, "stop"),
+      openrouterUsage("stop"),
+      "[DONE]",
+    ]);
+  });
+  // eslint-disable-next-line prefer-const -- the adapter reads the manager it is registered in.
+  let manager: ConnectionManager;
+  const openrouterAdapter = new OpenRouterProvider({
+    store: credentials,
+    transport,
+    model: (id) => manager.model("openrouter", id),
+    refresh: () => manager.refreshModels("openrouter", true),
+  });
+  manager = new ConnectionManager([openrouterAdapter]);
+  manager.connect("openrouter", { key: "sk-or-v1-synthetic-openrouter-key" });
+  await vi.waitFor(() => {
+    expect(manager.snapshot("openrouter")?.state).toBe("connected");
+    expect(manager.snapshot("openrouter")?.checking_key).toBeUndefined();
+    expect(manager.model("openrouter", kimi)).toBeDefined();
+  });
+  const fingerprint = manager.account("openrouter").fingerprint!;
+  expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+
+  const f = await fixture();
+  const projectId = await confirmedProject(f);
+  const connections = new ServiceConnections();
+  const generation = "openrouter-plan";
+  const context = { generation, mode: "development" as const, connections };
+  f.store.setTaskContext(context);
+  await reportPlanModels(f, connections, generation, "chatgpt", "first");
+  await reportPlanModels(f, connections, generation, "openrouter", kimi, fingerprint);
+  value(
+    await f.run({
+      command: "agentPreference.replace",
+      operationId: "choose-josefa-openrouter",
+      payload: {
+        target: "josefa",
+        expectedRevision: 0,
+        connection: "openrouter",
+        model: kimi,
+        effort: null,
+        inherit: false,
+        source: "researcher",
+      },
+    }),
+  );
+  const fake = createFakeProvider();
+  const chatgpt = {
+    ...fake,
+    declaration: {
+      ...fake.declaration,
+      connection: { ...fake.declaration.connection, id: "chatgpt" },
+    },
+  };
+  const dispatched: ProviderDispatchMessage[] = [];
+  let delivered: Promise<unknown> = Promise.resolve();
+  // eslint-disable-next-line prefer-const -- main and the data service send to each other.
+  let provider: DurableProvider;
+  const main = new ProviderDispatch([chatgpt, openrouterAdapter], {
+    state: (id) => (id === "chatgpt" ? "connected" : manager.snapshot(id)?.state),
+    mayDispatchModel: (connection, model, effort, account) =>
+      connection !== "openrouter" || manager.mayDispatchModel(connection, model, effort, account),
+    send: (_generation, text) => {
+      const event = decodeProviderEvent(text, generation);
+      expect(event).toBeDefined();
+      // The data service handles one message at a time, as its serialized queue does.
+      delivered = delivered.then(async () => {
+        await provider.receive(event!);
+      });
+    },
+  });
+  main.begin(generation);
+  provider = new DurableProvider({
+    storage: f.store,
+    context,
+    send: (text) => {
+      const dispatch = decodeProviderDispatch(text, generation);
+      if (!dispatch) return;
+      dispatched.push(dispatch);
+      void main.receive(dispatch);
+    },
+  });
+  const settled = async (count: number) => {
+    await vi.waitFor(async () => {
+      expect(dispatched).toHaveLength(count);
+      await delivered;
+      expect(f.query("SELECT count(*) AS open FROM attempts WHERE finished_at IS NULL")[0]).toEqual(
+        { open: 0 },
+      );
+    });
+    await delivered;
+  };
+  try {
+    const conversationId = value(await f.store.readConversations(projectId))[0]!.id;
+    value(
+      await f.run({
+        command: "message.append",
+        operationId: "openrouter-plan-question",
+        payload: { conversationId, content: "What sources should we compare?" },
+      }),
+    );
+    delivered = delivered.then(() => provider.pump());
+    await settled(1);
+    const { resultId: plan } = value(
+      await f.add("openrouter-plan", {
+        ...f.newPlan([task("research", { required: true })]),
+        conversationId,
+      }),
+    );
+    delivered = delivered.then(() => provider.pump());
+    await vi.waitFor(async () => {
+      expect(dispatched.length).toBeGreaterThanOrEqual(3);
+      await delivered;
+      expect((await readPlan(f, plan)).outcome).toBe("complete");
+    });
+    await settled(3);
+    expect(dispatched.map(({ request }) => [request.connection, request.operation])).toEqual([
+      ["chatgpt", "direct_guidance"],
+      ["openrouter", "search_strategy_planning"],
+      ["chatgpt", "contribution_synthesis"],
+    ]);
+    expect(dispatched[1]!.request).toMatchObject({
+      model: kimi,
+      catalog_account_fingerprint: fingerprint,
+    });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({
+      model: kimi,
+      stream: true,
+      provider: { require_parameters: true },
+    });
+    expect((bodies[0]!.messages as { role: string }[]).map(({ role }) => role)[0]).toBe("system");
+    for (const tool of (bodies[0]!.tools ?? []) as { function: { name: string } }[])
+      expect(tool.function.name).toMatch(/^ohtia_/);
+    // The synthesis reads the text OpenRouter streamed as Josefa's result.
+    expect(
+      dispatched[2]!.request.input.some(({ text }) => text.endsWith("Result:\n" + unresolved)),
+    ).toBe(true);
+    const plan_ = await readPlan(f, plan);
+    expect(plan_.contributions[0]?.agentId).toBe("josefa");
+    expect(
+      f.query(
+        `SELECT t.connection, t.operation, a.state, a.served_by, a.observed_model,
+          lower(hex(a.account_fingerprint)) AS fingerprint
+        FROM attempts a JOIN tasks t ON t.id=a.task_id
+        WHERE t.operation<>'project_setup' ORDER BY a.rowid`,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        connection: "chatgpt",
+        operation: "direct_guidance",
+        state: "completed",
+        served_by: null,
+      }),
+      {
+        connection: "openrouter",
+        operation: "search_strategy_planning",
+        state: "completed",
+        served_by: "InferenceNet",
+        observed_model: kimi,
+        fingerprint,
+      },
+      expect.objectContaining({
+        connection: "chatgpt",
+        operation: "contribution_synthesis",
+        state: "completed",
+        served_by: null,
+      }),
+    ]);
+    expect(await f.prepare()).toBeNull();
+  } finally {
+    provider.dispose();
+    main.dispose();
+    manager.dispose();
+  }
 });
 
 it("cancels a blocked contribution when its saved destination changes and retries on the approved service", async () => {

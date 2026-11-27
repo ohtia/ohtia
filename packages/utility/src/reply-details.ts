@@ -112,6 +112,7 @@ export async function readReplyDetails(
               : "different",
       requestedModel: model(attempt?.requested_model),
       observedModel: model(attempt?.observed_model),
+      ...(attempt?.served_by ? { servedBy: attempt.served_by } : {}),
       requestedEffort: dispatched?.requested_effort ?? null,
       observedEffort: attempt?.observed_effort ?? null,
       ...(attempt?.refusal_category ? { refusalCategory: attempt.refusal_category } : {}),

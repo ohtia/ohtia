@@ -91,6 +91,7 @@
     "replyDetails.account": "Tili",
     "replyDetails.requestedModel": "Pyydetty malli",
     "replyDetails.observedModel": "Havaittu malli",
+    "replyDetails.servedBy": "Palveluntarjoaja",
     "replyDetails.attempts": "Yritykset",
     "replyDetails.started": "Alkoi",
     "replyDetails.ended": "Päättyi",

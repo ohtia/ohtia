@@ -188,11 +188,6 @@ export class ConnectionManager {
           model.effortLevels?.some((level) => level.name === effort && level.supported) === true))
     );
   }
-  /** Whether this connection's adapter sends research requests, so its list may reach tasks. */
-  sendsRequests(id: string): boolean {
-    const adapter = this.connections.get(id)?.adapter;
-    return !!adapter?.requests && adapter.declaration.capabilities.text;
-  }
   modelListReport(id: string) {
     return this.connections.get(id)?.listReport;
   }

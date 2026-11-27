@@ -91,6 +91,7 @@
     "replyDetails.account": "Konto",
     "replyDetails.requestedModel": "Begärd modell",
     "replyDetails.observedModel": "Observerad modell",
+    "replyDetails.servedBy": "Levererad av",
     "replyDetails.attempts": "Försök",
     "replyDetails.started": "Start",
     "replyDetails.ended": "Slut",

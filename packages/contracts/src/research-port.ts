@@ -20,6 +20,7 @@ import {
 import {
   providerOperations,
   providerFailureReasons,
+  isServedBy,
   type ProviderOperation,
   type ProviderUsage,
 } from "./provider-requests.js";
@@ -505,6 +506,8 @@ export interface ReplyDetails {
   readonly account: "same" | "different" | "disconnected" | "unknown" | null;
   readonly requestedModel: string | null;
   readonly observedModel: string | null;
+  /** The company that delivered the reply, as the routing service named it. */
+  readonly servedBy?: string;
   readonly requestedEffort?: string | null;
   readonly observedEffort?: string | null;
   readonly refusalCategory?: string;
@@ -2433,6 +2436,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
         "accountRevision",
         "requestedModel",
         "observedModel",
+        ...(obj(value) && Object.hasOwn(value, "servedBy") ? ["servedBy"] : []),
         ...(obj(value) && Object.hasOwn(value, "requestedEffort") ? ["requestedEffort"] : []),
         ...(obj(value) && Object.hasOwn(value, "observedEffort") ? ["observedEffort"] : []),
         ...(obj(value) && Object.hasOwn(value, "refusalCategory") ? ["refusalCategory"] : []),
@@ -2467,6 +2471,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           (level) => typeof level === "string" && utf8Size(level) <= 128,
         )) &&
       nullable(value.observedModel, (name) => typeof name === "string" && utf8Size(name) <= 1024) &&
+      (!Object.hasOwn(value, "servedBy") || isServedBy(value.servedBy)) &&
       (!Object.hasOwn(value, "refusalCategory") ||
         (typeof value.refusalCategory === "string" &&
           /^[a-z0-9_]{1,64}$/.test(value.refusalCategory))) &&

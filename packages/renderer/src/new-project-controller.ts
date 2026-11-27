@@ -4,7 +4,6 @@ import {
   type ResearchScope,
   type ProviderDeclaration,
   defaultProviderConnections,
-  sendsRequests,
 } from "@ohtia/contracts";
 
 export interface NewProjectState {
@@ -49,11 +48,10 @@ export class NewProjectController {
     this.update({ busy: true, dialog: null });
     try {
       if (!this.createdId) {
-        // A connection that sends no request cannot set up a project, so it is not read.
         const states = await Promise.all(
-          this.connections
-            .filter(({ id }) => sendsRequests(id))
-            .map(async (connection) => await this.port.readConnection(connection.id).result),
+          this.connections.map(
+            async (connection) => await this.port.readConnection(connection.id).result,
+          ),
         );
         if (this.isDisposed()) return false;
         if (!states.some((state) => state.ok && state.value.state === "connected")) {
