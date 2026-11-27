@@ -1,5 +1,6 @@
 import { verifyProjectSelectorSpecimen } from "./catalog-project-selector.mjs";
 import { verifyTaskNoticeSpecimen } from "./catalog-task-notices.mjs";
+import { verifyConnectionsSpecimen } from "./catalog-connections.mjs";
 import { verifyComposerSpecimen } from "./catalog-composer.mjs";
 import { verifyConversationSpecimen } from "./catalog-conversation.mjs";
 /* global document, window, getComputedStyle */
@@ -193,6 +194,13 @@ export async function verifyCatalog(page, url, engine, output) {
       notices = await verifyTaskNoticeSpecimen(noticePage, url, engine, output);
     } finally {
       await noticePage.close();
+    }
+    const connectionsPage = await browser.newPage();
+    let connections;
+    try {
+      connections = await verifyConnectionsSpecimen(connectionsPage, url, engine, output);
+    } finally {
+      await connectionsPage.close();
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
@@ -457,6 +465,7 @@ export async function verifyCatalog(page, url, engine, output) {
       projects,
       composer,
       notices,
+      connections,
       commandDiscovery,
       limitations: [
         "Portable catalog only; native IME, packaged zoom and manual assistive qualification are separate.",

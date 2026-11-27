@@ -117,6 +117,8 @@ export interface ConnectionSnapshot {
   readonly last_account_email: string | null;
   readonly checking_key?: boolean;
   readonly connected_at?: string;
+  /** When the connected key stops working, for services whose keys can expire. */
+  readonly expires_at?: string;
   readonly probing: boolean;
   readonly probe_id: string | null;
   readonly model_list_revision: number | null;
@@ -182,7 +184,8 @@ function name(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 function modelId(value: unknown): value is string {
-  return name(value) && value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+  // OpenRouter identifiers name the company and the model, as in `moonshotai/kimi-k3.1-pro`.
+  return name(value) && value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value);
 }
 function choice(value: unknown): value is string {
   return name(value) && value.length <= 128;
@@ -357,6 +360,7 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       "last_account_email",
       ...(Object.hasOwn(value, "checking_key") ? ["checking_key"] : []),
       ...(Object.hasOwn(value, "connected_at") ? ["connected_at"] : []),
+      ...(Object.hasOwn(value, "expires_at") ? ["expires_at"] : []),
       "probing",
       "probe_id",
       "model_list_revision",
@@ -392,6 +396,12 @@ function snapshotFields(value: Record<string, unknown>): boolean {
     present(
       value,
       "connected_at",
+      (at) =>
+        value.state === "connected" && typeof at === "string" && Number.isFinite(Date.parse(at)),
+    ) &&
+    present(
+      value,
+      "expires_at",
       (at) =>
         value.state === "connected" && typeof at === "string" && Number.isFinite(Date.parse(at)),
     ) &&
@@ -475,15 +485,24 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
   );
 }
 
-export const apiKeyConnections = ["anthropic_api_key", "openai_api_key"] as const;
+export const apiKeyConnections = ["anthropic_api_key", "openai_api_key", "openrouter"] as const;
 export type ApiKeyConnection = (typeof apiKeyConnections)[number];
 export function isApiKeyConnection(value: unknown): value is ApiKeyConnection {
   return apiKeyConnections.some((connection) => connection === value);
 }
-export const usagePauseConnections = ["chatgpt", ...apiKeyConnections] as const;
+/** Each connection here needs its database constraint before it can record a usage pause. */
+export const usagePauseConnections = ["chatgpt", "anthropic_api_key", "openai_api_key"] as const;
 export type UsagePauseConnection = (typeof usagePauseConnections)[number];
 export function isUsagePauseConnection(value: unknown): value is UsagePauseConnection {
-  return value === "chatgpt" || isApiKeyConnection(value);
+  return usagePauseConnections.some((connection) => connection === value);
+}
+/**
+ * Connections whose adapters do not send research requests yet. Such a connection can be connected
+ * and tested, but Ohtia offers it for no task and main reports no model list for it.
+ */
+export const connectionsWithoutRequests: readonly string[] = Object.freeze(["openrouter"]);
+export function sendsRequests(connection: string): boolean {
+  return !connectionsWithoutRequests.includes(connection);
 }
 /** Declared slots and the default for adapters without a concurrency declaration. */
 export const connectionInferenceLimits: Readonly<Record<string, number>> = Object.freeze({
@@ -520,10 +539,18 @@ export const openaiApiKeyConnection = Object.freeze({
   usageUrl: null,
 } as const satisfies ProviderDeclaration["connection"]);
 
+export const openrouterConnection = Object.freeze({
+  id: "openrouter",
+  displayName: "OpenRouter",
+  kind: "api_key",
+  usageUrl: "https://openrouter.ai/settings/credits",
+} as const satisfies ProviderDeclaration["connection"]);
+
 export const openaiCatalogCheckedOn = "2026-11-09";
 
 export const defaultProviderConnections = Object.freeze([
   chatgptConnection,
   anthropicApiKeyConnection,
   openaiApiKeyConnection,
+  openrouterConnection,
 ]);

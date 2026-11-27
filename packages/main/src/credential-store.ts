@@ -11,6 +11,8 @@ export const credentialAccounts = [
   "anthropic-api-key-dates",
   "openai-api-key",
   "openai-api-key-dates",
+  "openrouter-api-key",
+  "openrouter-api-key-dates",
 ] as const;
 export type CredentialAccount = (typeof credentialAccounts)[number];
 export interface StoredSession {
@@ -21,9 +23,13 @@ export interface StoredApiKey {
   readonly key: string;
   readonly instance: string;
   readonly connectedAt?: string;
+  readonly expiresAt?: string;
 }
-export type ApiKeyAccount = Extract<CredentialAccount, "anthropic-api-key" | "openai-api-key">;
-function decodeApiKey(text: string): Omit<StoredApiKey, "connectedAt"> | undefined {
+export type ApiKeyAccount = Extract<
+  CredentialAccount,
+  "anthropic-api-key" | "openai-api-key" | "openrouter-api-key"
+>;
+function decodeApiKey(text: string): Pick<StoredApiKey, "key" | "instance"> | undefined {
   try {
     const value = JSON.parse(text) as Partial<StoredApiKey> | null;
     if (
@@ -39,22 +45,40 @@ function decodeApiKey(text: string): Omit<StoredApiKey, "connectedAt"> | undefin
   }
   return undefined;
 }
-function keyDates(text: string | null): Record<string, string> {
+type KeyDates = { readonly connectedAt: string; readonly expiresAt?: string };
+function date(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+/**
+ * Each instance maps to its connection date, or to `{connected, expires}` when the key has an
+ * expiry. A reader that knows only the first form ignores the second, losing only presentation.
+ */
+function keyDates(text: string | null): Record<string, KeyDates> {
+  const dates: Record<string, KeyDates> = {};
   try {
     const value: unknown = JSON.parse(text ?? "{}");
     if (value && typeof value === "object" && !Array.isArray(value))
-      return Object.fromEntries(
-        Object.entries(value).filter(
-          ([instance, date]) =>
-            /^[0-9a-f]{32}$/.test(instance) &&
-            typeof date === "string" &&
-            Number.isFinite(Date.parse(date)),
-        ),
-      );
+      for (const [instance, entry] of Object.entries(value)) {
+        if (!/^[0-9a-f]{32}$/.test(instance)) continue;
+        if (date(entry)) dates[instance] = { connectedAt: entry };
+        else if (entry && typeof entry === "object") {
+          const { connected, expires } = entry as Record<string, unknown>;
+          if (date(connected))
+            dates[instance] = {
+              connectedAt: connected,
+              ...(date(expires) ? { expiresAt: expires } : {}),
+            };
+        }
+      }
   } catch {
     // Connection dates are optional presentation metadata if the entry is damaged.
   }
-  return {};
+  return dates;
+}
+function encodeDates(dates: KeyDates): string | { connected: string; expires: string } {
+  return dates.expiresAt
+    ? { connected: dates.connectedAt, expires: dates.expiresAt }
+    : dates.connectedAt;
 }
 export type CredentialRead<T> =
   | { readonly status: "stored"; readonly value: T }
@@ -159,9 +183,8 @@ export class CredentialStore {
         if (raw === null) return { status: "absent" };
         const stored = decodeApiKey(raw);
         if (!stored) return { status: "unusable" };
-        const dates = keyDates(await this.entry(`${account}-dates`).getPassword());
-        const connectedAt = dates[stored.instance];
-        return { status: "stored", value: { ...stored, ...(connectedAt ? { connectedAt } : {}) } };
+        const dates = keyDates(await this.entry(`${account}-dates`).getPassword())[stored.instance];
+        return { status: "stored", value: { ...stored, ...dates } };
       } catch {
         return { status: "unavailable" };
       }
@@ -180,7 +203,11 @@ export class CredentialStore {
       }
     });
   }
-  writeApiKey(account: ApiKeyAccount, key: string): Promise<CredentialRead<StoredApiKey>> {
+  writeApiKey(
+    account: ApiKeyAccount,
+    key: string,
+    expiresAt?: string,
+  ): Promise<CredentialRead<StoredApiKey>> {
     return this.serial(async () => {
       try {
         const entry = this.entry(account);
@@ -194,12 +221,44 @@ export class CredentialStore {
         // the old key and date usable. The instance identifies the committed key.
         await dates.setPassword(
           JSON.stringify({
-            ...(previous && previousDate ? { [previous.instance]: previousDate } : {}),
-            [instance]: connectedAt,
+            ...(previous && previousDate ? { [previous.instance]: encodeDates(previousDate) } : {}),
+            [instance]: encodeDates({ connectedAt, ...(expiresAt ? { expiresAt } : {}) }),
           }),
         );
         await entry.setPassword(JSON.stringify({ key, instance }));
-        return { status: "stored", value: { key, instance, connectedAt } };
+        return {
+          status: "stored",
+          value: { key, instance, connectedAt, ...(expiresAt ? { expiresAt } : {}) },
+        };
+      } catch {
+        return { status: "unavailable" };
+      }
+    });
+  }
+  /** Record a newly read expiry for the stored key only while `instance` is still that key. */
+  updateApiKeyExpiry(
+    account: ApiKeyAccount,
+    instance: string,
+    expiresAt: string | undefined,
+  ): Promise<CredentialWrite> {
+    return this.serial(async () => {
+      try {
+        const raw = await this.entry(account).getPassword();
+        if (raw === null || decodeApiKey(raw)?.instance !== instance)
+          return { status: "unavailable" };
+        const entry = this.entry(`${account}-dates`);
+        const current = keyDates(await entry.getPassword())[instance];
+        if (!current) return { status: "unavailable" };
+        if (current.expiresAt === expiresAt) return { status: "stored" };
+        await entry.setPassword(
+          JSON.stringify({
+            [instance]: encodeDates({
+              connectedAt: current.connectedAt,
+              ...(expiresAt ? { expiresAt } : {}),
+            }),
+          }),
+        );
+        return { status: "stored" };
       } catch {
         return { status: "unavailable" };
       }

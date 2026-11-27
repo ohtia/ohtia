@@ -244,8 +244,12 @@ export class ServiceSupervisor {
         if (!full) continue;
         const account = manager.account(connection);
         const report = manager.modelListReport(connection);
+        // A connection that sends no request offers its models for no task, so none is reported.
         const currentList =
-          report && full.model_list_revision !== null && report.fingerprint === account.fingerprint;
+          report &&
+          manager.sendsRequests(connection) &&
+          full.model_list_revision !== null &&
+          report.fingerprint === account.fingerprint;
         const snapshot = {
           connection_kind: account.kind,
           ...(account.fingerprint ? { account_fingerprint: account.fingerprint } : {}),

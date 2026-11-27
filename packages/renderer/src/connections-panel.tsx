@@ -13,6 +13,10 @@ import {
   formatDate,
   isProviderApiKey,
   keyCheckReasons,
+  openrouterConnection,
+  projectLinks,
+  sendsRequests,
+  type ProjectLink,
   type FoundationPort,
   type InterfaceLocale,
   type ConnectionSnapshot,
@@ -39,7 +43,10 @@ export function ConnectionsPanel({
   onProbeResult,
   subscribeConnection,
   embedded = false,
+  openLink,
 }: {
+  /** Opens a link of main's fixed list in the system browser; absent where links cannot open. */
+  readonly openLink?: (link: ProjectLink) => void;
   readonly connection?: string;
   readonly kind?: "subscription" | "api_key";
   readonly renderAfterState?: (snapshot: ConnectionSnapshot, justConnected: boolean) => ReactNode;
@@ -119,6 +126,11 @@ export function ConnectionsPanel({
     };
     const models = async (event: ConnectionEvent) => {
       const work = ++probeVersion;
+      // A service that sends no request offers no model, so its list is not named.
+      if (!sendsRequests(event.connection)) {
+        setProbe({ kind: "listed", models: [] });
+        return;
+      }
       let revision = event.model_list_revision;
       let cursor = 0;
       const names: string[] = [];
@@ -323,10 +335,16 @@ export function ConnectionsPanel({
       );
     else if (connected)
       stateText = snapshot.connected_at
-        ? message(locale, "connection.apiKey.connected", {
-            service,
-            date: formatDate(locale, new Date(snapshot.connected_at), { dateStyle: "medium" }),
-          })
+        ? snapshot.expires_at
+          ? message(locale, "connection.apiKey.connectedExpires", {
+              service,
+              date: formatDate(locale, new Date(snapshot.connected_at), { dateStyle: "medium" }),
+              expiry: formatDate(locale, new Date(snapshot.expires_at), { dateStyle: "medium" }),
+            })
+          : message(locale, "connection.apiKey.connected", {
+              service,
+              date: formatDate(locale, new Date(snapshot.connected_at), { dateStyle: "medium" }),
+            })
         : message(locale, "connection.apiKey.connectedWithoutDate", { service });
     else stateText = message(locale, "connection.notConnected");
   } else if (connecting) stateText = message(locale, "connection.waiting", { service });
@@ -463,14 +481,16 @@ export function ConnectionsPanel({
                           service,
                         })}
                       </p>
-                      <p>
-                        {message(locale, "connection.models", {
-                          models: new Intl.ListFormat(locale, {
-                            style: "long",
-                            type: "conjunction",
-                          }).format(probe.models),
-                        })}
-                      </p>
+                      {sendsRequests(connection) && (
+                        <p>
+                          {message(locale, "connection.models", {
+                            models: new Intl.ListFormat(locale, {
+                              style: "long",
+                              type: "conjunction",
+                            }).format(probe.models),
+                          })}
+                        </p>
+                      )}
                       {!apiKey && <p>{message(locale, "connection.unknownPlan", { service })}</p>}
                     </>
                   ) : (
@@ -501,7 +521,57 @@ export function ConnectionsPanel({
           )}
         </div>
       </div>
+      {connection === openrouterConnection.id && (
+        <OpenRouterPrivacy locale={locale} service={service} openLink={openLink} />
+      )}
     </Wrapper>
+  );
+}
+
+const openrouterLinks = [
+  ["openrouterPrivacy", "connection.openrouter.privacyLink"],
+  ["openrouterPlugins", "connection.openrouter.pluginsLink"],
+  ["openrouterObservability", "connection.openrouter.observabilityLink"],
+  ["openrouterUsage", "taskNotice.checkUsage"],
+] as const;
+/** OpenRouter's own settings decide where a message goes and what is done with it on the way. */
+function OpenRouterPrivacy({
+  locale,
+  service,
+  openLink,
+}: {
+  readonly locale: InterfaceLocale;
+  readonly service: string;
+  readonly openLink: ((link: ProjectLink) => void) | undefined;
+}) {
+  return (
+    <div className="connection-notice connection-info connection-privacy">
+      <Icon name="info" />
+      <div>
+        <p>{message(locale, "connection.openrouter.privacy", { service })}</p>
+        <ul className="connection-links">
+          {openrouterLinks.map(([link, text]) => (
+            <li key={link}>
+              <a
+                className="primitive-link"
+                href={projectLinks[link]}
+                onClick={(event) => {
+                  event.preventDefault();
+                  openLink?.(link);
+                }}
+              >
+                {text === "taskNotice.checkUsage"
+                  ? message(locale, text)
+                  : message(locale, text, { service })}{" "}
+                <span role="img" aria-label={message(locale, "conversation.opensInBrowser")}>
+                  <Icon name="external-link" size={16} />
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@ import { copyMessage, openExternalMessageLink } from "./message-actions.js";
 import { AnthropicProvider, anthropicConnection } from "./anthropic-provider.js";
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { OpenAIProvider, openaiConnection } from "./openai-provider.js";
+import { OpenRouterProvider } from "./openrouter-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
 import { ApplicationExit } from "./application-exit.js";
 import { observeServicePower } from "./service-power.js";
@@ -1076,6 +1077,7 @@ async function start(): Promise<void> {
       store: credentials,
       refresh: () => connections?.manager.refreshModels(openaiConnection, true),
     }),
+    new OpenRouterProvider({ store: credentials }),
     ...(developmentProvider ? [developmentProvider.createFakeProvider()] : []),
   ];
   if (acceptance && developmentProvider)

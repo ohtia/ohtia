@@ -71,6 +71,7 @@ describe("catalog build admission", () => {
       "catalog-conversation.mjs",
       "catalog-composer.mjs",
       "catalog-task-notices.mjs",
+      "catalog-connections.mjs",
       "catalog-project-selector.mjs",
       "command-presentation.mjs",
       "command-discovery.mjs",

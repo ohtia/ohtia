@@ -1,6 +1,7 @@
 import { ProjectSelectorSpecimen } from "./project-selector-specimen.js";
 import { NewProjectSpecimen } from "./new-project-specimen.js";
 import { TaskNoticeSpecimen } from "./task-notice-specimen.js";
+import { ConnectionsSpecimen } from "./connections-specimen.js";
 import { ComposerSpecimen } from "./composer-specimen.js";
 import { ConversationSpecimen } from "./conversation-specimen.js";
 import { CharacterSpecimen } from "./character-specimen.js";
@@ -407,6 +408,8 @@ createRoot(root).render(
     <NewProjectSpecimen />
   ) : screen === "task-notices" ? (
     <TaskNoticeSpecimen />
+  ) : screen === "connections" ? (
+    <ConnectionsSpecimen />
   ) : screen === "composer" ? (
     <ComposerSpecimen />
   ) : screen === "conversation" ? (

@@ -2409,6 +2409,7 @@ it.each(["installed", "qualification"] as const)(
       "chatgpt",
       "anthropic_api_key",
       "openai_api_key",
+      "openrouter",
     ]);
     const event = h.event();
     h.ipcMain.emit(h.constants.desktopChannels.session, event);
@@ -2441,6 +2442,7 @@ it("routes development connection calls and controls in main and reports every s
     "chatgpt",
     "anthropic_api_key",
     "openai_api_key",
+    "openrouter",
     "fake",
   ]);
   const event = h.event();

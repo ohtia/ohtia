@@ -467,6 +467,9 @@ export function SettingsSurfaces({
                 requestedFocus={requestedFocus}
                 {...(sourceResearch ? { connections: sourceResearch.connections } : {})}
                 observeResearch={observeAgentSettings}
+                openLink={(link) => {
+                  void bridge.openLink(link);
+                }}
                 returnFocusRef={returnFocusRef}
                 port={port}
                 locale={locale}

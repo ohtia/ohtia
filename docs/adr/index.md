@@ -69,6 +69,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0029 — Versioned operation profiles and bounded usage reporting](adr-0029-operation-profiles-and-usage-reports.md) — Select permitted model capabilities per operation and retain partial or late consumption without granting stale research authority.
 - [ADR-0048 — Provider access routes and credential store](adr-0048-provider-access-routes-and-credential-store.md) — Connect language-model services through Sign in with ChatGPT and Anthropic and OpenAI API keys, with every credential held by main in the operating-system credential store.
 - [ADR-0055 — Anthropic Messages through the official TypeScript SDK](adr-0055-anthropic-messages-sdk.md) — Run the Anthropic SDK in the desktop broker with a fixed transport and explicit API version.
+- [ADR-0057 — Provider access routes and credential store](adr-0057-provider-access-routes-and-credential-store.md) — Connect language-model services through Sign in with ChatGPT, Anthropic and OpenAI API keys and OpenRouter, with every credential held by main in the operating-system credential store.
 
 ## Academic documents and research review
 

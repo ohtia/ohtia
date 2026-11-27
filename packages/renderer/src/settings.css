@@ -556,6 +556,24 @@
   background: var(--surface-emphasis);
   color: var(--content-primary);
 }
+.connection-privacy {
+  margin-block-start: var(--space-2);
+}
+.connection-privacy > div {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: var(--space-0);
+}
+.connection-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+}
+.connection-links > li {
+  display: block;
+}
 .connection-danger {
   background: var(--danger-surface);
   color: var(--danger-content);

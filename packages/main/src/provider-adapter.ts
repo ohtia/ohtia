@@ -69,7 +69,12 @@ export interface ProviderRequests {
 }
 /** The adapter remains inside main. Neither sessions nor store access belong on the application port. */
 export type ApiKeyCheck =
-  { readonly models: readonly ProviderModel[] } | { readonly reason: KeyCheckReason };
+  | {
+      readonly models: readonly ProviderModel[];
+      /** When the checked key stops working, for services whose keys can expire. */
+      readonly expiresAt?: string;
+    }
+  | { readonly reason: KeyCheckReason };
 export interface ProviderAdapter {
   readonly declaration: ProviderDeclaration;
   /** Delegate to one CredentialStore serialization boundary; no adapter-owned persistence fallback. */
@@ -84,8 +89,9 @@ export interface ProviderAdapter {
   ): Promise<SignInResult>;
   readonly apiKey?: {
     check(key: string, signal: AbortSignal): Promise<ApiKeyCheck>;
-    save(key: string): Promise<CredentialWrite>;
+    save(key: string, checked?: { readonly expiresAt?: string }): Promise<CredentialWrite>;
     connectedAt(): string | undefined;
+    expiresAt?(): string | undefined;
   };
   /** Cancel only the pending sign-in, preserving any previously validated session. */
   cancelSignIn?(): Promise<CredentialWrite>;

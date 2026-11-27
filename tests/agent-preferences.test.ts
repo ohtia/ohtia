@@ -90,7 +90,7 @@ async function setup() {
       operationId: id,
       payload: choice,
     });
-  return { store, raw, catalog, request, read, replace, taskContext };
+  return { store, raw, catalog, request, read, replace, taskContext, connections, generation };
 }
 
 describe("durable agent preferences", () => {
@@ -458,6 +458,56 @@ describe("durable agent preferences", () => {
     expect(after.find((row) => row.target === "josefa")).toEqual(
       before.find((row) => row.target === "josefa"),
     );
+  });
+
+  it("keeps the seed pending while only a service that sends no request is connected", async () => {
+    const { store, raw, read, connections, generation } = await setup();
+    const project = value(
+      await store.executeResearchCommand({
+        command: "development.createProject",
+        operationId: "project",
+        payload: {},
+      }),
+    ).resultId;
+    const conversation = value(await store.readConversations(project))[0]!;
+    value(
+      await store.executeResearchCommand({
+        command: "message.append",
+        operationId: "message",
+        payload: { conversationId: conversation.id, content: "Question" },
+      }),
+    );
+    await store.close();
+    const prior = raw();
+    prior.pragma("foreign_keys=OFF");
+    prior.exec(preAgentPreferencesSql);
+    prior.close();
+    await store.open();
+    // Main reports a connected OpenRouter without a model list (see ServiceSupervisor).
+    expect(
+      connections.receive({
+        kind: "connection_state",
+        generation,
+        snapshot: {
+          connection: "openrouter",
+          state: "connected",
+          reason: null,
+          probing: false,
+          probe_id: null,
+          model_list_revision: null,
+          model_count: 0,
+          account_fingerprint: "b".repeat(64),
+          connection_kind: "api_key",
+        },
+      }),
+    ).toBe(true);
+    const preferences = await read();
+    expect(preferences.preferences[0]).toMatchObject({
+      target: "default",
+      model: null,
+      seedPending: true,
+    });
+    expect(preferences.lists.some((list) => list.connection === "openrouter")).toBe(false);
   });
 
   it("seeds an upgraded workspace only after a complete report", async () => {

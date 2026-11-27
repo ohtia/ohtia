@@ -152,11 +152,13 @@ The adapter records provider session/turn references, runtime and effective mode
 
 ### Initial provider routes
 
-[ADR-0048](adr/adr-0048-provider-access-routes-and-credential-store.md) owns the provider access routes and credential storage decision.
+[ADR-0057](adr/adr-0057-provider-access-routes-and-credential-store.md) owns the provider access routes and credential storage decision.
 
 For OpenAI, the initial routes are Sign in with ChatGPT, OpenAI's sign-in program for applications, over the Responses API, and an OpenAI API key. Both are direct HTTPS adapters whose requests main sends with the credential it holds. Model access is tested separately from listing a catalog.
 
 For Anthropic, target a supported programmatic Claude integration behind the same contract. Anthropic's current Agent SDK documentation requires prior approval for offering claude.ai login or rate limits in third-party products. Therefore API-key access is the baseline candidate; subscription-backed access is unavailable in Ohtia unless its permitted integration is established. Wrapping a locally signed-in CLI does not by itself establish permission. The SDK and programmatic CLI provide integration candidates, not evidence of Ohtia-specific authentication eligibility.[^claude-agent-sdk][^claude-programmatic]
+
+For OpenRouter, the routes are a pasted OpenRouter API key and Sign in with OpenRouter, both direct HTTPS adapters over Chat Completions whose requests main sends with the key it holds. The researcher's OpenRouter settings decide which models and providers can receive a request, which plugins apply and where copies are sent; Ohtia records the model and the provider that delivered each reply.
 
 Every route requires version-specific conformance and a supported graphical setup path before release. Never scrape provider token stores, reuse another product's OAuth client identity, copy personal sessions into projects or bypass provider restrictions.
 

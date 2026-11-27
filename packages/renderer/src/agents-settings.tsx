@@ -7,6 +7,7 @@ import {
   formatDate,
   openaiApiKeyConnection,
   openaiCatalogCheckedOn,
+  sendsRequests,
   message,
   type AgentPreferences,
   type AgentPreferenceTarget,
@@ -852,7 +853,7 @@ function PreferenceControls({
             </option>
           )}
           {connections
-            .filter(({ id }) => snapshots[id]?.state === "connected")
+            .filter(({ id }) => sendsRequests(id) && snapshots[id]?.state === "connected")
             .map((item) => (
               <option key={item.id} value={item.id}>
                 {serviceLabel(item, snapshots[item.id], locale)}
