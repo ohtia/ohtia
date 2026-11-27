@@ -1678,69 +1678,6 @@ it("preserves storage admission when a connection report arrives during the chec
   }
 });
 
-it("reports no model list for a connected service that sends no request", () => {
-  let receive!: (value: unknown) => void;
-  const sent: string[] = [];
-  const supervisor = new ServiceSupervisor(
-    {
-      send: (text) => {
-        sent.push(text);
-      },
-      kill: vi.fn(),
-      messages: (listener) => {
-        receive = listener;
-      },
-      exited: vi.fn(),
-    },
-    "g",
-    () => {},
-  );
-  receive(JSON.stringify({ kind: "ready", generation: "g" }));
-  const listModels = vi.fn();
-  const manager = {
-    ids: () => ["openrouter"],
-    snapshot: () => ({
-      connection: "openrouter",
-      state: "connected",
-      reason: null,
-      probing: false,
-      probe_id: null,
-      model_list_revision: 1,
-      model_count: 2,
-      display_name: "OpenRouter",
-      account_email: null,
-      last_account_email: null,
-    }),
-    sendsRequests: () => false,
-    modelListReport: () => ({
-      id: "report-1",
-      date: "2026-01-01T00:00:00.000Z",
-      fingerprint: "a".repeat(64),
-    }),
-    account: () => ({ kind: "api_key", fingerprint: "a".repeat(64) }),
-    listModels,
-  } as unknown as ConnectionManager;
-  expect(supervisor.reportConnections(manager)).toBe(true);
-  expect(sent.map((text) => JSON.parse(text) as { kind: string; snapshot: unknown })).toEqual([
-    {
-      kind: "connection_state",
-      generation: "g",
-      snapshot: {
-        connection_kind: "api_key",
-        account_fingerprint: "a".repeat(64),
-        connection: "openrouter",
-        state: "connected",
-        reason: null,
-        probing: false,
-        probe_id: null,
-        model_list_revision: null,
-        model_count: 0,
-      },
-    },
-  ]);
-  expect(listModels).not.toHaveBeenCalled();
-});
-
 it("tags only reports produced after a correlated refresh request, and stale reports cannot release its hold", () => {
   let receive!: (value: unknown) => void;
   const sent: string[] = [];
@@ -1774,7 +1711,6 @@ it("tags only reports produced after a correlated refresh request, and stale rep
   const manager = {
     ids: () => ["chatgpt"],
     snapshot: () => snapshot,
-    sendsRequests: () => true,
     modelListReport: () => ({
       id: "report-1",
       date: "2026-01-01T00:00:00.000Z",

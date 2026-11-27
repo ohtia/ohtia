@@ -91,6 +91,7 @@
     "replyDetails.account": "계정",
     "replyDetails.requestedModel": "요청한 모델",
     "replyDetails.observedModel": "관측된 모델",
+    "replyDetails.servedBy": "응답 제공 업체",
     "replyDetails.attempts": "시도 횟수",
     "replyDetails.started": "시작",
     "replyDetails.ended": "종료",

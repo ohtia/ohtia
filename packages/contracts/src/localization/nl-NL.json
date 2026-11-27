@@ -91,6 +91,7 @@
     "replyDetails.account": "Account",
     "replyDetails.requestedModel": "Aangevraagd model",
     "replyDetails.observedModel": "Waargenomen model",
+    "replyDetails.servedBy": "Geleverd door",
     "replyDetails.attempts": "Pogingen",
     "replyDetails.started": "Begonnen",
     "replyDetails.ended": "Geëindigd",

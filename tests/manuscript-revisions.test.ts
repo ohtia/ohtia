@@ -152,7 +152,7 @@ describe("file-backed manuscript revisions", () => {
     const currentRevisionId = saved.resultId;
     await f.store.close();
     const upgraded = f.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(41);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
     expect(upgraded.pragma("foreign_key_check")).toEqual([]);
     upgraded.close();
     await f.store.open();

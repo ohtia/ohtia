@@ -224,6 +224,7 @@ export interface AttemptRow extends ProviderUsage {
   outcome_reason: AttemptReason | null;
   refusal_category: Generated<string | null>;
   retry_not_before_at: Generated<string | null>;
+  served_by: Generated<string | null>;
   requested_model: string | null;
   observed_model: string | null;
   requested_effort: Generated<string | null>;
@@ -259,6 +260,34 @@ export interface TaskSchema {
   };
   usage_reports: UsageReportRow;
   application_preferences: { key: string; schema_version: number; revision: number; value: string };
+}
+/** Connections whose pauses and waits belong to the key that caused them. */
+const keyBound: readonly string[] = ["openrouter"];
+function sameAccount(stored: Uint8Array | null, current: string | undefined): boolean {
+  return !!stored && !!current && Buffer.from(stored).toString("hex") === current;
+}
+/**
+ * Open usage pauses that still apply, oldest first. An OpenRouter pause applies only while the key
+ * whose request caused it is the connection's current key, also after a restart.
+ */
+export async function currentPauses(
+  db: Kysely<TaskSchema>,
+  connections: ServiceConnections,
+  connection?: UsagePauseConnection,
+) {
+  let query = db
+    .selectFrom("usage_limit_pauses as p")
+    .innerJoin("attempts as a", "a.id", "p.source_attempt_id")
+    .selectAll("p")
+    .select("a.account_fingerprint as source_fingerprint")
+    .where("p.resumed_at", "is", null);
+  if (connection !== undefined) query = query.where("p.connection", "=", connection);
+  const rows = await query.orderBy("p.connection").orderBy("p.paused_at").execute();
+  return rows.filter(
+    (row) =>
+      !keyBound.includes(row.connection) ||
+      sameAccount(row.source_fingerprint, connections.account(row.connection).fingerprint),
+  );
 }
 function delegatedTask(task: TaskRow): boolean {
   return task.kind !== "reply";
@@ -1606,20 +1635,32 @@ export class TaskTransaction {
   }
   private async usagePause(connection: string) {
     if (!isUsagePauseConnection(connection)) return;
-    return this.db
-      .selectFrom("usage_limit_pauses")
-      .selectAll()
-      .where("connection", "=", connection)
-      .where("resumed_at", "is", null)
-      .executeTakeFirst();
+    return (await currentPauses(this.db, this.context.connections, connection))[0];
   }
   async retryDeadlines(connections: readonly string[] = apiKeyConnections) {
+    const current = keyBound.map(
+      (connection) =>
+        [connection, this.context.connections.account(connection).fingerprint] as const,
+    );
     const rows = await this.db
       .selectFrom("attempts as a")
       .innerJoin("tasks as t", "t.id", "a.task_id")
       .select(({ fn }) => ["t.connection", fn.max<string>("a.retry_not_before_at").as("deadline")])
       .where("a.retry_not_before_at", ">", this.now)
       .where("t.connection", "in", connections)
+      // A wait caused through an earlier OpenRouter key no longer holds tasks for its replacement.
+      .where((eb) =>
+        eb.and(
+          current.map(([connection, fingerprint]) =>
+            eb.or([
+              eb("t.connection", "!=", connection),
+              ...(fingerprint
+                ? [eb("a.account_fingerprint", "=", Buffer.from(fingerprint, "hex"))]
+                : []),
+            ]),
+          ),
+        ),
+      )
       .groupBy("t.connection")
       .execute();
     return new Map(rows.map(({ connection, deadline }) => [connection, deadline]));
@@ -3266,6 +3307,12 @@ export class TaskTransaction {
           result.status === "failed" && result.dispatched && reason === "rate_limited"
             ? (result.retry_not_before_at ?? null)
             : null,
+        ...(!notDispatched &&
+        task.connection === "openrouter" &&
+        event.served_by !== undefined &&
+        attempt.dispatch_permitted_at !== null
+          ? { served_by: event.served_by }
+          : {}),
         finished_at: this.now,
         usage_report_deadline_at: usageDeadline(this.now),
         ...(notDispatched
@@ -3315,8 +3362,14 @@ export class TaskTransaction {
       }
     }
     const pausesConnection =
-      (reason === "usage_limit_reached" && task.connection === "chatgpt") ||
-      (reason === "billing_limit_reached" && isApiKeyConnection(task.connection));
+      ((reason === "usage_limit_reached" && task.connection === "chatgpt") ||
+        (reason === "billing_limit_reached" && isApiKeyConnection(task.connection))) &&
+      // An answer to a request sent with an earlier OpenRouter key never pauses its replacement.
+      (!keyBound.includes(task.connection) ||
+        sameAccount(
+          attempt.account_fingerprint,
+          this.context.connections.account(task.connection).fingerprint,
+        ));
     if (pausesConnection && isUsagePauseConnection(task.connection)) {
       if (!(await this.usagePause(task.connection))) {
         await this.db

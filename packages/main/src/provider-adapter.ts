@@ -37,7 +37,9 @@ export type AdapterEvent =
       readonly name: string;
     }
   | { readonly type: "tool_arguments"; readonly id: string; readonly text: string }
-  | { readonly type: "tool_end"; readonly id: string; readonly arguments?: string };
+  | { readonly type: "tool_end"; readonly id: string; readonly arguments?: string }
+  /** The company a routing service reports as serving the request; main keeps the first. */
+  | { readonly type: "served_by"; readonly name: string };
 export interface BufferedToolCall extends ProviderToolCall {
   complete: boolean;
 }

@@ -80,6 +80,7 @@ export const messageContracts = {
   "replyDetails.account": { params: {} },
   "replyDetails.requestedModel": { params: {} },
   "replyDetails.observedModel": { params: {} },
+  "replyDetails.servedBy": { params: {} },
   "replyDetails.attempts": { params: {} },
   "replyDetails.started": { params: {} },
   "replyDetails.ended": { params: {} },

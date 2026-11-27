@@ -38,6 +38,7 @@ import {
   type TimelineItem,
   consultationInvalidReasons,
   type ConsultationInvalidReason,
+  type ServiceConnections,
 } from "@ohtia/contracts";
 import {
   bytes,
@@ -48,7 +49,7 @@ import {
   type ConversationRow,
   type ResearchSchema,
 } from "./research.js";
-import { TaskTransaction, type TaskContext } from "./tasks.js";
+import { TaskTransaction, currentPauses, type TaskContext } from "./tasks.js";
 import { recordedOperationPolicy, replyAgent } from "./operations.js";
 import { conversationAttention, type ResearchAttention } from "./research-attention.js";
 import { taskPosition } from "./research-task-position.js";
@@ -455,6 +456,7 @@ async function timelineItem(
 }
 export async function readPauseCounts(
   db: Kysely<ResearchSchema>,
+  connections: ServiceConnections,
 ): Promise<import("@ohtia/contracts").PauseCounts> {
   const revision = await sql<{
     revision: number;
@@ -478,12 +480,7 @@ export async function readPauseCounts(
     .where("restart_held", "=", 1)
     .executeTakeFirstOrThrow();
   const usage = [];
-  for (const pause of await db
-    .selectFrom("usage_limit_pauses")
-    .select("connection")
-    .where("resumed_at", "is", null)
-    .orderBy("connection")
-    .execute()) {
+  for (const pause of await currentPauses(db, connections)) {
     const held = await db
       .selectFrom("tasks")
       .select(({ fn }) => fn.countAll<number>().as("count"))
@@ -669,7 +666,7 @@ export async function readResearch(
     case "planEvent.list":
       return listPlanEvents(db, request.payload.planId, request.payload.afterSequence);
     case "pause.read":
-      return { ok: true, value: await readPauseCounts(db) };
+      return { ok: true, value: await readPauseCounts(db, context.connections) };
     case "destination.read": {
       const p = request.payload;
       const project = await db

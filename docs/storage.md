@@ -3,7 +3,7 @@ type: Playbook
 title: Durable foundation storage
 description: Persist research records, manuscript revisions and preferences with scoped operations, durable receipts, bounded transfers and verified migration recovery.
 generated:
-  by: codex/gpt-6.2-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -75,6 +75,8 @@ The development command `--ohtia-dev-command=send-to-josefa --ohtia-dev-conversa
 The data service selects the first visible model in main's latest complete catalog and commits the immutable transfer manifest and dispatch timestamp before sending a permit to main. Streaming buffers hold text without granting execution authority. Finalization stores an attributed agent message at the task's reserved position and the attempt outcome in one transaction. A task that ends without text leaves its reservation unused; a successful provider result with neither text nor an accepted permitted-tool call fails with `empty_reply`. A tool-only reply can complete without a message. Proved non-dispatch clears the dispatch timestamp; only an expired permit can automatically readmit the task here, within its original attempt and work budgets. A possibly dispatched request is never repeated automatically.
 
 Migration `0009_usage_limit_pauses` preserves connection-wide plan pauses and their explicit resumption receipts. Recovery continuation revalidates both connection availability and open plan pauses.
+
+Migration `0042_openrouter_requests` adds `attempts.served_by`, the company that OpenRouter names as having delivered a dispatched `openrouter` attempt's reply, stored once with the attempt's result and owned by [SPEC-003-010](epics/EPIC-003-research-agents/epic.md#spec-003-010-durable-ai-tasks). It also lets `usage_limit_pauses` record `openrouter`. An OpenRouter pause belongs to the key whose request caused it: it holds tasks only while that key is the connection's current one, so a replacement key starts without it and can have its own.
 
 Migration `0010_reply_control` adds `messages.ending` and `tasks.charge_warning_accepted_at`. Existing agent messages become `complete` when their task completed, and `partial` otherwise; researcher messages keep an empty ending. Database rules enforce author-specific endings and immutable replacement warnings. `task.stop` commits cancellation intent before requesting interruption. Main acknowledges final outcomes only after its transport closes; a closed ChatGPT connection releases capacity even when its remote outcome remains uncertain. PRIN-006 and PRIN-016 require keeping remote generation and charges unknown after interruption.
 

@@ -237,6 +237,17 @@ function DetailValues({
       : ([[message(locale, "replyDetails.account"), account] as const] as [string, ReactNode][])),
     [message(locale, "replyDetails.requestedModel"), details.requestedModel ?? unknown],
     [message(locale, "replyDetails.observedModel"), details.observedModel ?? unknown],
+    ...(details.servedBy
+      ? [
+          [
+            message(locale, "replyDetails.servedBy"),
+            // The company's own name, in no language Ohtia knows.
+            <bdi key="served" lang="">
+              {details.servedBy}
+            </bdi>,
+          ] as [string, ReactNode],
+        ]
+      : []),
     [
       message(locale, "replyDetails.requestedEffort"),
       details.requestedEffort ?? message(locale, "agents.modelDefault"),

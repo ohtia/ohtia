@@ -491,18 +491,10 @@ export function isApiKeyConnection(value: unknown): value is ApiKeyConnection {
   return apiKeyConnections.some((connection) => connection === value);
 }
 /** Each connection here needs its database constraint before it can record a usage pause. */
-export const usagePauseConnections = ["chatgpt", "anthropic_api_key", "openai_api_key"] as const;
+export const usagePauseConnections = ["chatgpt", ...apiKeyConnections] as const;
 export type UsagePauseConnection = (typeof usagePauseConnections)[number];
 export function isUsagePauseConnection(value: unknown): value is UsagePauseConnection {
   return usagePauseConnections.some((connection) => connection === value);
-}
-/**
- * Connections whose adapters do not send research requests yet. Such a connection can be connected
- * and tested, but Ohtia offers it for no task and main reports no model list for it.
- */
-export const connectionsWithoutRequests: readonly string[] = Object.freeze(["openrouter"]);
-export function sendsRequests(connection: string): boolean {
-  return !connectionsWithoutRequests.includes(connection);
 }
 /** Declared slots and the default for adapters without a concurrency declaration. */
 export const connectionInferenceLimits: Readonly<Record<string, number>> = Object.freeze({

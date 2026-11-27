@@ -162,5 +162,9 @@
   {
     "name": "0041_manuscript_revisions",
     "sha256": "9436790568a4202ecd1b66cf5be3de127a2b21f2a1c583b4c844bd349a7a6d72"
+  },
+  {
+    "name": "0042_openrouter_requests",
+    "sha256": "4d34209a97a2562723650a7d67f445f6e1abd99d2766e86da649d374953d468c"
   }
 ]

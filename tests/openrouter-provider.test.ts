@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  connectionsWithoutRequests,
   defaultProviderConnections,
   isConnectionSnapshot,
   isUsagePauseConnection,
-  sendsRequests,
   usagePauseConnections,
   type ConnectionEvent,
   type DiagnosticEvent,
 } from "../packages/contracts/src/index.js";
 import { ConnectionManager } from "../packages/main/src/connection-manager.js";
 import { CredentialStore } from "../packages/main/src/credential-store.js";
-import { OpenAIProvider } from "../packages/main/src/openai-provider.js";
 import {
   OpenRouterProvider,
   openrouterConnectionId as openrouter,
@@ -118,7 +115,12 @@ function harness({
     expect(url.pathname).toBe("/api/v1/models/user");
     return responses.models();
   });
-  const provider = new OpenRouterProvider({ store, transport: send });
+  const provider = new OpenRouterProvider({
+    store,
+    transport: send,
+    model: () => undefined,
+    refresh: () => {},
+  });
   const manager = new ConnectionManager([provider], (event) => diagnostics.push(event));
   manager.subscribe((event) => events.push(event));
   cleanup.push(() => manager.dispose());
@@ -151,7 +153,7 @@ function harness({
 }
 
 describe("OpenRouter declaration", () => {
-  it("connects with a pasted key and declares no request capability", () => {
+  it("connects with a pasted key and declares requests with text, streaming, tools and Stop", () => {
     const { provider } = harness();
     expect(provider.declaration).toEqual({
       id: "openrouter",
@@ -164,47 +166,31 @@ describe("OpenRouter declaration", () => {
       },
       signInModes: ["api_key"],
       capabilities: {
-        text: false,
+        text: true,
         attachments: false,
         structuredOutput: false,
-        streaming: false,
-        tools: false,
-        interruption: false,
+        streaming: true,
+        tools: true,
+        interruption: true,
         resumption: false,
         modelSelection: true,
         effortSelection: true,
-        usageReporting: false,
+        usageReporting: true,
         late_usage: "none",
       },
     });
-    expect("requests" in provider).toBe(false);
+    expect(provider.requests).toBeDefined();
     expect(defaultProviderConnections.at(-1)).toEqual(provider.declaration.connection);
   });
 
-  it("keeps OpenRouter out of tasks and usage pauses until it sends requests", () => {
-    expect(connectionsWithoutRequests).toEqual(["openrouter"]);
-    expect(sendsRequests(openrouter)).toBe(false);
-    for (const id of ["chatgpt", "anthropic_api_key", "openai_api_key"])
-      expect(sendsRequests(id)).toBe(true);
-    expect(usagePauseConnections).toEqual(["chatgpt", "anthropic_api_key", "openai_api_key"]);
-    expect(isUsagePauseConnection(openrouter)).toBe(false);
-    const store = new CredentialStore({
-      service: "Synthetic",
-      userData: "/unused",
-      platform: "linux",
-      entry: () => ({
-        getPassword: async () => null,
-        setPassword: async () => {},
-        deleteCredential: async () => true,
-      }),
-    });
-    const manager = new ConnectionManager([
-      new OpenRouterProvider({ store }),
-      new OpenAIProvider({ store, refresh: () => {} }),
+  it("pauses OpenRouter requests like the other API-key connections", () => {
+    expect(usagePauseConnections).toEqual([
+      "chatgpt",
+      "anthropic_api_key",
+      "openai_api_key",
+      "openrouter",
     ]);
-    cleanup.push(() => manager.dispose());
-    expect(manager.sendsRequests(openrouter)).toBe(false);
-    expect(manager.sendsRequests("openai_api_key")).toBe(true);
+    expect(isUsagePauseConnection(openrouter)).toBe(true);
   });
 });
 
@@ -574,25 +560,6 @@ describe("OpenRouter adapter details", () => {
       state: "error",
       reason: null,
     });
-  });
-
-  it("matches the contract's list of connections without requests", () => {
-    const store = new CredentialStore({
-      service: "Synthetic",
-      userData: "/unused",
-      platform: "linux",
-      entry: () => ({
-        getPassword: async () => null,
-        setPassword: async () => {},
-        deleteCredential: async () => true,
-      }),
-    });
-    const manager = new ConnectionManager([
-      new OpenRouterProvider({ store }),
-      new OpenAIProvider({ store, refresh: () => {} }),
-    ]);
-    cleanup.push(() => manager.dispose());
-    for (const id of manager.ids()) expect(manager.sendsRequests(id)).toBe(sendsRequests(id));
   });
 
   it("shows the expiry OpenRouter reports even when the store cannot keep it", async () => {

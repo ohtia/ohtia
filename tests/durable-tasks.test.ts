@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   ServiceConnections,
+  researchOutput,
   type Outcome,
   type ProviderDispatchMessage,
   type DiagnosticEvent,
@@ -19,6 +20,7 @@ import { objects as researchObjects } from "../packages/utility/src/migrations/0
 import { Database, storageFixture, stores } from "./fixtures/storage.js";
 import { identifier } from "../packages/utility/src/research.js";
 import { DurableStore } from "../packages/utility/dist/index.js";
+import { preOpenrouterSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 
 function value<T>(outcome: Outcome<T>): T {
   expect(outcome.ok, JSON.stringify(outcome)).toBe(true);
@@ -621,7 +623,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(41);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
       upgraded.close();
     },
   );
@@ -1187,7 +1189,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>, legacy = false): str
       version: 1,
       operation: "synthetic-recovery",
       source: 9,
-      target: 41,
+      target: 42,
       ...(legacy ? {} : { release: f.options.release }),
     }),
   );
@@ -1990,6 +1992,582 @@ describe.each(["anthropic_api_key", "openai_api_key"] as const)(
     });
   },
 );
+
+const earlierKey = "a".repeat(64);
+const laterKey = "b".repeat(64);
+const openrouterModel = "moonshotai/kimi-k3.1-pro";
+async function openrouterSetup() {
+  const f = await setup([{ id: openrouterModel, name: "Kimi K3.1 Pro" }], undefined, "openrouter");
+  // Each key reports its own account fingerprint and, with it, a new complete model list.
+  const useKey = (fingerprint: string) => {
+    f.connections.receive({
+      kind: "connection_state",
+      generation: f.generation,
+      snapshot: {
+        connection: "openrouter",
+        state: "connected",
+        connection_kind: "api_key",
+        account_fingerprint: fingerprint,
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    });
+    f.connections.receive({
+      kind: "connection_models",
+      generation: f.generation,
+      page: {
+        connection: "openrouter",
+        model_list_revision: 1,
+        models: [{ id: openrouterModel, name: "Kimi K3.1 Pro" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    });
+  };
+  useKey(earlierKey);
+  const started = (dispatch: ProviderDispatchMessage, fingerprint = earlierKey) =>
+    f.store.recordTaskEvent(
+      dispatch.request.attempt,
+      {
+        type: "started",
+        sequence: 1,
+        provider_request_id: null,
+        model: null,
+        account_fingerprint: fingerprint,
+      },
+      "",
+    );
+  const sent = async (fingerprint = earlierKey) => {
+    const dispatch = (await f.prepare())!;
+    expect(dispatch.request).toMatchObject({ connection: "openrouter", model: openrouterModel });
+    value(await started(dispatch, fingerprint));
+    return dispatch;
+  };
+  const billing = (dispatch: ProviderDispatchMessage) =>
+    f.store.recordTaskEvent(
+      dispatch.request.attempt,
+      {
+        type: "result",
+        sequence: 2,
+        result: { status: "failed", dispatched: true, reason: "billing_limit_reached" },
+      },
+      "",
+    );
+  const detail = async (taskId: string) =>
+    value(
+      await f.store.readResearch({
+        operation: "reply.details",
+        kind: "request",
+        protocol: 1,
+        policy: policyId,
+        operationId: "read-details",
+        requestId: "read-details",
+        windowGeneration: "window",
+        serviceGeneration: f.generation,
+        payload: { taskId, projectId: f.projectId },
+      }),
+    ) as ReplyDetails;
+  return { ...f, useKey, started, sent, billing, detail };
+}
+function pauseRows(f: { raw: ReturnType<typeof storageFixture>["raw"] }) {
+  const db = f.raw();
+  try {
+    return db
+      .prepare(
+        `SELECT p.connection, p.resumed_at, lower(hex(a.account_fingerprint)) AS fingerprint
+        FROM usage_limit_pauses p JOIN attempts a ON a.id=p.source_attempt_id ORDER BY p.rowid`,
+      )
+      .all();
+  } finally {
+    db.close();
+  }
+}
+
+describe("OpenRouter requests in SQLite", () => {
+  it("stores the company that served a dispatched reply and returns it in Details", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("Routed question"));
+    const dispatch = await f.sent();
+    value(
+      await f.store.recordTaskEvent(
+        dispatch.request.attempt,
+        { type: "result", sequence: 2, result: { status: "completed" }, served_by: "Moonshot AI" },
+        "Routed reply",
+      ),
+    );
+    const db = f.raw();
+    try {
+      expect(db.prepare("SELECT served_by FROM attempts").pluck().get()).toBe("Moonshot AI");
+      const task = identifier(
+        (db.prepare("SELECT task_id FROM attempts").get() as { task_id: Uint8Array }).task_id,
+      );
+      const details = await f.detail(task);
+      expect(details).toMatchObject({
+        connectionId: "openrouter",
+        requestedModel: "Kimi K3.1 Pro",
+        servedBy: "Moonshot AI",
+      });
+      // The window admits the stored name and refuses one that is not a company's name.
+      expect(researchOutput("reply.details", details)).toBe(true);
+      expect(researchOutput("reply.details", { ...details, servedBy: "" })).toBe(false);
+      expect(researchOutput("reply.details", { ...details, servedBy: "A\u0000B" })).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("stores no serving company for another connection, an unsent request or a result without one", async () => {
+    const chatgpt = await setup();
+    value(await chatgpt.append("Subscription question"));
+    const subscription = (await chatgpt.prepare())!;
+    value(
+      await chatgpt.store.recordTaskEvent(
+        subscription.request.attempt,
+        { type: "result", sequence: 1, result: { status: "completed" }, served_by: "Elsewhere" },
+        "Subscription reply",
+      ),
+    );
+    const f = await openrouterSetup();
+    value(await f.append("Unsent question"));
+    const unsent = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        unsent.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", dispatched: false, reason: "provider_unavailable" },
+          served_by: "Moonshot AI",
+        },
+        "",
+      ),
+    );
+    value(
+      await f.append(
+        "Answered question",
+        value(await f.store.readConversations(f.projectId))[0]!.id,
+      ),
+    );
+    const plain = await f.sent();
+    value(
+      await f.store.recordTaskEvent(
+        plain.request.attempt,
+        { type: "result", sequence: 2, result: { status: "completed" } },
+        "Reply without a named company",
+      ),
+    );
+    for (const fixture of [chatgpt, f]) {
+      const db = fixture.raw();
+      try {
+        const rows = db.prepare("SELECT task_id, served_by FROM attempts ORDER BY rowid").all() as {
+          task_id: Uint8Array;
+          served_by: string | null;
+        }[];
+        expect(rows.length).toBeGreaterThan(0);
+        for (const row of rows) {
+          expect(row.served_by).toBeNull();
+          if (fixture === f)
+            expect(await f.detail(identifier(row.task_id))).not.toHaveProperty("servedBy");
+        }
+      } finally {
+        db.close();
+      }
+    }
+  });
+
+  it("rejects invalid, unsent, unfinished, non-OpenRouter and changed serving companies in the database", async () => {
+    const chatgpt = await setup();
+    value(await chatgpt.append("Subscription question"));
+    value(await chatgpt.result((await chatgpt.prepare())!, "Subscription reply"));
+    const subscriptionDb = chatgpt.raw();
+    try {
+      expect(() => subscriptionDb.exec("UPDATE attempts SET served_by='Elsewhere'")).toThrow(
+        /Immutable attempt/,
+      );
+    } finally {
+      subscriptionDb.close();
+    }
+    const f = await openrouterSetup();
+    value(await f.append("Running question"));
+    const running = await f.sent();
+    const db = f.raw();
+    try {
+      const set = (served: string, attempt = running.request.attempt) =>
+        db
+          .prepare("UPDATE attempts SET served_by=? WHERE id=?")
+          .run(served, Buffer.from(attempt.replaceAll("-", ""), "hex"));
+      // Only a finished, dispatched attempt can name the company that served it.
+      expect(() => set("Moonshot AI")).toThrow(/CHECK/);
+      db.close();
+      value(await f.result(running, "Finished reply"));
+      value(await f.start("Unsent question"));
+      value(
+        await f.store.recordTaskEvent(
+          (await f.prepare())!.request.attempt,
+          {
+            type: "result",
+            sequence: 1,
+            result: { status: "failed", dispatched: false, reason: "provider_unavailable" },
+          },
+          "",
+        ),
+      );
+      const reopened = f.raw();
+      try {
+        const update = (served: string) =>
+          reopened
+            .prepare("UPDATE attempts SET served_by=? WHERE id=?")
+            .run(served, Buffer.from(running.request.attempt.replaceAll("-", ""), "hex"));
+        for (const invalid of [
+          "",
+          "x".repeat(129),
+          "Line\nbreak",
+          "Tab\tname",
+          "C1\u0085name",
+          "Del\u007f",
+          // SQLite's text functions stop at NUL; the bytes still carry it.
+          "Name\u0000suffix",
+          "Name\u0000\n",
+        ])
+          expect(() => update(invalid), JSON.stringify(invalid)).toThrow(/CHECK/);
+        const unsent = reopened
+          .prepare("SELECT state FROM attempts WHERE dispatch_permitted_at IS NULL")
+          .all();
+        expect(unsent).toEqual([{ state: "failed" }]);
+        expect(() =>
+          reopened.exec(
+            "UPDATE attempts SET served_by='Moonshot AI' WHERE dispatch_permitted_at IS NULL",
+          ),
+        ).toThrow(/CHECK/);
+        update("é".repeat(128));
+        expect(reopened.prepare("SELECT served_by FROM attempts").pluck().get()).toBe(
+          "é".repeat(128),
+        );
+        expect(() => update("Another company")).toThrow(/Immutable attempt/);
+        expect(() => reopened.exec("UPDATE attempts SET served_by=NULL")).toThrow(
+          /Immutable attempt/,
+        );
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      if (db.open) db.close();
+    }
+  });
+
+  it("pauses OpenRouter after a billing limit, holds waiting and new tasks and counts them", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("First paid request"));
+    const dispatched = await f.sent();
+    value(await f.start("Waiting request"));
+    value(await f.billing(dispatched));
+    expect(await f.prepare()).toBeNull();
+    value(await f.start("New request"));
+    expect(await f.prepare()).toBeNull();
+    expect(pauseRows(f)).toEqual([
+      { connection: "openrouter", resumed_at: null, fingerprint: earlierKey },
+    ]);
+    const db = f.raw();
+    try {
+      expect(db.prepare("SELECT state, blocking_reason FROM tasks ORDER BY rowid").all()).toEqual([
+        { state: "failed", blocking_reason: null },
+        { state: "blocked", blocking_reason: "usage_limit_reached" },
+        { state: "blocked", blocking_reason: "usage_limit_reached" },
+      ]);
+    } finally {
+      db.close();
+    }
+    expect(value(await f.store.readPauses()).usage).toEqual([
+      { connection: "openrouter", count: 2 },
+    ]);
+    value(
+      await f.store.executeResearchCommand({
+        command: "usagePause.resume",
+        operationId: "resume-openrouter",
+        payload: { connection: "openrouter" },
+      }),
+    );
+    expect(value(await f.store.readPauses()).usage).toEqual([]);
+    expect((await f.prepare())?.request.connection).toBe("openrouter");
+  });
+
+  it("ends an earlier key's pause for its replacement, also after a restart, and keeps it stored", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("Request with the earlier key"));
+    value(await f.billing(await f.sent()));
+    value(await f.start("Waiting request"));
+    expect(await f.prepare()).toBeNull();
+    f.useKey(laterKey);
+    expect(value(await f.store.readPauses()).usage).toEqual([]);
+    await f.store.close();
+    await f.store.open();
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-after-restart",
+        payload: {},
+      }),
+    );
+    expect(value(await f.store.readPauses()).usage).toEqual([]);
+    const replacement = (await f.prepare())!;
+    expect(replacement.request).toMatchObject({
+      connection: "openrouter",
+      catalog_account_fingerprint: laterKey,
+    });
+    expect(pauseRows(f)).toEqual([
+      { connection: "openrouter", resumed_at: null, fingerprint: earlierKey },
+    ]);
+    // The stored pause still belongs to the earlier key if that key returns.
+    value(await f.start("Request after the earlier key returns"));
+    f.useKey(earlierKey);
+    expect(await f.prepare()).toBeNull();
+    expect(value(await f.store.readPauses()).usage).toEqual([
+      { connection: "openrouter", count: 1 },
+    ]);
+  });
+
+  it("never pauses the replacement key for a billing limit answering the earlier key", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("Request with the earlier key"));
+    const earlier = await f.sent();
+    f.useKey(laterKey);
+    value(await f.billing(earlier));
+    expect(pauseRows(f)).toEqual([]);
+    value(await f.start("Request with the replacement key"));
+    const later = (await f.prepare())!;
+    expect(later.request.catalog_account_fingerprint).toBe(laterKey);
+    expect(value(await f.store.readPauses()).usage).toEqual([]);
+  });
+
+  it("lets the replacement key have its own pause while the earlier key's pause is still open", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("Request with the earlier key"));
+    value(await f.billing(await f.sent()));
+    f.useKey(laterKey);
+    value(await f.start("Request with the replacement key"));
+    value(await f.billing(await f.sent(laterKey)));
+    value(await f.start("Waiting for the replacement key"));
+    expect(await f.prepare()).toBeNull();
+    expect(pauseRows(f)).toEqual([
+      { connection: "openrouter", resumed_at: null, fingerprint: earlierKey },
+      { connection: "openrouter", resumed_at: null, fingerprint: laterKey },
+    ]);
+    expect(value(await f.store.readPauses()).usage).toEqual([
+      { connection: "openrouter", count: 1 },
+    ]);
+    // A second open pause for the same key is refused by the database.
+    const db = f.raw();
+    try {
+      expect(() =>
+        db.exec(`INSERT INTO usage_limit_pauses SELECT * FROM usage_limit_pauses WHERE rowid=2`),
+      ).toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("ends an earlier key's Retry-After wait for its replacement, also after a restart", async () => {
+    const f = await openrouterSetup();
+    value(await f.append("Request with the earlier key"));
+    const earlier = await f.sent();
+    value(await f.start("Waiting request"));
+    const deadline = new Date(Date.now() + 30_000).toISOString();
+    value(
+      await f.store.recordTaskEvent(
+        earlier.request.attempt,
+        {
+          type: "result",
+          sequence: 2,
+          result: {
+            status: "failed",
+            dispatched: true,
+            reason: "rate_limited",
+            retry_not_before_at: deadline,
+          },
+        },
+        "",
+      ),
+    );
+    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+    expect(await f.prepare()).toBeNull();
+    f.useKey(laterKey);
+    expect(value(await f.store.providerRetryDeadline())).toBeUndefined();
+    await f.store.close();
+    await f.store.open();
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-after-restart",
+        payload: {},
+      }),
+    );
+    expect(value(await f.store.providerRetryDeadline())).toBeUndefined();
+    f.useKey(earlierKey);
+    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+    expect(await f.prepare()).toBeNull();
+    f.useKey(laterKey);
+    expect((await f.prepare())?.request.catalog_account_fingerprint).toBe(laterKey);
+  });
+});
+
+describe("OpenRouter request migration", () => {
+  it("upgrades revision 41 with queued and waiting tasks and an open pause, keeping rows and states", async () => {
+    const f = await setup(
+      [{ id: "first-model", name: "First model" }],
+      undefined,
+      "anthropic_api_key",
+    );
+    value(await f.append("Request that will be rate limited"));
+    const limited = (await f.prepare())!;
+    value(await f.start("Request that will reach the billing limit"));
+    const billed = (await f.prepare())!;
+    value(await f.start("Request queued behind the wait"));
+    const deadline = new Date(Date.now() + 3_600_000).toISOString();
+    value(
+      await f.store.recordTaskEvent(
+        limited.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: {
+            status: "failed",
+            dispatched: true,
+            reason: "rate_limited",
+            retry_not_before_at: deadline,
+          },
+        },
+        "",
+      ),
+    );
+    expect(await f.prepare()).toBeNull();
+    value(
+      await f.store.recordTaskEvent(
+        billed.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", dispatched: true, reason: "billing_limit_reached" },
+        },
+        "",
+      ),
+    );
+    value(await f.start("Request waiting for the paused key"));
+    // A task for another connection stays queued behind neither the pause nor the wait.
+    const preferences = f.raw();
+    preferences
+      .prepare("UPDATE agent_inference_preferences SET connection='chatgpt' WHERE target='default'")
+      .run();
+    preferences.close();
+    f.connections.receive({
+      kind: "connection_state",
+      generation: f.generation,
+      snapshot: {
+        connection: "chatgpt",
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    });
+    f.connections.receive({
+      kind: "connection_models",
+      generation: f.generation,
+      page: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [{ id: "first-model", name: "First model" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    });
+    value(await f.start("Request queued for another connection"));
+    await f.store.close();
+    const snapshot = () => {
+      const db = f.raw();
+      try {
+        return {
+          tasks: db
+            .prepare("SELECT id, connection, state, blocking_reason FROM tasks ORDER BY rowid")
+            .all(),
+          attempts: db
+            .prepare(
+              `SELECT id, task_id, state, outcome_reason, retry_not_before_at, dispatch_permitted_at,
+              account_fingerprint, finished_at FROM attempts ORDER BY rowid`,
+            )
+            .all(),
+          pauses: db.prepare("SELECT * FROM usage_limit_pauses ORDER BY rowid").all(),
+        };
+      } finally {
+        db.close();
+      }
+    };
+    const before = snapshot();
+    expect(before.tasks.map((task) => (task as { state: string }).state)).toEqual(
+      expect.arrayContaining(["failed", "queued", "blocked"]),
+    );
+    expect(before.pauses).toEqual([
+      expect.objectContaining({ connection: "anthropic_api_key", resumed_at: null }),
+    ]);
+    const prior = f.raw();
+    prior.exec(preOpenrouterSql);
+    expect(prior.pragma("user_version", { simple: true })).toBe(41);
+    expect(
+      prior.prepare("SELECT name FROM pragma_table_info('attempts') WHERE name='served_by'").all(),
+    ).toEqual([]);
+    prior.close();
+    await f.store.open();
+    // Opening holds unfinished work until Continue all; the upgrade itself changes no task.
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-after-upgrade",
+        payload: {},
+      }),
+    );
+    await f.store.close();
+    expect(snapshot()).toEqual(before);
+    const fresh = storageFixture();
+    await fresh.store.open();
+    await fresh.store.close();
+    const schema = (db: ReturnType<typeof f.raw>) => {
+      try {
+        return db
+          .prepare(
+            "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+          )
+          .all();
+      } finally {
+        db.close();
+      }
+    };
+    const upgraded = f.raw();
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+    expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+    expect(
+      upgraded.prepare("SELECT count(*) FROM attempts WHERE served_by IS NOT NULL").pluck().get(),
+    ).toBe(0);
+    expect(schema(upgraded)).toEqual(schema(fresh.raw()));
+    await f.store.open();
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-after-reopening",
+        payload: {},
+      }),
+    );
+    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+    expect(value(await f.store.readPauses()).usage).toEqual([
+      { connection: "anthropic_api_key", count: 2 },
+    ]);
+    expect((await f.prepare())?.request.connection).toBe("chatgpt");
+    expect(await f.prepare()).toBeNull();
+  });
+});
 
 describe("Anthropic terminal outcomes in SQLite", () => {
   it("discards refusal text, stores only a category and treats a provider length stop as full usage", async () => {

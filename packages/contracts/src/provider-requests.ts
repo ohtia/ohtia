@@ -100,6 +100,13 @@ export interface LateUsageReceipt {
   readonly report_id: string;
   readonly decision: LateUsageDecision;
 }
+/**
+ * A provider's own name for the company that served a request: 1 to 128 characters, with no
+ * control character and no lone surrogate, which UTF-8 cannot carry.
+ */
+export function isServedBy(value: unknown): value is string {
+  return typeof value === "string" && /^[^\p{Cc}\p{Cs}]{1,128}$/u.test(value);
+}
 export function isAccountFingerprint(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
@@ -121,7 +128,12 @@ export type ProviderEventBody =
       readonly terminal_at: string;
       readonly clock_unreliable?: true;
     } & LateUsageReport)
-  | { readonly type: "result"; readonly result: ProviderResult };
+  | {
+      readonly type: "result";
+      readonly result: ProviderResult;
+      /** The company that delivered the reply, for a service that routes requests among several. */
+      readonly served_by?: string;
+    };
 export type ProviderEvent = ProviderEventBody & { readonly sequence: number };
 export interface ProviderInputItem {
   readonly role: "user" | "assistant";
@@ -318,7 +330,7 @@ export function isProviderModelSlug(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length <= providerModelBytes &&
-    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)
   );
 }
 export function isProviderEffort(value: unknown): value is string {
@@ -443,7 +455,16 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
     case "usage":
       return exact(value, ["sequence", "type", "usage"]) && isUsage(value.usage);
     case "result":
-      return exact(value, ["sequence", "type", "result"]) && isProviderResult(value.result);
+      return (
+        exact(value, [
+          "sequence",
+          "type",
+          "result",
+          ...(Object.hasOwn(value, "served_by") ? ["served_by"] : []),
+        ]) &&
+        isProviderResult(value.result) &&
+        (!Object.hasOwn(value, "served_by") || isServedBy(value.served_by))
+      );
     default:
       return false;
   }
