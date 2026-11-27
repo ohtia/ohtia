@@ -321,6 +321,24 @@
       "decorativeBorders": "border.subtle"
     },
     {
+      "selector": ".workspace-explorer-footer .workspace-control:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-explorer-footer .workspace-control:not([aria-disabled=\"true\"]):hover",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-explorer-footer .workspace-control[aria-disabled=\"true\"]",
+      "foreground": "content.disabled",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3
+    },
+    {
       "selector": ".workspace kbd",
       "backgrounds": ["surface.page"],
       "minimum": 7,

@@ -96,6 +96,19 @@ async function assertChromeBounds(page) {
     expect(pair.right).toBeLessThanOrEqual(0);
   }
 }
+async function footerSettingsRow(page) {
+  return page
+    .locator('.workspace-explorer-footer [data-workspace-command="settings.open"]')
+    .evaluate((button) => {
+      const explorer = button.closest(".workspace-explorer").getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        iconInset: button.querySelector("svg").getBoundingClientRect().left - explorer.left,
+        border: style.borderTopWidth,
+        background: style.backgroundColor,
+      };
+    });
+}
 async function assertRailTargets(page, width, size) {
   expect((await page.locator(".workspace-rail").boundingBox()).width).toBe(width);
   const targets = await page.locator(".workspace-rail button").all();
@@ -402,11 +415,21 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
     await page.keyboard.press("Escape");
     await expect(shortcuts).toBeHidden();
     await expect(shortcutTrigger).toBeFocused();
-    await page.getByRole("button", { name: "Ohtia help", exact: true }).click();
+    // The explorer footer holds Settings only; Help stays in the menu, the palette and its shortcut.
+    await expect(page.locator(".workspace-explorer-footer button")).toHaveCount(1);
+    await expect(
+      page.locator('.workspace-explorer-footer [data-workspace-command="settings.open"]'),
+    ).toBeVisible();
+    // A quiet row aligned with the explorer rows: 8 px footer padding plus 8 px row padding.
+    expect(await footerSettingsRow(page)).toEqual({
+      iconInset: 16,
+      border: "0px",
+      background: "rgba(0, 0, 0, 0)",
+    });
     await page.setViewportSize({ width: 600, height: 400 });
     await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
     await expect(page.locator(".workspace-explorer")).toBeHidden();
-    await page.keyboard.press("Escape");
+    await page.locator(".workspace-skip").focus();
     await expect(page.locator(".workspace-skip")).toBeFocused();
     const skip = await page.locator(".workspace-skip").boundingBox();
     expect(skip.y).toBeGreaterThanOrEqual(48);
@@ -464,6 +487,7 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
         await touch.goto(route());
         await expect(touch.locator('.workspace [aria-label="Hide chat"]')).toBeVisible();
         await assertChromeBounds(touch);
+        expect((await footerSettingsRow(touch)).iconInset).toBe(16);
         const targets = await touch.locator(".workspace button:visible").evaluateAll((elements) =>
           elements.map((element) => {
             const rect = element.getBoundingClientRect();
