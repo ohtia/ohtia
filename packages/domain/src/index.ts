@@ -30,3 +30,5 @@ export {
   type RecordedUpdateCheckCommand,
   type UpdateCheckTransaction,
 } from "./update-check-command.js";
+
+export { parseManuscript, serializeManuscript, type ManuscriptIdentity } from "./manuscript.js";

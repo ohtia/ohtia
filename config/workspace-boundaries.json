@@ -16,7 +16,14 @@
       "react-dom",
       "mdast-util-from-markdown",
       "micromark-extension-gfm-table",
-      "mdast-util-gfm-table"
+      "mdast-util-gfm-table",
+      "prosemirror-commands",
+      "prosemirror-history",
+      "prosemirror-keymap",
+      "prosemirror-model",
+      "prosemirror-state",
+      "prosemirror-transform",
+      "prosemirror-view"
     ],
     "builtins": []
   },

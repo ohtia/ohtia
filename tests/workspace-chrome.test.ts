@@ -1,15 +1,25 @@
 // @vitest-environment jsdom
+import { createHash, randomUUID } from "node:crypto";
+import { TextEncoder as NodeTextEncoder } from "node:util";
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { Workspace } from "../packages/renderer/src/workspace.js";
 import { WorkspaceChrome } from "../packages/renderer/src/workspace-chrome.js";
+import { ProjectExplorer } from "../packages/renderer/src/project-explorer.js";
+import type { useManuscripts } from "../packages/renderer/src/manuscript-view.js";
 import { CommandController } from "../packages/renderer/src/command-controller.js";
+import { ProjectCollections } from "../packages/renderer/src/project-controller.js";
+import { ConversationController } from "../packages/renderer/src/conversation-controller.js";
 import { LayoutPreferences } from "../packages/renderer/src/layout-preferences.js";
 import {
   failure,
   message,
   type FoundationPort,
+  type ProjectRecord,
+  type ManuscriptCloseCommand,
+  type ManuscriptRevision,
+  type ManuscriptWriteResult,
   type LayoutChange,
   type LayoutRecord,
   type SavedLayoutRecord,
@@ -761,4 +771,672 @@ it("opens one fixed project memory tab and preserves manual tab activation", asy
   );
   await render(settings.preferences, { ...props, memoryRequest: 1 });
   expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe("Navigator");
+});
+
+it("opens one manuscript surface without exposing extra records as tabs", async () => {
+  const projectId = "019a8000-0000-7000-8000-000000000231";
+  const otherProject = "019a8000-0000-7000-8000-000000000232";
+  const draftId = "019a8000-0000-7000-8000-000000000241";
+  const currentRevisionId = "019a8000-0000-7000-8000-000000000242";
+  const summaries = [
+    { draftId, title: "Working manuscript", currentRevisionId },
+    {
+      draftId: "019a8000-0000-7000-8000-000000000243",
+      title: "Reference manuscript",
+      currentRevisionId,
+    },
+  ];
+  const date = "2026-11-17T10:00:00.000Z";
+  const project = (id: string): ProjectRecord => ({
+    id,
+    projectType: "thesis",
+    title: "Thesis",
+    documentLanguage: "en-US",
+    titleRevision: 1,
+    setupConfirmedAt: date,
+    isDevelopment: false,
+    createdAt: date,
+    updatedAt: date,
+    lastOpenedAt: date,
+  });
+  const settings = store();
+  const collectionSource = new ConversationController({} as FoundationPort);
+  let scope = projectId;
+  let subscription = 1;
+  const collections = new ProjectCollections({
+    ...collectionSource,
+    snapshot: () => ({
+      ...collectionSource.snapshot(),
+      scope: { projectId: scope, conversationId: null },
+      researchSubscriptionId: `scope-${subscription}`,
+      researchScopeReady: true,
+      status: "ready",
+    }),
+    switchConversation() {},
+  });
+  const manuscriptPort = {
+    listManuscripts: ({ projectId: selected }: { projectId: string }) =>
+      call({
+        ok: true,
+        value: {
+          projectId: selected,
+          manuscripts: selected === projectId ? summaries : [],
+          next: null,
+        },
+      }),
+    readManuscript: vi.fn(() => call(failure("record_not_found"))),
+  } as unknown as FoundationPort;
+  const show = async (id: string) => {
+    if (scope !== id) subscription++;
+    scope = id;
+    await render(settings.preferences, {
+      projectScope: id,
+      project: project(id),
+      collections,
+      memory: h("p", null, "Saved project memory"),
+      manuscriptPort,
+    });
+  };
+  const surface = () => container.querySelector(".workspace-manuscript-surface");
+  await show(projectId);
+  await click("Project memory");
+  await click("Manuscript");
+  expect(surface()?.hasAttribute("hidden")).toBe(false);
+  expect(manuscriptPort.readManuscript).toHaveBeenCalledWith({
+    projectId,
+    subscriptionId: "scope-1",
+    draftId,
+    revisionId: null,
+  });
+  expect(container.textContent).not.toContain("Reference manuscript");
+  expect([...container.querySelectorAll("[role=tab]")].map((button) => button.textContent)).toEqual(
+    ["Navigator", "Manuscript", "Project memory"],
+  );
+  const manuscriptTab = container.querySelector<HTMLButtonElement>(
+    '[role="tab"][aria-selected="true"]',
+  );
+  expect(manuscriptTab?.textContent).toBe("Manuscript");
+  expect(manuscriptTab?.getAttribute("aria-controls")).toBe(surface()?.id);
+  await key(manuscriptTab as HTMLButtonElement, "ArrowLeft");
+  const navigator = container.querySelector<HTMLButtonElement>('[role="tablist"] [role="tab"]');
+  expect(document.activeElement).toBe(navigator);
+  expect(manuscriptTab?.getAttribute("aria-selected")).toBe("true");
+  await act(async () => navigator?.click());
+  expect(surface()?.hasAttribute("hidden")).toBe(true);
+  expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe("Navigator");
+  await show(otherProject);
+  await click("Manuscript");
+  expect(surface()?.textContent).toContain("Create manuscript");
+  expect(manuscriptPort.readManuscript).toHaveBeenCalledTimes(1);
+  collectionSource.dispose();
+});
+
+it("orders the explorer and folds or reveals the manuscript index without moving the document", async () => {
+  const projectId = "019a8000-0000-7000-8000-000000000251";
+  const date = "2026-11-17T10:00:00.000Z";
+  const project: ProjectRecord = {
+    id: projectId,
+    projectType: "thesis",
+    title: "Thesis",
+    documentLanguage: "en-US",
+    titleRevision: 1,
+    setupConfirmedAt: date,
+    isDevelopment: false,
+    createdAt: date,
+    updatedAt: date,
+    lastOpenedAt: date,
+  };
+  const collectionSource = new ConversationController({} as FoundationPort);
+  const collections = new ProjectCollections({
+    ...collectionSource,
+    snapshot: () => ({
+      ...collectionSource.snapshot(),
+      scope: { projectId, conversationId: null },
+      researchSubscriptionId: "scope-1",
+      researchScopeReady: true,
+      status: "ready",
+    }),
+    switchConversation() {},
+  });
+  const scope = { projectId, subscriptionId: "scope-1" };
+  const manuscripts = {
+    status: "ready",
+    rows: [
+      {
+        draftId: "019a8000-0000-7000-8000-000000000261",
+        title: "Thesis",
+        currentRevisionId: "019a8000-0000-7000-8000-000000000262",
+      },
+    ],
+    scope,
+    verifiedScope: scope,
+    retry: vi.fn(),
+  } as unknown as ReturnType<typeof useManuscripts>;
+  const headings = [
+    { id: "sec_intro", text: "Introduction", level: 2, beforeParagraph: 0 },
+    { id: "sec_frame", text: "Framework", level: 2, beforeParagraph: 1 },
+    { id: "sec_care", text: "Care economy", level: 3, beforeParagraph: 1 },
+    { id: "sec_networks", text: "Community networks", level: 4, beforeParagraph: 2 },
+    { id: "sec_method", text: "Method", level: 2, beforeParagraph: 3 },
+    { id: "sec_cases", text: "Case selection", level: 3, beforeParagraph: 3 },
+  ] as const;
+  const openManuscript = vi.fn();
+  const scrolled = vi.fn(function (this: Element) {
+    return this;
+  });
+  Element.prototype.scrollIntoView = scrolled as unknown as Element["scrollIntoView"];
+  try {
+    await act(async () => {
+      root.render(
+        h(ProjectExplorer, {
+          collections,
+          project,
+          locale: "en-US",
+          memoryAvailable: true,
+          memorySelected: false,
+          openMemory() {},
+          revealChat() {},
+          manuscripts,
+          manuscriptSelected: true,
+          headings,
+          activeHeading: "sec_networks",
+          headingLanguage: "ko-KR",
+          openManuscript,
+        }),
+      );
+    });
+    const explorer = container.querySelector<HTMLElement>(".project-explorer")!;
+    const [main, materials] = [...explorer.querySelectorAll<HTMLElement>(":scope > ul")];
+    expect([...main!.children].map((item) => item.firstElementChild?.textContent)).toEqual([
+      "Manuscript",
+      "Project memory",
+    ]);
+    expect(materials!.classList.contains("project-explorer-materials")).toBe(true);
+    expect([...materials!.children].map((item) => item.firstElementChild?.textContent)).toEqual([
+      "Sources and documents",
+      "Conversations",
+    ]);
+    const rootRow = explorer.querySelector(".manuscript-outline-root")!;
+    expect(
+      [...rootRow.querySelectorAll("button")].map(
+        (button) => button.getAttribute("aria-label") ?? button.textContent,
+      ),
+    ).toEqual([
+      "Manuscript",
+      "Show current position",
+      "Fold all",
+      "Toggle the outline for Manuscript",
+    ]);
+    const heading = (text: string) =>
+      [...explorer.querySelectorAll<HTMLButtonElement>(".manuscript-outline-heading")].find(
+        (button) => button.textContent === text,
+      )!;
+    const disclosure = (text: string) =>
+      explorer.querySelector<HTMLButtonElement>(`[aria-label="Toggle the outline for ${text}"]`)!;
+    const current = () => explorer.querySelector('[aria-current="location"]')?.textContent;
+    expect(current()).toBe("Community networks");
+    expect(heading("Community networks").querySelector("bdi")?.getAttribute("lang")).toBe("ko-KR");
+    expect(
+      ["Introduction", "Framework", "Care economy", "Method", "Case selection"].map(
+        (text) => heading(text).dataset.emphasis,
+      ),
+    ).toEqual(["true", "true", "true", "true", undefined]);
+
+    await act(async () =>
+      rootRow.querySelector<HTMLButtonElement>('[aria-label="Fold all"]')!.click(),
+    );
+    expect(
+      ["Framework", "Care economy", "Method"].map((text) => disclosure(text).ariaExpanded),
+    ).toEqual(["false", "false", "false"]);
+    expect(disclosure("Manuscript").getAttribute("aria-expanded")).toBe("true");
+    expect(heading("Care economy").closest("[hidden]")).not.toBeNull();
+    expect(current()).toBe("Framework");
+
+    await act(async () => disclosure("Manuscript").click());
+    expect(current()).toBe("Manuscript");
+    await act(async () =>
+      rootRow.querySelector<HTMLButtonElement>('[aria-label="Show current position"]')!.click(),
+    );
+    expect(disclosure("Manuscript").getAttribute("aria-expanded")).toBe("true");
+    expect(
+      ["Framework", "Care economy", "Method"].map((text) => disclosure(text).ariaExpanded),
+    ).toEqual(["true", "true", "false"]);
+    expect(current()).toBe("Community networks");
+    expect(heading("Community networks").closest("[hidden]")).toBeNull();
+    expect(scrolled).toHaveBeenLastCalledWith({ block: "nearest" });
+    expect(scrolled.mock.contexts.at(-1)).toBe(heading("Community networks"));
+    expect(openManuscript).not.toHaveBeenCalled();
+
+    await act(async () => heading("Care economy").click());
+    expect(openManuscript).toHaveBeenCalledWith("sec_care");
+  } finally {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  }
+  collectionSource.dispose();
+});
+
+describe("workspace chrome manuscript close guard", () => {
+  const projectId = "019a8000-0000-7000-8000-000000000271";
+  const draftId = "019a8000-0000-7000-8000-000000000272";
+  const date = "2026-11-17T10:00:00.000Z";
+  const project: ProjectRecord = {
+    id: projectId,
+    projectType: "thesis",
+    title: "Thesis",
+    documentLanguage: "en-US",
+    titleRevision: 1,
+    setupConfirmedAt: date,
+    isDevelopment: false,
+    createdAt: date,
+    updatedAt: date,
+    lastOpenedAt: date,
+  };
+  const source = `---\nohtia_draft_format: ohtia-markdown-v1\nohtia_draft_id: draft_${draftId}\n---\n\n# Care networks {#sec_title}\n\n::: {#blk_one .ohtia-block}\nOpening paragraph.\n:::\n`;
+  const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+  const revision = (n: number, parent: string | null, text: string): ManuscriptRevision => ({
+    projectId,
+    draftId,
+    revisionId: `019a8000-0000-7000-8000-${String(n).padStart(12, "0")}`,
+    parentRevisionId: parent,
+    restorationOriginId: null,
+    language: "en-GB",
+    createdAt: date,
+    saveReason: parent ? "manual" : "initial",
+    contentSha256: sha(text),
+    authorKind: "researcher",
+    recordingActor: "utility",
+  });
+  let restoreEditorGeometry: (() => void) | undefined;
+  afterEach(() => {
+    restoreEditorGeometry?.();
+    restoreEditorGeometry = undefined;
+  });
+
+  async function manuscriptChrome(
+    options: { readonly empty?: boolean; readonly listFailures?: readonly string[] } = {},
+  ) {
+    vi.stubGlobal("crypto", {
+      randomUUID,
+      subtle: {
+        digest: async (_algorithm: string, bytes: Uint8Array) =>
+          Uint8Array.from(createHash("sha256").update(bytes).digest()).buffer,
+      },
+    });
+    vi.stubGlobal("TextEncoder", NodeTextEncoder);
+    // ProseMirror measures ranges and scrolls the selection; jsdom implements neither.
+    const descriptors = {
+      rects: Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects"),
+      rect: Object.getOwnPropertyDescriptor(Range.prototype, "getBoundingClientRect"),
+      scroll: Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView"),
+    };
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => Object.assign([], { item: () => null }),
+    });
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => new DOMRect(0, 0, 0, 0),
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: () => {},
+    });
+    restoreEditorGeometry = () => {
+      for (const [target, name, descriptor] of [
+        [Range.prototype, "getClientRects", descriptors.rects],
+        [Range.prototype, "getBoundingClientRect", descriptors.rect],
+        [Element.prototype, "scrollIntoView", descriptors.scroll],
+      ] as const) {
+        if (descriptor) Object.defineProperty(target, name, descriptor);
+        else delete (target as unknown as Record<string, unknown>)[name];
+      }
+    };
+    const state = { text: source, revision: revision(500, null, source), next: 501 };
+    let exists = !options.empty;
+    const port = {
+      listManuscripts: vi.fn(() =>
+        call({
+          ok: true as const,
+          value: {
+            projectId,
+            manuscripts: exists
+              ? [{ draftId, title: "Thesis", currentRevisionId: state.revision.revisionId }]
+              : [],
+            next: null,
+          },
+        }),
+      ),
+      readManuscript: vi.fn(() =>
+        call({ ok: true as const, value: { revision: state.revision, markdown: state.text } }),
+      ),
+      saveManuscript: vi.fn(
+        (_operationId: string, input: Parameters<FoundationPort["saveManuscript"]>[1]) => {
+          state.text = input.markdown as string;
+          state.revision = revision(state.next++, input.expectedRevisionId, state.text);
+          return call<ManuscriptWriteResult>({
+            ok: true,
+            value: {
+              resultId: "019a8000-0000-7000-8000-000000000999",
+              manuscriptChange: { kind: "committed", revision: state.revision },
+            },
+          });
+        },
+      ),
+      stageManuscriptPart: vi.fn(),
+      readManuscriptReceipt: vi.fn(),
+      readManuscriptPart: vi.fn(),
+      createManuscript: vi.fn(
+        (_operationId: string, _input: Parameters<FoundationPort["createManuscript"]>[1]) => {
+          exists = true;
+          return call<ManuscriptWriteResult>({
+            ok: true,
+            value: {
+              resultId: "019a8000-0000-7000-8000-000000000998",
+              manuscriptChange: { kind: "committed", revision: state.revision },
+            },
+          });
+        },
+      ),
+    };
+    for (const code of options.listFailures ?? [])
+      port.listManuscripts.mockImplementationOnce(() =>
+        call(failure(code as Parameters<typeof failure>[0])),
+      );
+    let requestClose: ((command: ManuscriptCloseCommand) => void) | undefined;
+    const lifecycle = {
+      perform: vi.fn(async (_command: string) => true),
+      setManuscriptPending: vi.fn(async (_pending: boolean) => true),
+      onManuscriptClose: vi.fn((listener: (command: ManuscriptCloseCommand) => void) => {
+        requestClose = listener;
+        return () => {
+          requestClose = undefined;
+        };
+      }),
+    };
+    const collectionSource = new ConversationController({} as FoundationPort);
+    const collections = new ProjectCollections({
+      ...collectionSource,
+      snapshot: () => ({
+        ...collectionSource.snapshot(),
+        scope: { projectId, conversationId: null },
+        researchSubscriptionId: "scope-1",
+        researchScopeReady: true,
+        status: "ready",
+      }),
+      switchConversation() {},
+    });
+    const settings = store();
+    await render(settings.preferences, {
+      projectScope: projectId,
+      project,
+      collections,
+      manuscriptPort: port as unknown as FoundationPort,
+      manuscriptLifecycle: lifecycle,
+    });
+    const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    const buttons = () => [...container.querySelectorAll<HTMLButtonElement>("button")];
+    const named = (name: string, scope: ParentNode = container) =>
+      [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
+        (node) => node.textContent === name,
+      );
+    async function open() {
+      const tab = buttons().find(
+        (node) => node.getAttribute("role") === "tab" && node.textContent === "Manuscript",
+      )!;
+      await act(async () => tab.click());
+      await settle();
+    }
+    async function edit() {
+      await open();
+      await act(async () => named("Edit")!.click());
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", {
+        value: {
+          types: ["text/plain"],
+          getData: (type: string) => (type === "text/plain" ? "New " : ""),
+        },
+      });
+      await act(async () => container.querySelector("[role=textbox]")!.dispatchEvent(paste));
+    }
+    const dialog = () => container.querySelector<HTMLDialogElement>("dialog[open]");
+    const close = async (command: ManuscriptCloseCommand) => {
+      await act(async () => requestClose?.(command));
+      await settle();
+    };
+    const unload = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    return {
+      port,
+      lifecycle,
+      state,
+      open,
+      edit,
+      dialog,
+      close,
+      unload,
+      named,
+      settle,
+      collectionSource,
+    };
+  }
+
+  it("reports pending manuscript text and protects unload only while it is pending", async () => {
+    const t = await manuscriptChrome();
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false]]);
+    expect(t.lifecycle.onManuscriptClose).toHaveBeenCalledOnce();
+    expect(t.unload()).toBe(false);
+    await t.edit();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true]]);
+    expect(t.unload()).toBe(true);
+    await act(async () => t.named("Discard changes")!.click());
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true], [false]]);
+    expect(t.unload()).toBe(false);
+    t.collectionSource.dispose();
+  });
+
+  it("resends a refused pending report until main accepts it, without waiting for focus", async () => {
+    const t = await manuscriptChrome();
+    await t.settle();
+    // An exit that is stopping services refuses renderer commands by rejecting them.
+    t.lifecycle.setManuscriptPending.mockImplementationOnce(async () => {
+      throw new Error("Command sender admission refused.");
+    });
+    await t.edit();
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true]]);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true], [true]]);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
+    expect(t.lifecycle.setManuscriptPending).toHaveBeenCalledTimes(3);
+    t.collectionSource.dispose();
+  });
+
+  it("reports each pending change in order while an earlier report is outstanding", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true]]);
+    const cleared = Promise.withResolvers<boolean>();
+    t.lifecycle.setManuscriptPending.mockImplementationOnce(() => cleared.promise);
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    const keys = (init: KeyboardEventInit) =>
+      act(async () => {
+        textbox.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "z",
+            keyCode: 90,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+            ...init,
+          }),
+        );
+      });
+    // Undo returns to the saved text while that report is still outstanding; redo restores the edit.
+    await keys({});
+    await keys({ shiftKey: true });
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false], [true], [false], [true]]);
+    await act(async () => cleared.resolve(true));
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending).toHaveBeenCalledTimes(4);
+    expect(t.named("Save")).toBeDefined();
+    t.collectionSource.dispose();
+  });
+
+  it("asks before closing with pending text, focusing Keep open, and keeps the text when kept open", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    await t.close("window.close");
+    const dialog = t.dialog()!;
+    expect(dialog.querySelector("h2")?.textContent).toBe("Unsaved changes");
+    expect(dialog.textContent).toContain(
+      "Save or discard the pending manuscript changes before closing.",
+    );
+    expect([...dialog.querySelectorAll(".actions button")].map((node) => node.textContent)).toEqual(
+      ["Keep open", "Discard and close", "Save and close"],
+    );
+    expect(document.activeElement).toBe(t.named("Keep open", dialog));
+    await act(async () => t.named("Keep open", dialog)!.click());
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    expect(t.named("Save")).toBeDefined();
+    expect(container.querySelector("[role=textbox]")?.textContent).toContain("New ");
+    t.collectionSource.dispose();
+  });
+
+  it("continues a close requested during a save once that save clears the pending text", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    const saving = Promise.withResolvers<void>();
+    const commit = t.port.saveManuscript.getMockImplementation()!;
+    t.port.saveManuscript.mockImplementationOnce((operationId, input) => ({
+      result: saving.promise.then(() => commit(operationId, input).result),
+      cancel() {},
+    }));
+    await act(async () => t.named("Save")!.click());
+    await t.close("window.close");
+    expect(t.dialog()).not.toBeNull();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    await act(async () => saving.resolve());
+    await t.settle();
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.setManuscriptPending).toHaveBeenLastCalledWith(false);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("window.close");
+    // A later edit does not revive the completed request.
+    await act(async () => t.named("Preview")!.click());
+    await t.edit();
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.perform).toHaveBeenCalledOnce();
+    t.collectionSource.dispose();
+  });
+
+  it("discards pending text and then performs the requested close", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    await t.close("application.quit");
+    await act(async () => t.named("Discard and close", t.dialog()!)!.click());
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending).toHaveBeenLastCalledWith(false);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("application.quit");
+    expect(t.dialog()).toBeNull();
+    expect(t.named("Save")).toBeUndefined();
+    expect(t.port.saveManuscript).not.toHaveBeenCalled();
+    t.collectionSource.dispose();
+  });
+
+  it("saves pending text and then performs the requested close", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    await t.close("window.close");
+    await act(async () => t.named("Save and close", t.dialog()!)!.click());
+    await t.settle();
+    expect(t.port.saveManuscript).toHaveBeenCalledOnce();
+    expect(t.state.text).toContain("New ");
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("window.close");
+    expect(t.dialog()).toBeNull();
+    t.collectionSource.dispose();
+  });
+
+  it("keeps the text and the window open when saving for close fails", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    t.port.saveManuscript.mockImplementationOnce(() => call(failure("storage_failed")));
+    await t.close("window.close");
+    await act(async () => t.named("Save and close", t.dialog()!)!.click());
+    await t.settle();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    expect(t.dialog()).toBeNull();
+    expect(container.textContent).toContain("Could not save the manuscript.");
+    expect(t.named("Save")).toBeDefined();
+    t.collectionSource.dispose();
+  });
+
+  it("continues a close request directly when nothing is pending", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    t.lifecycle.setManuscriptPending.mockClear();
+    await t.close("window.close");
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false]]);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("window.close");
+    t.lifecycle.setManuscriptPending.mockResolvedValueOnce(false);
+    await t.close("application.quit");
+    expect(t.lifecycle.perform).toHaveBeenCalledOnce();
+    t.collectionSource.dispose();
+  });
+
+  it("creates the primary manuscript after reporting a failed creation", async () => {
+    const t = await manuscriptChrome({ empty: true });
+    await t.open();
+    expect(container.textContent).toContain("No manuscripts yet.");
+    t.port.createManuscript.mockImplementationOnce(() => call(failure("storage_failed")));
+    await act(async () => t.named("Create manuscript")!.click());
+    await t.settle();
+    expect(container.textContent).toContain("Could not create the manuscript.");
+    expect(t.port.createManuscript).toHaveBeenCalledWith(`primary-manuscript-${projectId}`, {
+      projectId,
+      subscriptionId: "scope-1",
+      title: "Thesis",
+    });
+    t.port.createManuscript.mockImplementationOnce(() => ({
+      result: Promise.reject(new Error("bridge closed")),
+      cancel() {},
+    }));
+    await act(async () => t.named("Create manuscript")!.click());
+    await t.settle();
+    expect(container.textContent).toContain("Could not create the manuscript.");
+    await act(async () => t.named("Create manuscript")!.click());
+    await t.settle();
+    expect(t.port.createManuscript).toHaveBeenCalledTimes(3);
+    expect(container.textContent).not.toContain("Could not create the manuscript.");
+    expect(container.querySelector("article.workspace-manuscript h1")?.textContent).toBe(
+      "Care networks",
+    );
+    expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe(
+      "Manuscript",
+    );
+    t.collectionSource.dispose();
+  });
+
+  it("shows explorer list failures with a Try again that keeps focus on the Manuscript entry", async () => {
+    const t = await manuscriptChrome({ listFailures: ["storage_failed", "project_in_setup"] });
+    await t.settle();
+    const entry = () =>
+      container.querySelector<HTMLButtonElement>(".manuscript-outline-root button")!;
+    const item = () => entry().closest("li")!;
+    expect(item().textContent).toContain("Could not load the manuscript list.");
+    await act(async () => t.named("Try again", item())!.click());
+    await t.settle();
+    expect(document.activeElement).toBe(entry());
+    expect(item().textContent).toContain("Manuscripts are unavailable.");
+    await act(async () => t.named("Try again", item())!.click());
+    await t.settle();
+    expect(item().querySelector("[role=status]")?.textContent).toBe("");
+    expect(t.named("Try again", item())).toBeUndefined();
+    t.collectionSource.dispose();
+  });
 });

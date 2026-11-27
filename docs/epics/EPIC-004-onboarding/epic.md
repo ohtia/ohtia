@@ -2,13 +2,17 @@
 type: EPIC
 title: "EPIC-004 — Thesis onboarding, project workspace, recovery and diagnostics"
 description: "Deliver thesis onboarding, initial local writing and workspace controls, with verified recovery and diagnostics."
-generated: { by: codex/gpt-6.2-sol }
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["epic", "comp:app", "comp:desktop", "comp:storage", "comp:llm"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/402
 sources:
+  - id: breadcrumb-navigation
+    resource: "https://code.visualstudio.com/docs/editing/editingevolved#_breadcrumbs"
+    title: "Visual Studio Code — Breadcrumb navigation"
   - id: roadmap
     resource: "https://github.com/ohtia/ohtia/blob/3eac620d0984b4e1e393407db9b47de53d44a11d/docs/product-roadmap.md"
     title: "Product roadmap"
@@ -193,7 +197,7 @@ stories:
     concept: ./STORY-004-013-save-manuscript-revisions.md
     resource: https://github.com/ohtia/ohtia/issues/415
   - id: STORY-004-014
-    title: "Open project manuscripts in tabs"
+    title: "Open the project manuscript in the workspace"
     concept: ./STORY-004-014-open-manuscript-tabs.md
     resource: https://github.com/ohtia/ohtia/issues/416
   - id: STORY-004-015
@@ -290,7 +294,7 @@ Incoming commands and event text are data through scoped, bounded contracts unde
 
 The manuscript is the working text of the thesis that the researcher writes and revises. The research profile retains the topic, question, objectives and decisions as attributed context. Notes, profile records and manuscript revisions have distinct identities. Recording or revising a profile or note leaves manuscript text intact. Keep renderer buffers, research review and static/dynamic presentation separately owned.[^data][^format][^thesis-entry-clarification] The utility alone persists versioned research through the existing validated port, immutable migrations, verified checkpoint, UUIDv7 scope and expected-version receipts. A late response stays tied to the original resource and generation. A lost result reconciles its original operation ID; confirmed changes and refresh failures have separate outcomes. Corrupt, unsupported or stale data never discards existing state or the recoverable buffer.[^architecture][^port][^storage][^data][^adr7][^adr8][^adr10]
 
-Keep controls keyboard- and screen-reader-operable, with typed locale cases, packaged fonts, forced colors, reduced motion, both themes, zoom/reflow to 320 CSS px, validation of recorded content language, actual native IME/clipboard when used and nonduplicated save announcements. Apply ADR-0000 applicability, packaged CSP and portability checks, ADR-0016 per-package coverage/required inventories, and the relevant V09 cases for manuscript tab or editor work. For other surfaces, exercise their own project ownership and scope switches against stored data. Record the package and native evidence appropriate to the story. The EPIC owns combined platform coverage and reports linguistic and assistive evidence separately. Apply WCAG 2.2 AA, the selected AAA criteria and ATAG Part B in scope.[^roadmap][^workspace][^design][^adr14][^adr23][^verification][^presentation]
+Keep controls keyboard- and screen-reader-operable, with typed locale cases, packaged fonts, forced colors, reduced motion, both themes, zoom/reflow to 320 CSS px, validation of recorded content language, actual native IME/clipboard when used and nonduplicated save announcements. Apply ADR-0000 applicability, packaged CSP and portability checks, ADR-0016 per-package coverage/required inventories, and the relevant V09 cases for manuscript surface or editor work. For other surfaces, exercise their own project ownership and scope switches against stored data. Record the package and native evidence appropriate to the story. The EPIC owns combined platform coverage and reports linguistic and assistive evidence separately. Apply WCAG 2.2 AA, the selected AAA criteria and ATAG Part B in scope.[^roadmap][^workspace][^design][^adr14][^adr23][^verification][^presentation]
 
 ### SPEC-004-005: Settings operation boundaries
 
@@ -428,17 +432,21 @@ For locally authored text the immutable project document language supplies the l
 
 Record the revision persistence contract and limits in `docs/storage.md` and link the manuscript entities in `docs/data-model.md`.[^data][^storage]
 
-### SPEC-004-021: Open project manuscripts in workspace tabs
+### SPEC-004-021: Open the project manuscript in the workspace
 
-Use the project collection and scope events from STORY-004-001 and real manuscript list/read output from STORY-004-013. Open the scoped current version in one stable tab per resource key, reveal the document surface and preserve the conversation selection and its unsent text. Use `drafts.title` as the tab and collection name. Show the actual heading and paragraph content using the exact revision language. The heading has no effect on the tab name. Avoid loading a foreign or deleted ID from restoration. The Navigator remains fixed, first and unclosable. Expose the actual committed manuscript visibility from the selected and mounted visible document surface, including the read-only presentation, irrespective of whether an editor is installed. Handle actual loading, empty, failure, unavailable and populated states on these records.[^workspace][^design][^frontend][^data]
+Show a single Manuscript entry for the selected, confirmed thesis in the project explorer. It opens the full current manuscript in the fixed Manuscript tab in the central document area. Show chapter headings beneath that entry and nest subheadings under their parent chapters. Disclosure controls collapse the outline and each heading with children without moving the document. Folded branches retain their state for the current manuscript. The toolbar shows the breadcrumb path from Manuscript to the current reading heading. Opening a segment lists headings at that level and below in document order, with text filtering and keyboard selection. Both controls navigate within the same document.[^breadcrumb-navigation] Navigator and Manuscript are distinct fixed tabs and Project memory retains its own tab. Keep the chat selection and unsent text throughout. Use project scope and real list/read output from STORY-004-001 and STORY-004-013. Use the exact revision language and revalidate the project, record and subscription on restoration.[^workspace][^design][^frontend][^data]
 
-For V09 use two real persisted test manuscripts admitted through the service. Verify unique tabs, manual arrow/Home/End focus and Enter/Space activation, sibling close control/Delete, active/inactive close and focus return, long title truncation with full accessible name and overflow within the tab row. Closing a tab changes selection and leaves the document itself intact. The project switches scope using the real current selection; a rejected restore retains other work. Publish a content/close guard extension point so the later editor can handle pending changes and a newer revision. Viewing and tab lifecycle are verifiable over actual persisted records before the typing UI exists.[^workspace][^presentation][^adr23]
+Use the first retained manuscript in manuscript ID order when opening data that already has several records. Preserve all revisions in storage. When the project has no manuscript, show the empty view and allow creation through the existing checked operation with a stable per-project creation identity. Return to the same manuscript on repeated opens. Show loading, missing, failed and unavailable states and expose accepted retry controls. Presentation uses the actual mounted, visible manuscript independently of editing.[^workspace][^presentation][^data]
+
+For V09 exercise two real SQLite project scopes with a legacy extra record in one. Verify that the explorer activates the single Manuscript tab, that the explorer and toolbar move the visible document and that selecting individual headings retains the same tab. Check keyboard access, long headings, narrow reflow, storage failure and a stale scope. Exercise manual keyboard activation between Navigator and Manuscript.[^workspace][^presentation][^adr23]
 
 ### SPEC-004-022: Save manuscript edits and resolve pending close
 
-Mount STORY-004-026's tested private editor in the actual manuscript tab from STORY-004-014. Connect its pending text and diagnostics to the checked save and receipt operations in STORY-004-013. Creation from the explorer is separately owned. This story can start with a manuscript already saved through the actual service. Preserve editing input and diagnostics across the scope and version checks.[^format][^adr32][^frontend][^data]
+Open the full manuscript in Preview by default in the Manuscript tab. Add an Edit action with a pencil icon to switch the central view in place. Use the private ProseMirror boundary from STORY-004-026 and the verified revision service from STORY-004-013. The central view retains a continuous document in both modes and uses stable block identity to preserve the reading position. Returning to Preview renders the current working text while the last acknowledged revision stays intact.[^format][^adr32][^frontend][^data]
 
-Ship explicit save with the version guard and operation receipt, controlled conflict and uncertainty, preserved pending text and confirmed revision announcement. An available newer revision leaves the editor buffer distinct. Use tab and project guards from STORY-004-014 and STORY-004-025. When unsaved content requires a decision, apply Save and close, Keep open and Discard and close with initial focus on Keep open. A failed or uncertain save holds the buffer and scope. Use V09 to verify local edits in two tabs and a concurrent revision. Grouped autosave extends this verified manual path in its own story.[^workspace][^frontend][^design][^presentation][^adr23][^data]
+In Edit, typing a level-two Markdown heading and pressing Enter adds that chapter to the index directly from pending text. Feed the index and dropdown from the editor's current heading identities while there are pending changes. Both controls navigate the current mode of the Manuscript tab. In Edit, the breadcrumb follows the heading at the editor cursor. Research stages belong in the workflow. The researcher determines the chapter headings and order within one manuscript.[^format][^workflow]
+
+Save the whole validated document against its expected revision. Reconcile an unconfirmed outcome against the original receipt, preserve pending text on failure or conflict and keep newer committed content distinct from pending changes. Navigating back to Navigator or switching project views retains pending text in its scope. Preserve the existing pending-work confirmation contract for a window or project close. Grouped autosave follows the verified manual path.[^workspace][^frontend][^design][^presentation][^adr23][^data]
 
 ### SPEC-004-023: Present the confirmed Onboarding milestone
 
@@ -544,11 +552,11 @@ Place initial focus on the stage action's confirmation, then return focus to tha
 
 ### SPEC-004-037: Create a manuscript from the project explorer
 
-Add the New manuscript action to the manuscript collection in the active setup-confirmed thesis. Use the real scoped collection and tab contract supplied by STORY-004-014. The action presents a short name field prefilled with the localized string Untitled manuscript. Use this name as the saved workspace label. The user can change it before creation. Trim the submitted label and accept 1 to 200 Unicode scalar values without U+0000. Use the same length and Unicode bounds as project setup. Keep its typed value after an uncertain or rejected save. The action is available whether or not the researcher has chosen a thesis topic.[^workspace][^data][^workflow]
+Offer a named creation action from Manuscript for an active setup-confirmed thesis that has no manuscript. Use the real scoped collection and tab contract supplied by STORY-004-014. The action presents a short name field prefilled with the localized string Untitled manuscript. Use this name as the saved workspace label. The user can change it before creation. Trim the submitted label and accept 1 to 200 Unicode scalar values without U+0000. Use the same length and Unicode bounds as project setup. Keep its typed value after an uncertain or rejected save. The action is available whether or not the researcher has chosen a thesis topic.[^workspace][^data][^workflow]
 
-Use STORY-004-013's checked create-and-receipt operation. Create the record and a header-only first revision together, using the confirmed document language. Store the label as `drafts.title`. On the matching success receipt open the one manuscript tab and focus its document surface if the captured project scope is still active. If the scope changed, retain the created manuscript in its original project and keep the new workspace untouched. This story verifies creation through the real explorer and SQLite, with the read-only tab available before text editing. Reconcile a lost acknowledgement using the same operation identity.[^port][^storage][^data][^workspace]
+Use the stable per-project creation identity from STORY-004-014 with STORY-004-013's checked create-and-receipt operation. Create the record and a header-only first revision together, using the confirmed document language. Store the label as `drafts.title`. On the matching success receipt open the manuscript and focus its central document surface if the captured project scope is still active. If the scope changed, retain the created manuscript in its original project and keep the new workspace untouched. This story verifies creation through the real explorer and SQLite, with the read-only manuscript view available before text editing. Reconcile a lost acknowledgement using the same operation identity.[^port][^storage][^data][^workspace]
 
-The collection and tab show the saved workspace label. The optional title heading inside the manuscript belongs to its canonical text. Editing that heading leaves the label unchanged. The initial slice lets the user set a label during creation. Rename after creation is outside this EPIC.[^format][^data][^workspace]
+The manuscript view retains the saved workspace label. The optional title heading inside the manuscript belongs to its canonical text. Editing that heading leaves the label unchanged. The initial slice lets the user set a label during creation. Rename after creation is outside this EPIC.[^format][^data][^workspace]
 
 Use an accessible name field and return focus to the initiating control after cancellation. Validate the scoped action and bounded label on the trusted service boundary. Record the creation action in `docs/workspace-layout.md` and the workspace label semantics in `docs/data-model.md`.[^workspace][^data][^port]
 
@@ -613,7 +621,7 @@ The table records integration conditions between the stories in this EPIC. Each 
 
 - **Project work.** The guard and composer consumer can close before the close command, profile form, notes or editor. No data or UI setter requires the command that detaches the window. The independent profile store and the scoped explorer feed the profile form and tab. Review attaches to the available tab, and Navigator consumes its section links. Form development and verification do not depend on either consumer.
 - **Navigator.** Stage decisions feed the read-only Navigator surface alongside profile reads. Review, focus and stage authority feed A completion. None requires the completed milestone to release its own scope. The stage transition controls consume the checked service and Navigator slot. The EPIC verifies explicit start, completion and later reopening together.
-- **Writing and attention.** The codec feeds storage and the independent editor adapter. The manuscript tab plus the storage service feed creation from the explorer. Manual save connects the editor to the store and tab, and grouped autosave follows it. Milestone presentation uses the committed A decision and read-only visibility independently of the editor.
+- **Writing and attention.** The codec feeds storage and the independent editor adapter. The manuscript surface plus the storage service feed creation from the explorer. Manual save connects the editor to the store and manuscript surface, and grouped autosave follows it. Milestone presentation uses the committed A decision and read-only visibility independently of the editor.
 - **Settings and diagnostics.** Recovery and location display can integrate independently using existing bootstrap and Settings. Log view, delete and reviewed export each consume the earlier broker writer. Their independently verifiable actions can develop concurrently.
 - **Parallel work and evidence.** After coverage approval, independent contract and fixture work can proceed without waiting for its consumers. Coordinate edits to the workspace, port and catalogs. Each story owns its named data-model subsection. The integrating maintainer reconciles shared invariants and indexes against the latest base and allocates the next immutable migration at integration. The maintainer verifies the combined schema upgrade. Native environments, provider budgets and availability of required producer evidence remain constraints. The EPIC owns integrated thesis journeys, V04–V06 and V09. The documented local graph is acyclic.
 
@@ -623,7 +631,7 @@ The table records integration conditions between the stories in this EPIC. Each 
 - [ ] From the explorer, the researcher can open one profile tab in Documents, see what is defined and pending, and correct or review an exact saved version. Navigator displays the thesis deadline directly or identifies it as pending. An explicit action to update it or consult milestones opens Schedule in that same tab without changing the active conversation. Navigator offers feasible local next actions with reasons from the first opening, and the researcher can choose one as focus. Choosing a focus and confirming the Onboarding milestone remain separate decisions with their own evidence.
 - [ ] A thesis with no topic or bibliography can record interests and constraints, select a feasible local step and leave a comparison for Topic–Problem. Search availability is explained and opening the workspace sends no request.
 - [ ] A thesis with a justified existing question can reuse its evidence and select the next feasible task without topic comparison. A reviewed milestone can be reopened with an explicit reason and preserved historical record.
-- [ ] Create a manuscript from the explorer, display its saved workspace label in the tab and edit its separate text heading. Both thesis journeys reopen with notes, manuscript text and decisions intact. Rejected, uncertain and conflicting actions preserve recoverable input and confirmed versions.
+- [ ] Create a manuscript from the explorer, open it in the central workspace and edit its text heading. Both thesis journeys reopen with notes, manuscript text and decisions intact. Rejected, uncertain and conflicting actions preserve recoverable input and confirmed versions.
 - [ ] The integrated product meets V04–V06 and V09 and affected V08/V13, committed milestone notice and motion rules, real recovery outcomes and content-free diagnostic privacy and sharing oracles.
 - [ ] Verify the affected authority, real storage and migration, locale/native input, accessibility, coverage and provider conformance with the applicable packaged artifacts, recording actual limitations and separate release authorization.
 
@@ -754,3 +762,5 @@ The table records integration conditions between the stories in this EPIC. Each 
 [^navigator-deadline-display]: Refinement discussion distinguishing the single thesis deadline from optional intermediate milestone dates and making the deadline readable directly in Navigator.
 
 [^peer-feedback-publication]: Peer review of publication scope, entry and creation UI, profile field coverage, diagnostics and verification.
+
+[^breadcrumb-navigation]: The breadcrumb interaction follows the documented symbol-path, sibling-picker and keyboard patterns in Visual Studio Code.

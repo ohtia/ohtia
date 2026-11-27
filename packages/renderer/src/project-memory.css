@@ -172,21 +172,12 @@
   border-color: var(--attention-border);
 }
 
-.workspace-tabs {
-  overflow-x: auto;
-}
-
-.workspace-tabs button {
-  flex-shrink: 0;
-}
-
 .workspace-memory-entry {
   margin: var(--space-2) var(--space-2) var(--space-0);
   max-inline-size: calc(100% - 2 * var(--space-2));
 }
 
-.workspace-memory-entry[aria-current="true"],
-.workspace-tabs button[aria-selected="true"] {
+.workspace-memory-entry[aria-current="true"] {
   color: var(--content-primary);
   background: var(--surface-page);
 }

@@ -173,6 +173,8 @@ export function inspectWorkspace(root) {
           const dependency = value.startsWith("@")
             ? value.split("/").slice(0, 2).join("/")
             : value.split("/")[0];
+          if (dependency.startsWith("prosemirror-") && file !== "manuscript-editor.ts")
+            errors.push(`${boundary}/${file}: ProseMirror is private to the manuscript editor`);
           if (dependency.startsWith("@ohtia/") && value !== dependency)
             errors.push(`${boundary}/${file}: internal-path import ${value}`);
           if (

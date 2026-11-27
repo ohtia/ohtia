@@ -17,8 +17,8 @@
 - [STORY-004-011 — Save researcher notes](STORY-004-011-save-researcher-notes.md) — Create, edit and reopen a locally authored note in one thesis.
 - [STORY-004-012 — Validate canonical title and paragraphs](STORY-004-012-validate-canonical-manuscript.md) — Produce a bounded, deterministic canonical manuscript codec for the agreed first grammar subset.
 - [STORY-004-013 — Save versioned manuscript records](STORY-004-013-save-manuscript-revisions.md) — Persist canonical manuscript revisions with exact ownership, attribution and receipts.
-- [STORY-004-014 — Open project manuscripts in tabs](STORY-004-014-open-manuscript-tabs.md) — Read the scoped current manuscript in a unique, keyboard-operated workspace tab.
-- [STORY-004-015 — Save manuscript edits and resolve pending close](STORY-004-015-write-initial-manuscript.md) — Persist edits with checked manual saves and preserve pending work at tab or project close.
+- [STORY-004-014 — Open the project manuscript in the workspace](STORY-004-014-open-manuscript-tabs.md) — Open the continuous manuscript in its own tab and navigate its headings from the explorer or toolbar.
+- [STORY-004-015 — Save manuscript edits and resolve pending close](STORY-004-015-write-initial-manuscript.md) — Preview and edit the complete manuscript in the central workspace and save its chapters as one document.
 - [STORY-004-016 — Present the confirmed Onboarding milestone](STORY-004-016-present-onboarding-findings.md) — Present an eligible committed A milestone using the documented character controls.
 - [STORY-004-017 — Inspect the managed store location](STORY-004-017-inspect-managed-storage.md) — Show the admitted fixed local data location and truthful availability in Settings.
 - [STORY-004-018 — Recover a verified migration checkpoint](STORY-004-018-recover-migration-checkpoint.md) — Restore an admissible managed checkpoint through explicit compatible recovery and Retry.
@@ -31,4 +31,4 @@
 - [STORY-004-025 — Protect pending project work before detach](STORY-004-025-guard-pending-project-work.md) — Expose scoped opt-in guards that preserve pending work before detaching a scoped project.
 - [STORY-004-026 — Edit the canonical title and paragraph subset](STORY-004-026-edit-canonical-manuscript.md) — Provide the private manuscript editor adapter with keyboard, clipboard and native IME behavior.
 - [STORY-004-027 — Start or reopen a stage from Navigator](STORY-004-027-start-or-reopen-stage.md) — Expose explicit current-scope stage entry and reopening in Navigator.
-- [STORY-004-028 — Create a manuscript from the project explorer](STORY-004-028-create-manuscript-from-explorer.md) — Create one named manuscript with a durable first revision and open its scoped tab.
+- [STORY-004-028 — Create a manuscript from the project explorer](STORY-004-028-create-manuscript-from-explorer.md) — Create the project manuscript with a named first revision and open its central view.

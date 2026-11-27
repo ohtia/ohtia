@@ -213,6 +213,30 @@ describe("canonical manuscript codec", () => {
     });
   });
 
+  it("keeps chapter and subsection identities in the original manuscript order", () => {
+    const source =
+      header +
+      "\n## Introduction {#sec_intro}\n" +
+      wrapped("blk_intro", "Introductory text") +
+      "\n## Methodology {#sec_method}\n" +
+      "\n### Sample {#sec_sample}\n" +
+      wrapped("blk_method", "Method text") +
+      "\n## Results {#sec_results}\n";
+    const parsed = parseManuscript(Buffer.from(source), identity);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.sections).toEqual([
+      { id: "sec_intro", text: "Introduction", level: 2, beforeParagraph: 0 },
+      { id: "sec_method", text: "Methodology", level: 2, beforeParagraph: 1 },
+      { id: "sec_sample", text: "Sample", level: 3, beforeParagraph: 1 },
+      { id: "sec_results", text: "Results", level: 2, beforeParagraph: 2 },
+    ]);
+    expect(serializeManuscript(parsed.value, identity)).toEqual({ ok: true, value: source });
+    expect(
+      parseManuscript(Buffer.from(source.replace("sec_results", "sec_intro")), identity),
+    ).toMatchObject({ diagnostic: { code: "duplicate-id" } });
+  });
+
   it("returns a single content-free refusal for unsupported syntax and preserves original bytes", () => {
     const bodies = [
       "*emphasis*",
@@ -265,7 +289,7 @@ describe("canonical manuscript codec", () => {
     }
     for (const tail of [
       "\nUnwrapped\n",
-      "\n## Heading {#sec_a}\n",
+      "\n### Skipped level {#sec_a}\n",
       "\n# No ID\n",
       "\n#  {#sec_a}\n",
       "\n# Title # {#sec_a}\n",

@@ -1043,7 +1043,21 @@ export async function researchRevisions(
       result.push({ kind: "changed", record: "projectTitle", id, revision: row.title_revision });
   }
   if (scope.projectId) {
-    const revision = await currentProfileNumber(db, bytes(scope.projectId));
+    const projectId = bytes(scope.projectId);
+    const manuscript = await db
+      .selectFrom("drafts as d")
+      .innerJoin("draft_revisions as r", "r.draft_id", "d.id")
+      .where("d.project_id", "=", projectId)
+      .select((eb) => eb.fn.countAll<number>().as("revision"))
+      .executeTakeFirstOrThrow();
+    if (manuscript.revision > 0)
+      result.push({
+        kind: "changed",
+        record: "manuscript",
+        id: scope.projectId,
+        revision: manuscript.revision,
+      });
+    const revision = await currentProfileNumber(db, projectId);
     if (revision !== undefined)
       result.push({ kind: "changed", record: "profile", id: scope.projectId, revision });
     const order = await stageProjectOrder(db, bytes(scope.projectId));

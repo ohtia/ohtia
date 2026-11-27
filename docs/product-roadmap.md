@@ -2,7 +2,10 @@
 type: Specification
 title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
-generated: { by: codex/gpt-6.2-sol }
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"
@@ -222,7 +225,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Experience and output:** the project that the researcher created and set up with Virgilio in EPIC-003 leads into a revisable initial profile and one useful focus. Virgilio can guide the conversation when the researcher requests assistance; context can also be entered or corrected locally over several sessions.
 
-**Screens and first stories:** conversational/progressive onboarding of a project created in EPIC-003; inspectable profile synthesis; Navigator's first stage/focus/actions view; simple researcher notes and an initial manuscript slice; Settings storage/recovery and Diagnostics. Record work/institution, supported requirements, citation/AI-use conditions, the project's document language, confirmed at setup, academic support, deadlines, availability, experience/support needs and existing material with its actual attribution. Unknowns stay explicit. Add the initial canonical manuscript subset for title/paragraph writing and durable revision saving, then extend it in EPIC-007.
+**Screens and first stories:** conversational/progressive onboarding of a project created in EPIC-003; inspectable profile synthesis; Navigator's first stage/focus/actions view; simple researcher notes and an initial manuscript slice; Settings storage/recovery and Diagnostics. Record work/institution, supported requirements, citation/AI-use conditions, the project's document language, confirmed at setup, academic support, deadlines, availability, experience/support needs and existing material with its actual attribution. Unknowns stay explicit. Add the initial manuscript subset for title, chapters and paragraph writing, then expand academic structures in EPIC-007. A single Manuscript tab alongside Navigator opens in Preview and switches to Edit in place. Authoring a level-two heading updates the left explorer index before save. The index also nests subheadings under their parent chapters. Selecting a chapter there or a heading in the upper dropdown jumps within the continuous document.
 
 **Done when:** the researcher can correct and review the exact profile version, confirm a first focus and reopen the project with notes, writing and decisions intact. No long questionnaire or model choice is required for local use. Deadline questions occur early; missing dates do not produce a pace metric. Implement transactional receipts, UUID constraints, expected versions, exclusive schema migrations and verified checkpoint recovery before their first persistent use. Failed saves preserve recoverable input. Integrate relevant character events through committed, current findings only: one animation per batch, at most one deferred Navigator presentation for an eligible source-contradiction event while a manuscript was visible, static recovery and immediate cancellation in nonanimated/reduced-motion modes. Verify workspace project/form/tab cases V04–V06 and V09, and V05's conversation actions, with real project ownership and the integrated user-facing flows; EPIC-003 verifies the project-switching and history cases V08 and V13. Project switching rejects obsolete responses and disposes scoped subscriptions.
 
@@ -264,9 +267,11 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Experience and output:** develop the manuscript visually with academic structures and examine individual source attributions in an explicit review pass. This expands the initial writing slice and remains available throughout subsequent stages.
 
+The editor builds on the single continuous manuscript and live chapter index from EPIC-004. It extends those navigation surfaces as the supported academic structures expand. The [thesis workflow][workflow] organizes research activities. Stage views can link to chapters the researcher associates with their work while chapter titles and delivery order come from the manuscript. Literature sources and working artifacts belong in Sources and documents. Text the researcher writes for the thesis, such as a literature review, belongs in the manuscript.
+
 **Screens and first stories:** distinct writing/review modes with deferred observations and notices except data-loss warnings; academic editor and contextual controls; citation insertion/resolution and source lookup; notes/math/figures/tables/cross-reference tools; save/conflict/recovery and revision history; side-by-side manuscript/source comparison with anchored findings. Implement the complete canonical grammar in one trusted TypeScript parser/validator/serializer, a private ProseMirror adapter, Temml/MathML and version-bound bibliography/resource snapshots.
 
-**Done when:** all claimed structures survive parse/serialize, edit/move/copy/split/merge/undo, save/reopen and restore. Preserve stable note/block identity, spanning tables, original math source and resource versions. Markdown TEXT is retained in immutable SQLite revisions with atomic current-pointer advancement; a generated Markdown file is an output. Check actual IME/clipboard, CSP, fonts, long-document performance and accessible editing. Unsupported content remains recoverable with locatable diagnostics.
+**Done when:** all claimed structures survive parse/serialize, edit/move/copy/split/merge/undo, save/reopen and restore. Preserve stable note/block identity, spanning tables, original math source and resource versions. Markdown TEXT is retained in immutable SQLite revisions with atomic current-pointer advancement; a generated Markdown file is an output. Check actual IME/clipboard, CSP, fonts, long-document performance and accessible editing. Unsupported content remains recoverable with locatable diagnostics. Verify live index updates, keyboard jumps in both modes and accurate targets when chapters have the same title or change order.
 
 **Comparison:** classify supported, partly supported, ambiguous, not located in examined content, contradicted and not verified. Criticism distinguishes verifiable error, defensible weakness and a likely reviewer question, with grounds and limitations rather than a grade. Preserve citation function and distinguish insufficient access from contrary evidence. Each finding remains a proposal with exact scope and separate human review. No inference starts while typing or opening a document.
 

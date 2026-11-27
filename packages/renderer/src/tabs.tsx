@@ -4,6 +4,8 @@ export interface TabItem {
   label: string;
   content: ReactNode;
   closeLabel?: string;
+  icon?: ReactNode;
+  panelClassName?: string;
 }
 export function Tabs({
   label,
@@ -12,6 +14,9 @@ export function Tabs({
   onSelect,
   onClose,
   selectedTabRef,
+  className,
+  listClassName = "primitive-tabs",
+  panelClassName,
 }: {
   label: string;
   items: readonly TabItem[];
@@ -19,6 +24,9 @@ export function Tabs({
   onSelect: (id: string) => void;
   onClose?: (id: string) => void;
   selectedTabRef?: RefObject<HTMLButtonElement | null>;
+  className?: string;
+  listClassName?: string;
+  panelClassName?: string;
 }) {
   const prefix = useId();
   const [focused, setFocused] = useState(selected);
@@ -33,10 +41,10 @@ export function Tabs({
       refs.current.get(selected)?.focus();
   }, [items, selected]);
   return (
-    <div>
+    <div className={className}>
       <div
         ref={list}
-        className="primitive-tabs"
+        className={listClassName}
         role="tablist"
         aria-label={label}
         onFocusCapture={(event) => {
@@ -52,8 +60,10 @@ export function Tabs({
               event.relatedTarget instanceof Node &&
               event.currentTarget.contains(event.relatedTarget)
             )
-          )
+          ) {
             focusOwner.current = undefined;
+            setFocused(selected);
+          }
         }}
       >
         {items.map((item, index) => (
@@ -99,6 +109,7 @@ export function Tabs({
                 }
               }}
             >
+              {item.icon}
               {item.label}
             </button>
             {item.closeLabel && (
@@ -118,10 +129,12 @@ export function Tabs({
       {items.map((item) => (
         <div
           key={item.id}
+          className={item.panelClassName ?? panelClassName}
           role="tabpanel"
           id={`${prefix}-panel-${item.id}`}
           aria-labelledby={`${prefix}-tab-${item.id}`}
           hidden={item.id !== selected}
+          inert={item.id !== selected}
           tabIndex={0}
         >
           {item.content}

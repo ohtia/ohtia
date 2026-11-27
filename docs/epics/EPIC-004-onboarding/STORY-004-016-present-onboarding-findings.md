@@ -2,7 +2,8 @@
 type: Story
 title: "STORY-004-016 — Present the confirmed Onboarding milestone"
 description: "Present an eligible committed A milestone using the documented character controls."
-generated: { by: codex/gpt-6.2-sol }
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:app", "comp:desktop"]
@@ -40,4 +41,4 @@ Present an eligible committed A milestone using the documented character control
 
 ## Quality checklist
 
-- [ ] Test using the read-only manuscript tab before editor integration. Exercise no replay across scope changes, visibility and preference/OS overrides.
+- [ ] Test using the read-only manuscript view before editor integration. Exercise no replay across scope changes, visibility and preference/OS overrides.

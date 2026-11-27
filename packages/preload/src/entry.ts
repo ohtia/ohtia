@@ -290,8 +290,33 @@ ipcRenderer.on(desktopChannels.exitState, (_event, input: unknown) => {
     }
   }
 });
+const manuscriptCloseListeners = new Set<
+  NonNullable<Parameters<NonNullable<DesktopBridge["commands"]["onManuscriptClose"]>>[0]>
+>();
+ipcRenderer.on(desktopChannels.manuscriptClose, (_event, command: unknown) => {
+  if (command !== "window.close" && command !== "application.quit") return;
+  for (const listener of manuscriptCloseListeners) {
+    try {
+      listener(command);
+    } catch {
+      manuscriptCloseListeners.delete(listener);
+    }
+  }
+});
 const bridge: DesktopBridge = {
   commands: {
+    setManuscriptPending: (pending) =>
+      typeof pending === "boolean"
+        ? commandBoolean("manuscript_pending", pending)
+        : Promise.resolve(false),
+    onManuscriptClose(listener) {
+      if (manuscriptCloseListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("Manuscript close listener limit reached.");
+      manuscriptCloseListeners.add(listener);
+      return () => {
+        manuscriptCloseListeners.delete(listener);
+      };
+    },
     async readExitState() {
       const value: unknown = await ipcRenderer.invoke(
         desktopChannels.commands,

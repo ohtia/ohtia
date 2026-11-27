@@ -707,6 +707,29 @@ it("rejects a second modal without displacing the admitted dialog", async () => 
   expect(close).toHaveBeenCalledOnce();
   expect(document.activeElement!.textContent).toBe("Close first");
 });
+it("hover-only help yields Escape to the focused control after dismissing itself", async () => {
+  await render(
+    h("div", {}, [
+      h("input", { key: "field", "aria-label": "Field" }),
+      h(Tooltip, { key: "help", label: "Optional help", children: h("button", {}, "Help") }),
+    ]),
+  );
+  const field = container.querySelector("input")!;
+  await focus(field);
+  await act(async () => {
+    button().dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+  });
+  expect(container.querySelector('[role="tooltip"]')).not.toBeNull();
+  const received = vi.fn();
+  field.addEventListener("keydown", (event) => {
+    received(event.defaultPrevented);
+  });
+  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  await act(async () => field.dispatchEvent(escape));
+  expect(received).toHaveBeenCalledWith(false);
+  expect(escape.defaultPrevented).toBe(false);
+  expect(container.querySelector('[role="tooltip"]')).toBeNull();
+});
 it("nested help Escape prevents native modal cancellation", async () => {
   const close = vi.fn();
   await render(

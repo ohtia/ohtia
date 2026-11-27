@@ -86,6 +86,7 @@ export interface ConversationState {
   >;
   readonly scope: ResearchScope;
   readonly researchScopeReady?: boolean;
+  readonly researchSubscriptionId?: string | undefined;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
   readonly agentHint?: ReplyAgent | undefined;
@@ -964,7 +965,11 @@ export class ConversationController {
       this.history.connected();
       this.activity.ready();
       if (!this.live(epoch) || this.stream !== stream) return;
-      this.state = { ...this.state, researchScopeReady: true };
+      this.state = {
+        ...this.state,
+        researchScopeReady: true,
+        researchSubscriptionId: ready.value.subscriptionId,
+      };
       this.publish();
       if (!this.live(epoch) || this.stream !== stream) return;
       this.observed("ready");

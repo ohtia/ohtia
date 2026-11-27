@@ -240,6 +240,7 @@ const windows = new Map<
     researchSubscription?: string;
     workspace: boolean;
     boundsSaved: boolean;
+    manuscriptPending?: boolean;
     presentable: boolean;
     documentPrepared: boolean;
     frameReady: boolean;
@@ -651,9 +652,26 @@ function constructWindow(
     }
   });
   window.webContents.on("render-process-gone", () => {
+    const current = windows.get(window);
+    if (current) current.manuscriptPending = false;
     detach(window);
   });
+  window.webContents.on("will-prevent-unload", (event) => {
+    // Shutdown and a completed exit proceed; otherwise ask the renderer about its pending manuscript text.
+    if (systemShutdown || cleanExit) {
+      event.preventDefault();
+      return;
+    }
+    const current = windows.get(window);
+    if (current) current.manuscriptPending = true;
+    window.webContents.send(desktopChannels.manuscriptClose, "window.close");
+  });
   window.on("close", (event) => {
+    if (!systemShutdown && windows.get(window)?.manuscriptPending) {
+      event.preventDefault();
+      window.webContents.send(desktopChannels.manuscriptClose, "window.close");
+      return;
+    }
     saveWindowBounds(window);
     if (!cleanExit && windows.size === 1) {
       event.preventDefault();
@@ -1390,6 +1408,11 @@ async function start(): Promise<void> {
   ipcMain.handle(desktopChannels.commands, async (event, action: unknown, payload: unknown) => {
     const window = trusted(event);
     if (!window) throw new Error("Command sender admission refused.");
+    if (action === "manuscript_pending" && typeof payload === "boolean") {
+      const state = windows.get(window);
+      if (state) state.manuscriptPending = payload;
+      return state !== undefined;
+    }
     if (action === "exit_state" && payload === undefined)
       return window === exitWindow ? (applicationExit.state ?? null) : null;
     if (
@@ -1793,6 +1816,16 @@ app.on("before-quit", (event) => {
   if (cleanExit) return;
   event.preventDefault();
   if (quitting) return;
+  if (!systemShutdown) {
+    const pending = [...windows].find(
+      ([window, state]) => state.manuscriptPending && !window.isDestroyed(),
+    );
+    if (pending) {
+      pending[0].webContents.send(desktopChannels.manuscriptClose, "application.quit");
+      presentWindow(pending[0], true);
+      return;
+    }
+  }
   if (
     !exitApproved &&
     !systemShutdown &&

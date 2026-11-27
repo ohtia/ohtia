@@ -392,7 +392,11 @@ export function isWindowCommandResult(value: unknown): value is WindowCommandRes
       typeof value.menuDismissed === "boolean")
   );
 }
+export type ManuscriptCloseCommand = "window.close" | "application.quit";
+
 export interface CommandBridge {
+  setManuscriptPending?(pending: boolean): Promise<boolean>;
+  onManuscriptClose?(listener: (command: ManuscriptCloseCommand) => void): () => void;
   readExitState(): Promise<ExitDialogState | null>;
   onExitState(listener: (state: ExitDialogState | null) => void): () => void;
   chooseExit(operationId: string, choice: ExitChoice): Promise<boolean>;

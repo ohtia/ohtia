@@ -686,6 +686,7 @@ export type ResearchEvent =
         | "project"
         | "projectTitle"
         | "profile"
+        | "manuscript"
         | "researchStage"
         | "conversation"
         | "timeline"
@@ -3000,6 +3001,7 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
       "project",
       "projectTitle",
       "profile",
+      "manuscript",
       "researchStage",
       "conversation",
       "timeline",

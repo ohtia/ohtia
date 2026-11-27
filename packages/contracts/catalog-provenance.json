@@ -322,6 +322,24 @@
       },
       "effective_model_evidence": "The active implementation rollout, matched to the runtime thread identifier, records gpt-6.2-sol in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "Project manuscript, document navigation and editing controls for STORY-004-014 and STORY-004-015",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation runtime does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
+    },
+    {
+      "scope": "Manuscript entries for issue #416: manuscript.showCurrent, manuscript.foldAll, manuscript.keepOpen and manuscript.createFailed, in every supported locale",
+      "producer": {
+        "agent": "claude-code",
+        "effective_model": "claude-opus-5-5"
+      },
+      "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
+      "human_linguistic_review": null
     }
   ]
 }

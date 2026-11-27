@@ -22,15 +22,22 @@
   "dependencies": {
     "@ohtia/contracts": "workspace:*",
     "@ohtia/domain": "workspace:*",
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
     "mdast-util-from-markdown": "2.1.0",
+    "mdast-util-gfm-table": "2.0.1",
     "micromark-extension-gfm-table": "2.1.2",
-    "mdast-util-gfm-table": "2.0.1"
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.2",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-transform": "1.12.7",
+    "prosemirror-view": "1.42.9",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "typescript": "6.0.3",
     "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0"
+    "@types/react-dom": "19.3.0",
+    "typescript": "6.0.3"
   }
 }

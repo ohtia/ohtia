@@ -144,7 +144,8 @@ function retainedDocument(row: RevisionRow): CanonicalManuscript {
   if (
     !document ||
     digest(row.markdown) !== Buffer.from(row.content_sha256).toString("hex") ||
-    (row.save_reason === "initial" && (document.title !== null || document.paragraphs.length > 0))
+    (row.save_reason === "initial" &&
+      (document.title !== null || document.paragraphs.length > 0 || !!document.sections?.length))
   )
     throw new Error("Invalid retained manuscript revision.");
   return document;
@@ -154,6 +155,7 @@ function unitIds(document: CanonicalManuscript): string[] {
   return [
     ...(document.title ? [document.title.id] : []),
     ...document.paragraphs.map(({ id }) => id),
+    ...(document.sections ?? []).map(({ id }) => id),
   ];
 }
 

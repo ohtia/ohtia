@@ -381,6 +381,7 @@ Plex Sans precedes Plex Sans KR because Plex Sans KR lacks accented Latin letter
 
 - The text's role determines the family, not the surface where it appears. A draft passage quoted in a comment retains Serif; the comment label uses Sans.
 - Mono applies only to content explicitly marked as code, inline or in a block, including LaTeX shown as literal text. Numbers, dates, DOIs, bibliographic references, citekeys, filenames and links retain the family of their surrounding text; their content does not make them Mono.
+- Manuscript headings in the explorer's [manuscript index](#manuscript-index) are researcher text: they use `font.family.document` and declare the writing language of their revision.
 - A rendered formula uses Math even when its persistent representation is LaTeX. The editor shows LaTeX in Mono only while it is edited as literal text.
 - The interface displays `kind`, `publication` and `origin` values using their localized catalog labels, not their protocol identifiers.
 - A required academic template may impose another typeface when exporting a submission without altering its content, according to ADR-0025.
@@ -524,6 +525,7 @@ The following component tokens prevent scattered visual values in primitives:
 - `component.settings.nav-width`: 232 px. Sets the width of the Settings page list beside the selected page.
 - `component.tooltip.max-width`: 256 px; `component.menu.max-width`: 384 px. Bound the help and action layers, which are also constrained to the viewport and positioned using CSSOM.
 - `component.palette.max-width`: 600 px. Bounds the command palette, which is also constrained to the viewport with at least `space.4` on each side.
+- `component.outline.indent`: 14 px. Adds start padding for each manuscript heading level below level two in the explorer's [manuscript index](#manuscript-index).
 
 ### Elevation and layers
 
@@ -608,6 +610,12 @@ Fixed mappings:
 | Agents Settings page                         | `users`                |
 | Updates Settings page, newer version         | `download`             |
 | Back to the Settings page list               | `chevron-left`         |
+| Folded explorer group or index branch        | `chevron-right`        |
+| Expanded explorer group or index branch      | `chevron-down`         |
+| Show the current manuscript position         | `locate-fixed`         |
+| Fold every manuscript index branch           | `chevrons-down-up`     |
+| Sources and documents explorer group         | `folder`               |
+| Conversations explorer group                 | `messages-square`      |
 
 A state label never uses an icon that this table or the domain components map to another meaning.
 
@@ -1109,7 +1117,7 @@ The context bar contains the active-project selector, the Plus button for creati
 
 - The Navigator is the center's first tab, fixed and without a close action, with the `signpost` icon; the explorer offers it as the first row, above material groups. Opening a project activates its tab. Its integration follows the [frontend architecture](frontend-architecture.md).
 - All three panels can be resized and hidden independently under the [workspace visibility contract](workspace-layout.md#visibility-focus-mode-and-narrow-layout); the last visible region cannot be hidden. The top bar remains available. The workspace contract defines the hidden explorer rail and the other hidden regions.
-- The [workspace geometry contract](workspace-layout.md#deterministic-wide-geometry) owns initial/minimum panel widths, separator allocation, space yielding, rounding, reopening and behavior for pairs or a single region. No fixed `layout.panel.width` or drawer applies to `expanded`. Document and long-interface text retain the `measure.reading` maximum. Agent conversation replies fill the chosen chat width together with their code and table boxes. [Project memory entry text, including its history, and source quotations](workspace-layout.md#presentation-integration) follow the chosen documents panel width. Researcher message bubbles stay aligned to the timeline’s end, at most 85% of its content width and at most `measure.reading` plus their two `space.3` inline paddings. Accessible panel and window resizing provide a narrower reading width when requested; this user-controlled reflow supports the visual-presentation width mechanism (PRIN-015).[^wcag-visual-presentation]
+- The [workspace geometry contract](workspace-layout.md#deterministic-wide-geometry) owns initial/minimum panel widths, separator allocation, space yielding, rounding, reopening and behavior for pairs or a single region. No fixed `layout.panel.width` or drawer applies to `expanded`. Use `measure.reading` as the default maximum for document and long-interface text. Manuscript Preview and Edit fill the selected documents panel width within its standard insets. Agent conversation replies fill the chosen chat width together with their code and table boxes. [Project memory entry text, including its history, and source quotations](workspace-layout.md#presentation-integration) follow the chosen documents panel width. Researcher message bubbles stay aligned to the timeline’s end, at most 85% of its content width and at most `measure.reading` plus their two `space.3` inline paddings. Accessible panel and window resizing provide a narrower reading width when requested; this user-controlled reflow supports the visual-presentation width mechanism (PRIN-015).[^wcag-visual-presentation]
 - Accessible separators, dragging, arrows, Shift, Home/End and Minus/Plus buttons allow resizing. The gesture is canceled by Esc, `pointercancel`, focus loss, unmounting or a geometry change; it leaves neither capture nor cursor locked. Targets meet 24 px and 44 with a coarse pointer.
 - Expanding a document retains the layout so it can be restored; a manual change exits that focus mode. Reset layout restores initial sizes and visibility without deleting content or changing the theme.
 - In the workspace contract's narrow layout, there is one full-width region and selectors remain available in the bar. Switching preserves its state. There is no modal overlay, rail, separator or sizing control; returning to a wide layout restores its preferences. Extensive mobile editing remains outside scope; reflow does not add it.
@@ -1139,7 +1147,7 @@ General AAA conformance is not claimed. W3C does not recommend requiring Level A
 ### Adopted AAA criteria
 
 - **1.4.6 Contrast (Enhanced).** All text, including secondary text, reaches 7:1 against the backgrounds on which it appears, according to the [verified pairs](#verified-contrast-pairs).
-- **1.4.8 Visual Presentation.** The reader, editor and long interface text apply `measure.reading`, start alignment, line height and paragraph spacing defined in typography, with user-controlled widths for agent replies and for project memory entry text and source quotations described in [Workspace](#workspace). Text can be enlarged to 200% without horizontal scrolling. Colors are chosen through themes, system forced colors and rendering settings.
+- **1.4.8 Visual Presentation.** Use the start alignment, line height and paragraph spacing defined in typography. Use `measure.reading` for fixed reading widths and the user-controlled widths described in [Workspace](#workspace) for manuscripts, agent replies, project memory entry text and source quotations. Text can be enlarged to 200% without horizontal scrolling. Colors are chosen through themes, system forced colors and rendering settings.
 - **2.1.3 Keyboard (No Exception).** All functions can be operated using the keyboard, including selecting passages, regions and intervals to anchor evidence and reordering the outline.
 - **2.2.4 Interruptions.** No new observations, notices or suggestions appear during writing. They accumulate for the review pass, according to the [timing of criticism](product-definition.md#manuscript-and-feedback). The researcher can defer any notice except a risk of data loss.
 - **2.2.5 Re-authenticating.** If a connected provider's session expires, the researcher authenticates again and continues without losing writing or form input.
@@ -1327,6 +1335,17 @@ The `voice.ohtia.*` tokens identify system/AI-origin contributions and the produ
 - **`WeeklyActions`.** The week's actions, identified as Ohtia proposals. The Navigator shows at most five; the set of three to five is selected by the capability generating actions. Each action states what to do, why now, how to know it is done and estimated time, according to the [thesis workflow](thesis-workflow.md#navigator-behavior).
 - **`StageStatus`.** Represents stage, stage state and current focus separately. States are “Not started,” “In progress” and “Done,” always as badge text. The focused stage carries a 1 px `border.strong` border and “Focus” marker; it does not use `border-width.state` thickness, which is reserved for trust state. A pending change proposal is marked “Pending proposal” in `voice.ohtia.content`. In the horizontal map, stage names use 12/18 at weight 500 and may wrap; the vertical list uses `type.ui.body-small`.
 - **`PaceIndicator`.** Appears only with an agreed deadline and plan. “At the planned pace” uses neutral tone and “behind the plan” uses `attention`; without a plan there is no indicator, only explanatory text. It is never applied to an argument's strength.
+
+#### Manuscript index
+
+The explorer's Manuscript entry lists the manuscript's section headings as a foldable index. [Workspace layout](workspace-layout.md#presentation-integration) defines its behavior.
+
+- **Explorer rows.** The explorer content starts `space.2` from the window edge; only its end side, next to the separator, keeps `component.separator.guard`. Entries and group disclosures in the explorer are quiet rows at least `space.8` high, with `space.1` block and `space.2` inline padding, `type.ui.body-small` size and line height, `radius.small` and no fill. Hover uses `surface.emphasis`, and every enabled row, heading and index control shows the pointer cursor. Sources and documents shows `folder` and Conversations shows `messages-square` after its disclosure chevron.
+- **Manuscript row.** The heading control with `file-text` and the Manuscript label activates the Manuscript tab. When the manuscript has headings, two icon buttons and the index disclosure follow it in this order: Show current position (`locate-fixed`), Fold all (`chevrons-down-up`) and the disclosure. Each is 24 px wide with a 16 px icon, an accessible name and a tooltip.
+- **Headings.** Level-two headings use `font.family.document` at `type.doc.note` size and line height, weight 600 and `content.primary`. Deeper levels use `font.family.document` at `type.ui.body-small` size and line height, weight 400 and `content.secondary`. The ancestors of the current heading use `content.primary`, so the path to the reading position stays visible. Long headings wrap with their indentation and are never truncated.
+- **Rail and indentation.** A 1 px `border.subtle` line runs along the start of the index. Heading text starts `space.3` after it, plus `component.outline.indent` for each level below level two.
+- **Current heading.** The row uses `surface.emphasis`, weight 600 and the `component.list-row.selection-indicator` over the rail. In forced colors the indicator uses `Highlight`. Hover uses `surface.emphasis` without the indicator.
+- **Disclosure.** A heading with children ends its row with a disclosure button showing `chevron-down` when expanded and `chevron-right` when folded. Folding changes only the index.
 
 #### Activity
 
