@@ -156,6 +156,16 @@ const state = (includeProject = true): ConversationState => ({
 });
 
 describe("new project creation intent", () => {
+  it("treats a connected service that sends no request as no connection", async () => {
+    const f = fixture("disconnected");
+    f.connectionResults.set("openrouter", { ok: true, value: { state: "connected" } });
+    const c = new NewProjectController(f.bridge, vi.fn());
+    expect(await c.start()).toBe(false);
+    expect(c.snapshot().dialog).toBe("connection");
+    expect(f.port.readConnection).not.toHaveBeenCalledWith("openrouter");
+    expect(f.port.createProject).not.toHaveBeenCalled();
+    c.dispose();
+  });
   it.each(["disconnected", "expired", "connecting", "error"] as const)(
     "creates nothing for %s and uses the neutral connection dialog",
     async (connection) => {

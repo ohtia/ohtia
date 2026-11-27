@@ -135,10 +135,9 @@ export class ConnectionManager {
   snapshot(id: string): ConnectionSnapshot | undefined {
     const c = this.connections.get(id);
     const revision = this.account(id).revision;
-    const connectedAt =
-      c?.state === "connected" && !c.storeUnavailable && !c.deleteFailed
-        ? c.adapter.apiKey?.connectedAt()
-        : undefined;
+    const keyShown = c?.state === "connected" && !c.storeUnavailable && !c.deleteFailed;
+    const connectedAt = keyShown ? c.adapter.apiKey?.connectedAt() : undefined;
+    const expiresAt = keyShown ? c.adapter.apiKey?.expiresAt?.() : undefined;
     return c
       ? {
           connection: id,
@@ -152,6 +151,7 @@ export class ConnectionManager {
               : null,
           last_account_email: c.storeUnavailable ? null : (c.adapter.lastAccountEmail?.() ?? null),
           ...(connectedAt ? { connected_at: connectedAt } : {}),
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
           ...(c.checkingKey ? { checking_key: true } : {}),
           probing: !!c.probe,
           probe_id: c.probe?.id ?? c.lastProbe,
@@ -187,6 +187,11 @@ export class ConnectionManager {
         (model.effortSupport === "supported" &&
           model.effortLevels?.some((level) => level.name === effort && level.supported) === true))
     );
+  }
+  /** Whether this connection's adapter sends research requests, so its list may reach tasks. */
+  sendsRequests(id: string): boolean {
+    const adapter = this.connections.get(id)?.adapter;
+    return !!adapter?.requests && adapter.declaration.capabilities.text;
   }
   modelListReport(id: string) {
     return this.connections.get(id)?.listReport;
@@ -462,7 +467,7 @@ export class ConnectionManager {
         }
         // The provider deadline covers its answer. A native write already started cannot be cancelled.
         this.clearSignIn(c);
-        const written = await apiKey.save(key);
+        const written = await apiKey.save(key, checked);
         finish(written.status === "stored" ? null : "store_unavailable", models);
       })
       .catch(() => {

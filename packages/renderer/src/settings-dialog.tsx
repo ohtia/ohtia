@@ -9,7 +9,12 @@ import {
   useAgentSettings,
   type AgentSettingsObserver,
 } from "./agents-settings.js";
-import { defaultProviderConnections, type ProviderDeclaration } from "@ohtia/contracts";
+import {
+  defaultProviderConnections,
+  sendsRequests,
+  type ProjectLink,
+  type ProviderDeclaration,
+} from "@ohtia/contracts";
 import { LimitsPanel } from "./limits-panel.js";
 import type { LimitsController } from "./limits-controller.js";
 import { connectionInferenceLimits, type ConnectionSnapshot } from "@ohtia/contracts";
@@ -221,7 +226,9 @@ export function SettingsDialog({
   returnFocusRef,
   connections = defaultProviderConnections,
   observeResearch,
+  openLink,
 }: {
+  readonly openLink?: (link: ProjectLink) => void;
   readonly connections?: readonly ProviderDeclaration["connection"][];
   readonly observeResearch?: AgentSettingsObserver | undefined;
   readonly returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
@@ -870,6 +877,7 @@ export function SettingsDialog({
                       connection={service.id}
                       kind={service.kind}
                       embedded
+                      {...(openLink ? { openLink } : {})}
                       subscribeConnection={subscribeConnection}
                       onProbeResult={(result) => {
                         setProbeResults((prior) =>
@@ -890,6 +898,7 @@ export function SettingsDialog({
                           settings={agentSettings}
                           showConnected={
                             justConnected &&
+                            sendsRequests(service.id) &&
                             agentSettings.data?.preferences.some(
                               (row) =>
                                 row.target === "default" &&
@@ -903,7 +912,7 @@ export function SettingsDialog({
                       locale={locale}
                       available={available}
                     />
-                    {agentsAvailable && (
+                    {agentsAvailable && sendsRequests(service.id) && (
                       <ModelListRefresh
                         port={port}
                         settings={agentSettings}
@@ -923,7 +932,7 @@ export function SettingsDialog({
                 locale={locale}
                 available={available}
                 connections={connections
-                  .filter(({ id }) => snapshots[id]?.state === "connected")
+                  .filter(({ id }) => sendsRequests(id) && snapshots[id]?.state === "connected")
                   .map(({ id, displayName, kind }) => ({
                     id,
                     name: displayName,

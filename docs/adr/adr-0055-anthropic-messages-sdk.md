@@ -18,7 +18,7 @@ sources:
 
 ## Context
 
-[STORY-003-036](../epics/EPIC-003-research-agents/STORY-003-036-anthropic-api-key.md) adds Anthropic Console keys and streamed Messages to the existing provider contract. [ADR-0048](adr-0048-provider-access-routes-and-credential-store.md) gives the desktop broker custody of credentials. [ADR-0052](adr-0052-current-provider-dispatch-authorization.md) gives the data service authority over each request and requires main to check its permit at the transport boundary. This preserves researcher control of transfers, provenance and uncertainty under PRIN-004, PRIN-006 and PRIN-016.
+[STORY-003-036](../epics/EPIC-003-research-agents/STORY-003-036-anthropic-api-key.md) adds Anthropic Console keys and streamed Messages to the existing provider contract. [ADR-0057](adr-0057-provider-access-routes-and-credential-store.md) gives the desktop broker custody of credentials. [ADR-0052](adr-0052-current-provider-dispatch-authorization.md) gives the data service authority over each request and requires main to check its permit at the transport boundary. This preserves researcher control of transfers, provenance and uncertainty under PRIN-004, PRIN-006 and PRIN-016.
 
 ## Decision
 

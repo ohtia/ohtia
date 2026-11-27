@@ -38,13 +38,29 @@ export class ApiKeySession {
   readonly accountFingerprint = () =>
     this.stored && accountFingerprint(this.connection, this.stored.instance);
   readonly connectedAt = () => this.stored?.connectedAt;
-  readonly save = async (key: string) => {
-    const result = await this.store.writeApiKey(this.account, key);
+  readonly expiresAt = () => this.stored?.expiresAt;
+  readonly save = async (key: string, expiresAt?: string) => {
+    const result = await this.store.writeApiKey(this.account, key, expiresAt);
     if (result.status !== "stored") return { status: "unavailable" } as const;
     this.stored = result.value;
     this.expired = undefined;
     return { status: "stored" } as const;
   };
+  /** Keep a newly read expiry for `value`, only while it is still the stored key. */
+  async updateExpiry(value: StoredApiKey, expiresAt: string | undefined): Promise<void> {
+    if (!this.isCurrent(value) || value.expiresAt === expiresAt) return;
+    // The row shows what the service reported even if the store keeps the earlier date:
+    // the dates are presentation metadata, and the next check writes them again.
+    await this.store.updateApiKeyExpiry(this.account, value.instance, expiresAt);
+    if (this.stored?.instance !== value.instance) return;
+    const { key, instance, connectedAt } = this.stored;
+    this.stored = {
+      key,
+      instance,
+      ...(connectedAt ? { connectedAt } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
+    };
+  }
   current(): StoredApiKey | undefined {
     return this.stored?.instance === this.expired ? undefined : this.stored;
   }

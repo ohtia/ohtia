@@ -9,9 +9,12 @@ sources:
   - id: windows-credential
     resource: https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw
     title: Microsoft CREDENTIALW structure
+status: deprecated
 ---
 
 # ADR-0048 — Provider access routes and credential store
+
+Superseded by [ADR-0057 — Provider access routes and credential store](adr-0057-provider-access-routes-and-credential-store.md).
 
 ## Context
 

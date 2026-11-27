@@ -294,6 +294,10 @@ export interface AboutInformation {
 }
 export const projectLinks = {
   chatgptUsage: "https://chatgpt.com/settings/usage",
+  openrouterUsage: "https://openrouter.ai/settings/credits",
+  openrouterPrivacy: "https://openrouter.ai/settings/privacy",
+  openrouterPlugins: "https://openrouter.ai/settings/plugins",
+  openrouterObservability: "https://openrouter.ai/settings/observability",
   repository: "https://github.com/ohtia/ohtia",
   documentation: "https://github.com/ohtia/ohtia/blob/main/docs/index.md",
   report: "https://github.com/ohtia/ohtia/issues/new/choose",

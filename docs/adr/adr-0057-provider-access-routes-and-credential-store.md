@@ -1,0 +1,70 @@
+---
+type: DecisionRecord
+title: ADR-0057 — Provider access routes and credential store
+description: Connect language-model services through Sign in with ChatGPT, Anthropic and OpenAI API keys and OpenRouter, with every credential held by main in the operating-system credential store.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
+sources:
+  - id: keyring
+    resource: https://github.com/Brooooooklyn/keyring-node/tree/52184fbebffeef8a061234f60f313c479b954f9f
+    title: Reviewed keyring implementation
+  - id: windows-credential
+    resource: https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw
+    title: Microsoft CREDENTIALW structure
+  - id: openrouter-oauth
+    resource: https://openrouter.ai/docs/guides/overview/auth/oauth
+    title: OpenRouter OAuth PKCE
+  - id: openrouter-routing
+    resource: https://openrouter.ai/docs/guides/routing/provider-selection
+    title: OpenRouter provider routing
+  - id: openrouter-plugins
+    resource: https://openrouter.ai/docs/guides/features/plugins
+    title: OpenRouter plugins and account defaults
+  - id: openrouter-broadcast
+    resource: https://openrouter.ai/docs/guides/features/broadcast
+    title: OpenRouter observability broadcast
+---
+
+# ADR-0057 — Provider access routes and credential store
+
+Supersedes [ADR-0048 — Provider access routes and credential store](adr-0048-provider-access-routes-and-credential-store.md).
+
+## Context
+
+Ohtia needs subscription and API-key access without a local agent runtime. The [architecture](../architecture.md#process-and-trust-boundaries) gives main the brokered credentials. [SPEC-003-006](../epics/EPIC-003-research-agents/epic.md#spec-003-006-provider-adapter-contract-and-credential-store) records the researcher's rejection of a session-only fallback. Reusing a signed-in CLI, storing credentials in SQLite, relying on Electron's platform-dependent secret fallback and silently keeping an ephemeral login would break that boundary or its persistence guarantee. PRIN-004, PRIN-006 and PRIN-016 require accurate provenance, explicit failures and an honest unavailable state. OpenRouter gives one account, one prepaid credit balance and one key for models of many companies, and lets the researcher decide in an OpenRouter workspace which models and providers may receive their text.
+
+## Decision
+
+Use four independent provider services: Sign in with ChatGPT over the Responses API, an Anthropic API key, an OpenAI API key and OpenRouter. The OpenRouter routes are a pasted OpenRouter API key and Sign in with OpenRouter, OpenRouter's OAuth flow with PKCE; both produce an ordinary OpenRouter key that main holds and sends over Chat Completions.[^openrouter-oauth] Main alone holds every credential and sends provider requests over HTTPS; the data service admits request data without credentials under a single-use dispatch permit. [ADR-0026](adr-0026-capability-declared-adapters.md) continues to own capability admission. Selecting these routes does not establish provider eligibility or enable their later stories.
+
+Use @napi-rs/keyring `2.1.*` with `linux: { store: 'secret-service' }`, so Linux never falls back to a nonpersistent store.[^keyring] The lockfile and [desktop toolchain](../../config/desktop/toolchain.json) pin the reviewed patch and the six native artifacts. macOS Keychain and Linux Secret Service store the whole session. A missing or unusable store, including a cancelled unlock, leaves the connection unavailable; there is no weaker or session-only fallback.
+
+On Windows, Credential Manager holds a random 32-byte key, created only when missing and otherwise reused. Its credential-size limit motivates storing the encrypted session in `provider-sessions.enc` directly inside Electron's `userData` directory, outside research data and migration checkpoints.[^windows-credential] Each write uses AES-256-GCM with a fresh random 12-byte IV and publishes a temporary file in that same directory through replacement. The bytes are format version `1`, IV, ciphertext, then the 16-byte authentication tag. Main verifies authentication before using decrypted content. A missing file means no session; a present file with a missing key, unsupported version, insufficient length or failed authentication means an unusable session and an expired connection.
+
+Entry service names are `Ohtia` in installed and qualification modes. Development uses `Ohtia Development`, a space, then the first 16 lowercase hexadecimal characters of SHA-256 of the UTF-8 canonical absolute development-root path. Main admits `OHTIA_DEVELOPMENT_ROOT` under [ADR-0043](adr-0043-ordinary-startup-modes.md) before redirecting `userData` and acquiring the single-instance lock. Entry accounts are `chatgpt-session` for the whole macOS/Linux session, `chatgpt-session-key` for the Windows file key, `chatgpt-registration`, `anthropic-api-key`, `openai-api-key` and `openrouter-api-key`, each API-key account with its `-dates` companion holding presentation dates: the connection date and, for a key that expires, its expiry. The kept session includes its classified reason; transient reasons remain in main until the next connect/disconnect or exit. Every store read rediscovers unavailability.
+
+OpenRouter routes each request to one of the providers that serve the chosen model, inside the guardrails and privacy settings of the workspace that owns the key.[^openrouter-routing] That routing is the declared, researcher-authorized fallback that [ADR-0029](adr-0029-operation-profiles-and-usage-reports.md) allows: the researcher chooses and configures it in OpenRouter. Ohtia never requests model fallbacks (`models`), a router or alias that chooses the model, such as `openrouter/auto` or a `~…-latest` alias, or other routing options, and it records the model and the provider that delivered each reply.
+
+Ohtia sends no privacy, provider or plugin setting of its own. What the researcher configures in OpenRouter is part of the route they authorize: guardrails and privacy settings, plugins enabled by default for every request, which can add content to the request or the reply, and observability destinations, which receive copies of requests and replies.[^openrouter-plugins][^openrouter-broadcast] Settings says so before the first request. A plugin such as context compression can leave out parts of a request after it leaves Ohtia; the transfer manifest records what Ohtia sent, not what OpenRouter passed on. The route gives Ohtia no verifiable guarantee about the destination provider, data retention or region, so an operation or material that requires one is not eligible for it. "Served by" records the provider that OpenRouter reports as having delivered the reply, as observed in the response; it does not prove which providers saw the request before.
+
+## Consequences
+
+A computer without a usable operating-system credential store cannot connect a service. Native store behavior, cancelled unlocks and restart persistence require testing on the declared Windows and Linux virtual machines, including GNOME Keyring, `ksecretd` and `kwalletd6`; synthetic tests do not qualify those hosts.
+
+The installed and qualification modes share the native single-instance lock, while every development checkout has its own redirected lock and credential service. No two admitted processes share a session or registration, so renewal needs no interprocess lock. Each new or moved checkout signs in once and receives API keys again. Entries belonging to a removed or moved checkout remain in the store and are never read by its replacement.
+
+The native addon must remain pinned, inspected and licensed in every package. The fake adapter is a separate development/test module excluded from installed and qualification artifacts. Credentials remain in main and the operating-system credential store. Diagnostics and project records exclude provider error text and arbitrary provider metadata. The [Anthropic request rejection notice](../epics/EPIC-003-research-agents/epic.md#spec-003-041-anthropic-api-key) may carry a bounded provider message through memory for the matching task. The message is available only through the scoped notice read. The [Anthropic SDK decision](adr-0055-anthropic-messages-sdk.md) covers the request transport and the companion credential date. OpenRouter keys can expire; the row shows the expiry when OpenRouter reports one. Deleting an OpenRouter key in OpenRouter remains the researcher's responsibility, as for Anthropic and OpenAI keys.
+
+[^keyring]: The reviewed API provides asynchronous entries and an explicit Secret Service selection that fails rather than using the kernel-keyring fallback.
+
+[^windows-credential]: Windows limits the CredentialBlob for a generic credential to 2,560 bytes.
+
+[^openrouter-oauth]: OpenRouter documents a PKCE flow that returns an API key to the application's callback, with S256 challenges and no application registration.
+
+[^openrouter-routing]: OpenRouter falls back to another provider of the same model when one fails, and stops changing providers once part of the reply has arrived.
+
+[^openrouter-plugins]: Plugins enabled in the account defaults apply to requests that do not name them.
+
+[^openrouter-broadcast]: Each observability destination receives request and response content unless its privacy mode is on.

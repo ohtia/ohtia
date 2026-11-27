@@ -17,6 +17,7 @@ import {
   type AgentPreferences,
   type ProviderModelPageInput,
   type ReplaceAgentPreference,
+  type ProjectLink,
 } from "@ohtia/contracts";
 import {
   AgentsSettings,
@@ -49,6 +50,7 @@ async function mount(
   locale: (typeof supportedLocales)[number] = "en-US",
   initialTimeout = false,
   kind: "subscription" | "api_key" = "subscription",
+  openLink?: (link: ProjectLink) => void,
 ) {
   let current = { ...initial, ...snapshot };
   let receive!: (notice: Outcome<ConnectionEvent>) => void;
@@ -106,6 +108,7 @@ async function mount(
         available: true,
         kind,
         connection: current.connection,
+        ...(openLink ? { openLink } : {}),
       }),
     ),
   );
@@ -1353,6 +1356,132 @@ it.each(["anthropic_api_key", "openai_api_key"])(
     expect(f.disconnect).toHaveBeenCalledExactlyOnceWith(connection);
   },
 );
+
+describe("OpenRouter group", () => {
+  const openrouter = { connection: "openrouter", display_name: "OpenRouter" } as const;
+  it.each([
+    ["disconnected", {}],
+    ["connected", { state: "connected", connected_at: "2026-11-26T10:00:00.000Z" }],
+    ["expired", { state: "expired" }],
+  ] as const)("shows the privacy line and its four links when %s", async (_state, snapshot) => {
+    const openLink = vi.fn();
+    const f = await mount({ ...openrouter, ...snapshot }, "en-US", false, "api_key", openLink);
+    const line = f.container.querySelector(".connection-privacy")!;
+    expect(line.querySelector("p")?.textContent).toBe(
+      "OpenRouter applies the privacy settings, guardrails, plugins and observability destinations of the account and workspace this key belongs to. They decide which models and providers receive your messages, what OpenRouter adds to them or removes from them, and where it sends copies.",
+    );
+    const links = [...line.querySelectorAll("a")];
+    expect(links.map((link) => [link.textContent?.trim(), link.getAttribute("href")])).toEqual([
+      ["OpenRouter privacy settings", "https://openrouter.ai/settings/privacy"],
+      ["OpenRouter plugins", "https://openrouter.ai/settings/plugins"],
+      ["OpenRouter observability", "https://openrouter.ai/settings/observability"],
+      ["Check usage", "https://openrouter.ai/settings/credits"],
+    ]);
+    for (const link of links)
+      expect(link.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+        "opens in your browser",
+      );
+    await act(async () => {
+      for (const link of links) link.click();
+    });
+    expect(openLink.mock.calls).toEqual([
+      ["openrouterPrivacy"],
+      ["openrouterPlugins"],
+      ["openrouterObservability"],
+      ["openrouterUsage"],
+    ]);
+  });
+
+  it("shows the expiry beside the connection date in the interface locale", async () => {
+    const connected = {
+      ...openrouter,
+      state: "connected",
+      connected_at: "2026-11-26T10:00:00.000Z",
+      expires_at: "2026-12-03T10:00:00.000Z",
+    } as const;
+    const english = await mount(connected, "en-US", false, "api_key");
+    expect(english.container.querySelector(".connection-state")?.textContent).toBe(
+      "OpenRouter · API key · Connected Nov 26, 2026 · Expires Dec 3, 2026",
+    );
+    const german = await mount(connected, "de-DE", false, "api_key");
+    expect(german.container.querySelector(".connection-state")?.textContent).toBe(
+      "OpenRouter · API-Schlüssel · Verbunden seit 26.11.2026 · Läuft ab am 03.12.2026",
+    );
+  });
+
+  it("shows no privacy line for the other services", async () => {
+    for (const connection of ["chatgpt", "anthropic_api_key", "openai_api_key"]) {
+      const f = await mount(
+        { connection },
+        "en-US",
+        false,
+        connection === "chatgpt" ? "subscription" : "api_key",
+      );
+      expect(f.container.querySelector(".connection-privacy")).toBeNull();
+    }
+  });
+});
+
+it("offers no connected service that sends no request in an agent's Service select", async () => {
+  const call = <T>(value: T) => ({
+    result: Promise.resolve({ ok: true as const, value }),
+    cancel() {},
+  });
+  const services = [
+    { id: "chatgpt", displayName: "ChatGPT", kind: "subscription", usageUrl: null },
+    {
+      id: "openrouter",
+      displayName: "OpenRouter",
+      kind: "api_key",
+      usageUrl: "https://openrouter.ai/settings/credits",
+    },
+  ] as const;
+  const snapshots = Object.fromEntries(
+    services.map(({ id, displayName }) => [
+      id,
+      { ...initial, connection: id, display_name: displayName, state: "connected" as const },
+    ]),
+  );
+  const preferences: AgentPreferences = {
+    preferences: agentPreferenceTargets.map((target) => ({
+      target,
+      revision: 1,
+      connection: null,
+      model: null,
+      modelName: null,
+      effort: null,
+      inherit: target !== "default",
+      source: "researcher",
+      seedPending: false,
+    })),
+    lists: [],
+  };
+  const port = {
+    listAgentPreferences: () => call(preferences),
+    replaceAgentPreference: () => ({
+      result: Promise.resolve(failure("storage_failed")),
+      cancel() {},
+    }),
+  } as unknown as FoundationPort;
+  const observe = () => () => {};
+  function Host() {
+    const settings = useAgentSettings(port, true, observe);
+    return createElement(AgentsSettings, {
+      port,
+      settings,
+      locale: "en-US",
+      connections: services,
+      snapshots,
+      recoveryFocusId: "agents-page",
+    });
+  }
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () => root.render(createElement(Host)));
+  const select = container.querySelector<HTMLSelectElement>('[data-agent-service="default"]')!;
+  expect([...select.options].map((option) => option.value)).toEqual(["", "chatgpt"]);
+});
 
 describe("agent rows in Settings › Agents", () => {
   const call = <T>(value: T) => ({
