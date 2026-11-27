@@ -50,9 +50,12 @@ async function launch(
     nodeOptions?: string;
     platform?: NodeJS.Platform;
     version?: string;
+    /** Leave manuscript lock requests unanswered instead of confirming them like a preload with no manuscript. */
+    manualManuscriptLock?: boolean;
   } = {},
 ) {
   vi.resetModules();
+  let confirmManuscriptLock: (window: unknown, id: string) => Promise<unknown> = async () => {};
   vi.stubGlobal("__OHTIA_DEVELOPMENT_BUILD__", options.developmentBuild ?? false);
   vi.doMock("../packages/main/src/native-credentials.js", () => ({
     nativeCredentialStore: async () => {
@@ -181,7 +184,20 @@ async function launch(
     webContents = Object.assign(new EventEmitter(), {
       id: ++nextId,
       mainFrame: { url: constants.desktopDocument, send: vi.fn() },
-      send: vi.fn(),
+      send: vi.fn((channel: string, payload?: unknown) => {
+        const request = payload as { locked?: boolean; id?: string } | undefined;
+        if (
+          channel === constants.desktopChannels.manuscriptLock &&
+          request?.locked &&
+          request.id &&
+          !options.manualManuscriptLock
+        ) {
+          const id = request.id;
+          queueMicrotask(() => {
+            void confirmManuscriptLock(this, id);
+          });
+        }
+      }),
       stop: vi.fn(),
       isDestroyed: () => this.destroyed,
       setWindowOpenHandler: vi.fn(),
@@ -535,6 +551,8 @@ async function launch(
     ipcMain.handle.mock.calls.find(
       ([channel]) => channel === constants.desktopChannels.commands,
     )![1](event(selected), action, payload);
+  confirmManuscriptLock = (selected, id) =>
+    command("manuscript_locked", { id, pending: false }, selected as typeof window);
   return {
     acknowledgeZoom,
     powerMonitor,
@@ -3187,5 +3205,419 @@ describe("manuscript close guard", () => {
     for (let i = 0; i < 40; i++) await Promise.resolve();
     expect(closeSends(second, h.constants.desktopChannels.manuscriptClose)).toEqual([]);
     expect(h.supervisors[0].stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe("manuscript lock before an ordinary quit", () => {
+  const sends = (window: { webContents: { send: ReturnType<typeof vi.fn> } }, channel: string) =>
+    window.webContents.send.mock.calls
+      .filter(([sent]) => sent === channel)
+      .map(([, value]) => value);
+  async function workspace(windows = 1, platform?: NodeJS.Platform) {
+    const h = await launch({ locator: "located", manualManuscriptLock: true, platform });
+    const peer = h.supervisors[0]!;
+    peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    for (let i = 1; i < windows; i++) await h.action("new_window");
+    const all = h.Window.all.slice(0, windows);
+    for (const window of all) {
+      window.emit("ready-to-show");
+      // A window joins the lock once its document has attached its session.
+      h.ipcMain.emit(h.constants.desktopChannels.session, h.event(window));
+    }
+    const lock = h.constants.desktopChannels.manuscriptLock;
+    const close = h.constants.desktopChannels.manuscriptClose;
+    const requests = (window: (typeof all)[number]) =>
+      sends(window, lock) as { locked: boolean; id?: string }[];
+    const lockId = (window: (typeof all)[number]) => requests(window).at(-1)?.id;
+    const quit = async () => {
+      h.app.emit("before-quit", { preventDefault: vi.fn() });
+      await vi.advanceTimersByTimeAsync(0);
+      h.app.quit.mockClear();
+    };
+    return { h, peer, all, lock, close, requests, lockId, quit };
+  }
+
+  it("locks every workspace window and stops services only after all of them confirm", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    await quit();
+    const id = lockId(all[0]!);
+    expect(id).toEqual(expect.any(String));
+    for (const window of all) expect(requests(window)).toEqual([{ locked: true, id }]);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(h.app.quit).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[1])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalledOnce();
+    for (const window of all) expect(requests(window)).toEqual([{ locked: true, id }]);
+  });
+
+  it("holds the quit at a window that still has manuscript text and releases every window", async () => {
+    const { h, peer, all, close, requests, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    await quit();
+    const id = lockId(first)!;
+    first.focus.mockClear();
+    first.minimized = true;
+    expect(await h.command("manuscript_locked", { id, pending: true }, first)).toBe(true);
+    expect(await h.command("manuscript_locked", { id, pending: false }, second)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(h.app.quit).not.toHaveBeenCalled();
+    for (const window of all)
+      expect(requests(window)).toEqual([{ locked: true, id }, { locked: false }]);
+    expect(sends(first, close)).toEqual(["application.quit"]);
+    expect(sends(second, close)).toEqual([]);
+    expect(first.restore).toHaveBeenCalledOnce();
+    expect(first.focus).toHaveBeenCalledOnce();
+    const held = { preventDefault: vi.fn() };
+    first.emit("close", held);
+    expect(held.preventDefault).toHaveBeenCalledOnce();
+    expect(sends(first, close)).toEqual(["application.quit", "window.close"]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(peer.stop).not.toHaveBeenCalled();
+  });
+
+  it("holds the quit at a window that does not answer the lock in time without marking it pending", async () => {
+    const { h, peer, all, close, requests, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    await quit();
+    const id = lockId(first)!;
+    second.focus.mockClear();
+    expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(requests(second)).toEqual([{ locked: true, id }]);
+    expect(peer.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(h.app.quit).not.toHaveBeenCalled();
+    for (const window of all)
+      expect(requests(window)).toEqual([{ locked: true, id }, { locked: false }]);
+    expect(sends(second, close)).toEqual(["application.quit"]);
+    expect(sends(first, close)).toEqual([]);
+    expect(second.focus).toHaveBeenCalledOnce();
+    expect(await h.command("manuscript_locked", { id, pending: false }, second)).toBe(false);
+    second.emit("close", { preventDefault: vi.fn() });
+    expect(sends(second, close)).toEqual(["application.quit"]);
+  });
+
+  it("refuses lock replies before a round, with a foreign id or malformed payload or as duplicates, and opens no window during the lock", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    expect(await h.command("manuscript_locked", { id: "early", pending: false })).toBe(false);
+    await quit();
+    const id = lockId(first)!;
+    for (const payload of [
+      { id: "foreign-round", pending: true },
+      { id, pending: "true" },
+      { id, pending: false, extra: true },
+      { id },
+      { pending: false },
+      { id: "-invalid", pending: false },
+      [id, false],
+      id,
+      null,
+      undefined,
+    ])
+      expect(await h.command("manuscript_locked", payload, first)).toBe(false);
+    // No window opens while the lock decides the quit, so none can escape it.
+    const windowsBefore = h.Window.all.length;
+    await h.action("new_window");
+    expect(h.Window.all).toHaveLength(windowsBefore);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+    expect(await h.command("manuscript_locked", { id, pending: true }, first)).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, second)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    for (const window of all) expect(requests(window)).toEqual([{ locked: true, id }]);
+  });
+
+  it("stops waiting for a window that closes during the lock", async () => {
+    const { h, peer, all, close, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    await quit();
+    const id = lockId(first)!;
+    expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    second.destroyed = true;
+    second.emit("closed");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalledOnce();
+    expect(sends(second, close)).toEqual([]);
+  });
+
+  it("does not start a second lock for a repeated quit while one is running", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    await quit();
+    const id = lockId(all[0]!)!;
+    await quit();
+    for (const window of all) expect(requests(window)).toEqual([{ locked: true, id }]);
+    for (const window of all)
+      expect(await h.command("manuscript_locked", { id, pending: false }, window)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+  });
+
+  it("neither locks nor waits for manuscripts during operating-system shutdown", async () => {
+    const { h, peer, all, requests } = await workspace(2, "linux");
+    h.powerMonitor.emit("shutdown");
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    await vi.advanceTimersByTimeAsync(0);
+    for (const window of all) expect(requests(window)).toEqual([]);
+    expect(peer.stop).toHaveBeenCalledOnce();
+  });
+
+  it("ends a running lock without presenting anything when operating-system shutdown begins", async () => {
+    const { h, peer, all, close, requests, lockId, quit } = await workspace(2, "linux");
+    await quit();
+    const id = lockId(all[0]!)!;
+    expect(await h.command("manuscript_locked", { id, pending: true }, all[0])).toBe(true);
+    h.powerMonitor.emit("shutdown");
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    for (const window of all) {
+      expect(requests(window)).toEqual([{ locked: true, id }]);
+      expect(sends(window, close)).toEqual([]);
+    }
+  });
+
+  it("ends a lock without stopping services and releases the editor when shutdown begins before the timeout", async () => {
+    const { h, peer, all, close, requests, lockId, quit } = await workspace(1, "linux");
+    await quit();
+    const id = lockId(all[0]!)!;
+    h.powerMonitor.emit("shutdown");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(peer.stop).not.toHaveBeenCalled();
+    // A cancelled session end must not leave the manuscript locked.
+    expect(requests(all[0]!)).toEqual([{ locked: true, id }, { locked: false }]);
+    expect(sends(all[0]!, close)).toEqual([]);
+  });
+
+  it.each(["stop-failed", "changed-sentinel"])(
+    "releases every manuscript lock after a %s shutdown",
+    async (outcome) => {
+      const { h, peer, all, requests, lockId, quit } = await workspace(2);
+      h.state.stop = outcome !== "stop-failed";
+      h.state.verify = outcome !== "changed-sentinel";
+      await quit();
+      const id = lockId(all[0]!)!;
+      for (const window of all)
+        expect(await h.command("manuscript_locked", { id, pending: false }, window)).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.stop).toHaveBeenCalledOnce();
+      expect(h.app.quit).not.toHaveBeenCalled();
+      expect(h.dialog.showMessageBox).toHaveBeenCalled();
+      for (const window of all)
+        expect(requests(window)).toEqual([{ locked: true, id }, { locked: false }]);
+    },
+  );
+
+  const exitControls = (peer: { postProvider: ReturnType<typeof vi.fn> }) =>
+    peer.postProvider.mock.calls
+      .map(([text]) => JSON.parse(text as string) as { kind: string; action?: string })
+      .filter((control) => control.kind === "application_exit");
+
+  it.each(["pending text", "a missing reply"])(
+    "lets the service dispatch work again when %s holds the approved quit",
+    async (cause) => {
+      const { h, peer, all, lockId, quit } = await workspace(1);
+      await quit();
+      const [hold] = exitControls(peer);
+      expect(hold).toMatchObject({ action: "hold", generation: peer.generation });
+      const id = lockId(all[0]!)!;
+      if (cause === "pending text")
+        expect(await h.command("manuscript_locked", { id, pending: true }, all[0])).toBe(true);
+      else await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.stop).not.toHaveBeenCalled();
+      expect(exitControls(peer)).toEqual([hold, { ...hold, action: "resume" }]);
+    },
+  );
+
+  it("sends no resume when every window confirms the lock", async () => {
+    const { h, peer, all, lockId, quit } = await workspace(1);
+    await quit();
+    const id = lockId(all[0]!)!;
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(exitControls(peer).map((control) => control.action)).toEqual(["hold"]);
+  });
+
+  it("does not build a window whose preference read finishes during the lock", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(1);
+    const original = peer.request.getMockImplementation()!;
+    let finishAppearance!: () => void;
+    peer.request.mockImplementation(async (operation: string, ...rest: unknown[]) =>
+      operation === "appearance.read"
+        ? new Promise((resolve) => {
+            finishAppearance = () => {
+              resolve(original(operation, ...(rest as [])));
+            };
+          })
+        : original(operation, ...(rest as [])),
+    );
+    const opening = h.action("new_window");
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+    expect(finishAppearance).toBeTypeOf("function");
+    await quit();
+    const id = lockId(all[0]!)!;
+    finishAppearance();
+    expect(await opening).toMatchObject({ notice: "resource_failure" });
+    expect(h.Window.all).toHaveLength(1);
+    expect(requests(all[0]!)).toEqual([{ locked: true, id }]);
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it("neither locks nor waits for a window whose document never attached", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(1);
+    await h.action("new_window");
+    const detached = h.Window.all[1]!;
+    detached.emit("ready-to-show");
+    await quit();
+    const id = lockId(all[0]!)!;
+    expect(requests(detached)).toEqual([]);
+    expect(await h.command("manuscript_locked", { id, pending: false }, detached)).toBe(false);
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it("locks the new document of a window that navigates and attaches again during the lock", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    await quit();
+    const id = lockId(first)!;
+    second.webContents.emit("did-start-navigation", {}, h.constants.desktopDocument, false, true);
+    h.ipcMain.emit(h.constants.desktopChannels.session, h.event(second));
+    expect(requests(second)).toEqual([
+      { locked: true, id },
+      { locked: true, id },
+    ]);
+    expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, second)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+  });
+
+  it("locks and awaits a window whose document attaches during the lock", async () => {
+    const { h, peer, all, close, requests, lockId, quit } = await workspace(1);
+    await h.action("new_window");
+    const late = h.Window.all[1]!;
+    late.emit("ready-to-show");
+    await quit();
+    const id = lockId(all[0]!)!;
+    expect(requests(late)).toEqual([]);
+    h.ipcMain.emit(h.constants.desktopChannels.session, h.event(late));
+    expect(requests(late)).toEqual([{ locked: true, id }]);
+    // A repeated attachment does not lock it twice.
+    h.ipcMain.emit(h.constants.desktopChannels.session, h.event(late));
+    expect(requests(late)).toEqual([{ locked: true, id }]);
+    expect(await h.command("manuscript_locked", { id, pending: false }, all[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: true }, late)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(sends(late, close)).toEqual(["application.quit"]);
+  });
+
+  it.each([
+    ["crashes", (contents: EventEmitter) => contents.emit("render-process-gone")],
+    [
+      "navigates its main frame away",
+      (contents: EventEmitter) =>
+        contents.emit("did-start-navigation", {}, "https://example.invalid/", false, true),
+    ],
+  ] as const)(
+    "stops waiting for a window whose renderer %s during the lock",
+    async (_name, lose) => {
+      const { h, peer, all, close, lockId, quit } = await workspace(2);
+      const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+      await quit();
+      const id = lockId(first)!;
+      expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+      // A subframe or in-place navigation keeps the document, so the lock still waits.
+      second.webContents.emit("did-start-navigation", {}, h.constants.desktopDocument, true, true);
+      second.webContents.emit("did-start-navigation", {}, "https://example.invalid/", false, false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.stop).not.toHaveBeenCalled();
+      lose(second.webContents);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.stop).toHaveBeenCalledOnce();
+      expect(h.app.quit).toHaveBeenCalledOnce();
+      expect(sends(second, close)).toEqual([]);
+    },
+  );
+
+  it("does not hold the quit for a pending reply from a renderer that crashed during the lock", async () => {
+    const { h, peer, all, close, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    await quit();
+    const id = lockId(first)!;
+    expect(await h.command("manuscript_locked", { id, pending: true }, first)).toBe(true);
+    first.webContents.emit("render-process-gone");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_locked", { id, pending: false }, second)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(sends(first, close)).toEqual([]);
+  });
+
+  it("locks every editor again on a second quit after a failed stop", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    h.state.stop = false;
+    await quit();
+    const first = lockId(all[0]!)!;
+    for (const window of all)
+      expect(await h.command("manuscript_locked", { id: first, pending: false }, window)).toBe(
+        true,
+      );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
+    // The failed stop detached every document; the next quit still locks them all.
+    h.state.stop = true;
+    await quit();
+    const second = lockId(all[0]!)!;
+    expect(second).not.toBe(first);
+    for (const window of all)
+      expect(requests(window)).toEqual([
+        { locked: true, id: first },
+        { locked: false },
+        { locked: true, id: second },
+      ]);
+    expect(peer.stop).toHaveBeenCalledOnce();
+  });
+
+  it("does not lock a window whose renderer crashed before the quit", async () => {
+    const { h, peer, all, requests, lockId, quit } = await workspace(2);
+    const [first, second] = all as [(typeof all)[0], (typeof all)[0]];
+    second.webContents.emit("render-process-gone");
+    await quit();
+    const id = lockId(first)!;
+    expect(requests(second)).toEqual([]);
+    expect(await h.command("manuscript_locked", { id, pending: false }, first)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peer.stop).toHaveBeenCalledOnce();
   });
 });

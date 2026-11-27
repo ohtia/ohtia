@@ -345,6 +345,7 @@ export function ManuscriptView({
   drafts,
   onWriting,
   onSaveForClose,
+  locked = false,
 }: {
   readonly locale: InterfaceLocale;
   readonly scope: Scope | undefined;
@@ -364,6 +365,8 @@ export function ManuscriptView({
   readonly drafts: ManuscriptDrafts;
   readonly onWriting: (writing: boolean) => void;
   readonly onSaveForClose: (save: (() => Promise<void>) | undefined) => void;
+  /** An ordinary quit is stopping services; editing and saving wait. */
+  readonly locked?: boolean;
 }) {
   const [state, setState] = useState<ViewState>();
   const [attempt, setAttempt] = useState(0);
@@ -427,7 +430,7 @@ export function ManuscriptView({
           locale={locale}
           visible={visible && canPresent}
           blocked={!canPresent}
-          {...{ onCommit, onOutline, jump, drafts, port, scope, onWriting, onSaveForClose }}
+          {...{ onCommit, onOutline, jump, drafts, port, scope, onWriting, onSaveForClose, locked }}
           onSaved={(next) => {
             setState((previous) =>
               previous?.content?.revision.revisionId === next.revision.parentRevisionId
@@ -462,6 +465,7 @@ function CommittedManuscript({
   onWriting,
   onSaveForClose,
   onSaved,
+  locked,
 }: {
   readonly content: ManuscriptContent;
   readonly locale: InterfaceLocale;
@@ -481,6 +485,7 @@ function CommittedManuscript({
   readonly onWriting: (writing: boolean) => void;
   readonly onSaveForClose: (save: (() => Promise<void>) | undefined) => void;
   readonly onSaved: (content: ManuscriptContent) => void;
+  readonly locked: boolean;
 }) {
   const { revision } = content;
   const { draftId } = revision;
@@ -558,7 +563,29 @@ function CommittedManuscript({
       retired,
     );
     editor.current.refreshIdentities();
+    editor.current.setEditable(!locked);
   }
+  const lockFocus = useRef<HTMLElement | null>(null);
+  const wasLocked = useRef(locked);
+  const section = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const active = globalThis.document.activeElement;
+    const locking = locked && !wasLocked.current;
+    const released = wasLocked.current && !locked;
+    wasLocked.current = locked;
+    // Remember focus inside the view before the lock disables it; return there once editing resumes.
+    if (locking)
+      lockFocus.current =
+        active instanceof HTMLElement && section.current?.contains(active) ? active : null;
+    editor.current?.setEditable(!locked);
+    if (!released) return;
+    const target = lockFocus.current;
+    lockFocus.current = null;
+    const current = globalThis.document.activeElement;
+    if (!target?.isConnected || (current && current !== globalThis.document.body)) return;
+    if (editorHost.current?.contains(target)) editor.current?.focus();
+    else target.focus();
+  }, [locked]);
 
   useLayoutEffect(() => {
     if (visible) onCommit(revision);
@@ -803,6 +830,7 @@ function CommittedManuscript({
       className="workspace-manuscript-view"
       inert={blocked}
       aria-label={message(locale, "manuscript.collection")}
+      ref={section}
     >
       <header className="workspace-manuscript-toolbar">
         <ManuscriptBreadcrumbs
@@ -819,6 +847,7 @@ function CommittedManuscript({
             ref={modeButton}
             type="button"
             className="primitive-button"
+            disabled={locked}
             onClick={() => {
               restore.current = anchor();
               setEditing((wasEditing) => !wasEditing);
@@ -832,7 +861,7 @@ function CommittedManuscript({
               <button
                 type="button"
                 className="primitive-button primitive-primary"
-                disabled={saving || !scope}
+                disabled={saving || !scope || locked}
                 onClick={() => {
                   void save();
                 }}
@@ -845,7 +874,7 @@ function CommittedManuscript({
               <button
                 type="button"
                 className="primitive-button"
-                disabled={saving || !!work.request}
+                disabled={saving || !!work.request || locked}
                 onClick={() => {
                   change(undefined);
                   setFeedback(undefined);

@@ -153,6 +153,62 @@ describe("application exit authority", () => {
     expect(h.finish).toHaveBeenCalledOnce();
     expect(h.exit.state).toBeUndefined();
   });
+  it("resumes a finished quit once when a later step holds it, and never before a finish or after a new request", () => {
+    const h = host();
+    h.exit.resumeHeld();
+    expect(h.sent).toEqual([]);
+    h.exit.request("run");
+    h.exit.resumeHeld();
+    expect(h.sent.map((control) => control.action)).toEqual(["hold"]);
+    h.exit.receive(state(0));
+    expect(h.finish).toHaveBeenCalledOnce();
+    h.exit.resumeHeld();
+    h.exit.resumeHeld();
+    expect(h.sent).toEqual([
+      { kind: "application_exit", generation: "run", operationId: "exit-1", action: "hold" },
+      { kind: "application_exit", generation: "run", operationId: "exit-1", action: "resume" },
+    ]);
+    const waited = host();
+    waited.exit.request("run");
+    waited.exit.receive(state(1));
+    waited.exit.choose("exit-1", "wait");
+    waited.exit.receive(state(0));
+    expect(waited.finish).toHaveBeenCalledOnce();
+    waited.exit.request("next");
+    waited.exit.resumeHeld();
+    expect(waited.sent.map((control) => [control.generation, control.action])).toEqual([
+      ["run", "hold"],
+      ["next", "hold"],
+    ]);
+  });
+  it("keeps the close, abort and system shutdown paths free of a held resume", () => {
+    vi.useFakeTimers();
+    const closed = host();
+    closed.exit.request("run");
+    closed.exit.receive(state(2));
+    closed.exit.choose("exit-1", "close");
+    closed.exit.resumeHeld();
+    expect(closed.sent.map((control) => control.action)).toEqual(["hold", "resume"]);
+    const aborted = host();
+    aborted.exit.request("run");
+    aborted.exit.abort(false);
+    aborted.exit.resumeHeld();
+    expect(aborted.sent.map((control) => control.action)).toEqual(["hold", "resume"]);
+    expect(aborted.failed).not.toHaveBeenCalled();
+    const timedOut = host();
+    timedOut.exit.request("run");
+    vi.advanceTimersByTime(portLimits.request_deadline_ms);
+    timedOut.exit.resumeHeld();
+    expect(timedOut.sent.map((control) => control.action)).toEqual(["hold", "resume"]);
+    expect(timedOut.failed).toHaveBeenCalledOnce();
+    const shutdown = host();
+    shutdown.exit.request("run");
+    shutdown.exit.receive(state(2));
+    shutdown.exit.systemShutdown();
+    shutdown.exit.resumeHeld();
+    expect(shutdown.sent.map((control) => control.action)).toEqual(["hold"]);
+    expect(shutdown.finish).toHaveBeenCalledOnce();
+  });
   it("rejects malformed lifecycle inputs and renders own ICU selectors for every locale", () => {
     expect(isExitChoice("quit")).toBe(false);
     expect(

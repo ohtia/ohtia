@@ -81,7 +81,11 @@ export interface WorkspaceChromeProps {
   readonly manuscriptPort?: FoundationPort;
   readonly manuscriptLifecycle?: Pick<
     CommandBridge,
-    "perform" | "setManuscriptPending" | "onManuscriptClose"
+    | "perform"
+    | "setManuscriptPending"
+    | "onManuscriptClose"
+    | "onManuscriptLock"
+    | "confirmManuscriptLock"
   >;
   readonly onManuscriptVisibility?: (revision: ManuscriptRevision | null) => void;
   readonly memoryRequest?: number;
@@ -377,15 +381,75 @@ export function WorkspaceChrome({
   }, [manuscriptDrafts, manuscriptLifecycle]);
 
   useEffect(() => manuscriptLifecycle?.onManuscriptClose?.(setPendingClose), [manuscriptLifecycle]);
+  // While an ordinary quit stops services, the manuscript accepts no more text.
+  const [manuscriptLock, setManuscriptLock] = useState<string>();
+  // Only a composition in the manuscript editor holds text the drafts have not recorded yet.
+  const [composing, setComposing] = useState(false);
+  const composingNow = useRef(false);
+  const composedAtLock = useRef(false);
   useEffect(() => {
-    if (!manuscriptLifecycle || !pendingClose || pendingManuscript || closingManuscript) return;
+    const editorOf = (target: EventTarget | null) =>
+      target instanceof Element ? target.closest(".workspace-manuscript-view .ProseMirror") : null;
+    const start = (event: Event) => {
+      if (!editorOf(event.target)) return;
+      composingNow.current = true;
+      setComposing(true);
+    };
+    const end = () => {
+      composingNow.current = false;
+      setComposing(false);
+    };
+    // Leaving the editor ends its composition even if the input method never reports it.
+    const leave = (event: FocusEvent) => {
+      const editor = editorOf(event.target);
+      if (editor && !(event.relatedTarget instanceof Node && editor.contains(event.relatedTarget)))
+        end();
+    };
+    document.addEventListener("compositionstart", start, true);
+    document.addEventListener("compositionend", end, true);
+    document.addEventListener("focusout", leave, true);
+    return () => {
+      document.removeEventListener("compositionstart", start, true);
+      document.removeEventListener("compositionend", end, true);
+      document.removeEventListener("focusout", leave, true);
+    };
+  }, []);
+  useEffect(
+    () =>
+      manuscriptLifecycle?.onManuscriptLock?.((request) => {
+        // Read the composition before the lock makes the editor read-only and ends it.
+        if (request.locked) composedAtLock.current = composingNow.current;
+        setManuscriptLock(request.locked ? request.id : undefined);
+      }),
+    [manuscriptLifecycle],
+  );
+  useEffect(() => {
+    if (!manuscriptLock) return;
+    // Text still being composed has not reached the drafts, so it counts as pending.
+    void manuscriptLifecycle
+      ?.confirmManuscriptLock?.(
+        manuscriptLock,
+        manuscriptDrafts.pending || composedAtLock.current || composingNow.current,
+      )
+      .catch(() => {});
+  }, [manuscriptDrafts, manuscriptLifecycle, manuscriptLock]);
+  useEffect(() => {
+    if (
+      !manuscriptLifecycle ||
+      !pendingClose ||
+      pendingManuscript ||
+      closingManuscript ||
+      composing
+    )
+      return;
     // Nothing is left to confirm, for example after a save finished: continue the requested close.
+    // A composition in the manuscript first ends and records its text, which then asks as usual.
     setPendingClose(undefined);
     void manuscriptLifecycle
       .setManuscriptPending?.(false)
       .then((ready) => (ready ? manuscriptLifecycle.perform(pendingClose) : undefined))
       .catch(() => {});
-  }, [closingManuscript, manuscriptLifecycle, pendingClose, pendingManuscript]);
+  }, [closingManuscript, composing, manuscriptLifecycle, pendingClose, pendingManuscript]);
 
   async function finishManuscriptClose(discard: boolean) {
     if (!manuscriptLifecycle || !pendingClose || closingManuscript) return;
@@ -1321,6 +1385,7 @@ export function WorkspaceChrome({
                                   drafts={manuscriptDrafts}
                                   onWriting={setWritingManuscript}
                                   onSaveForClose={setSaveForClose}
+                                  locked={!!manuscriptLock}
                                 />
                               ) : (
                                 <div className="workspace-manuscript">

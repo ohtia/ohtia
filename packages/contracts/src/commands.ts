@@ -397,10 +397,32 @@ export function isWindowCommandResult(value: unknown): value is WindowCommandRes
   );
 }
 export type ManuscriptCloseCommand = "window.close" | "application.quit";
+/** Main locks manuscript editing before an ordinary quit stops services, then releases it if the quit is held. */
+export type ManuscriptLockRequest =
+  { readonly locked: true; readonly id: string } | { readonly locked: false };
+export function isManuscriptLockRequest(value: unknown): value is ManuscriptLockRequest {
+  if (!plain(value)) return false;
+  return value.locked === true
+    ? keys(value, "id,locked") && isIdentifier(value.id)
+    : value.locked === false && keys(value, "locked");
+}
+export function isManuscriptLockReply(
+  value: unknown,
+): value is { readonly id: string; readonly pending: boolean } {
+  return (
+    plain(value) &&
+    keys(value, "id,pending") &&
+    isIdentifier(value.id) &&
+    typeof value.pending === "boolean"
+  );
+}
 
 export interface CommandBridge {
   setManuscriptPending?(pending: boolean): Promise<boolean>;
   onManuscriptClose?(listener: (command: ManuscriptCloseCommand) => void): () => void;
+  onManuscriptLock?(listener: (request: ManuscriptLockRequest) => void): () => void;
+  /** Reply to a lock with whether the window still holds pending manuscript text. */
+  confirmManuscriptLock?(id: string, pending: boolean): Promise<boolean>;
   readExitState(): Promise<ExitDialogState | null>;
   onExitState(listener: (state: ExitDialogState | null) => void): () => void;
   chooseExit(operationId: string, choice: ExitChoice): Promise<boolean>;

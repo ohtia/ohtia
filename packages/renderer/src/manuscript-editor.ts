@@ -262,6 +262,8 @@ export interface ManuscriptEditor {
   replace(document: CanonicalManuscript): void;
   /** Reissue identities that a newly acknowledged base has retired. */
   refreshIdentities(): void;
+  /** Lock or unlock typing; the content, selection and undo history stay as they are. */
+  setEditable(editable: boolean): void;
   focus(): void;
   jump(id: string): void;
   destroy(): void;
@@ -329,6 +331,9 @@ export function mountManuscriptEditor(
       }
       view.updateState(updated);
       onHeading(headingAtCursor(updated));
+    },
+    setEditable(editable) {
+      view.setProps({ editable: () => editable });
     },
     refreshIdentities() {
       const repair = repairIdentities(view.state, retired());

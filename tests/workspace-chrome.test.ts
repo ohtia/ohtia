@@ -19,6 +19,7 @@ import {
   type FoundationPort,
   type ProjectRecord,
   type ManuscriptCloseCommand,
+  type ManuscriptLockRequest,
   type ManuscriptRevision,
   type ManuscriptWriteResult,
   type LayoutChange,
@@ -1180,6 +1181,7 @@ describe("workspace chrome manuscript close guard", () => {
         call(failure(code as Parameters<typeof failure>[0])),
       );
     let requestClose: ((command: ManuscriptCloseCommand) => void) | undefined;
+    let requestLock: ((request: ManuscriptLockRequest) => void) | undefined;
     const lifecycle = {
       perform: vi.fn(async (_command: string) => true),
       setManuscriptPending: vi.fn(async (_pending: boolean) => true),
@@ -1189,6 +1191,13 @@ describe("workspace chrome manuscript close guard", () => {
           requestClose = undefined;
         };
       }),
+      onManuscriptLock: vi.fn((listener: (request: ManuscriptLockRequest) => void) => {
+        requestLock = listener;
+        return () => {
+          requestLock = undefined;
+        };
+      }),
+      confirmManuscriptLock: vi.fn(async (_id: string, _pending: boolean) => true),
     };
     const collectionSource = new ConversationController({} as FoundationPort);
     const collections = new ProjectCollections({
@@ -1240,6 +1249,10 @@ describe("workspace chrome manuscript close guard", () => {
       await act(async () => requestClose?.(command));
       await settle();
     };
+    const lock = async (request: ManuscriptLockRequest) => {
+      await act(async () => requestLock?.(request));
+      await settle();
+    };
     const unload = () => {
       const event = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(event);
@@ -1253,6 +1266,7 @@ describe("workspace chrome manuscript close guard", () => {
       edit,
       dialog,
       close,
+      lock,
       unload,
       named,
       settle,
@@ -1423,6 +1437,233 @@ describe("workspace chrome manuscript close guard", () => {
     t.lifecycle.setManuscriptPending.mockResolvedValueOnce(false);
     await t.close("application.quit");
     expect(t.lifecycle.perform).toHaveBeenCalledOnce();
+    t.collectionSource.dispose();
+  });
+
+  it("locks the manuscript for a quit and confirms that nothing is pending, then unlocks it", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = () => container.querySelector<HTMLElement>("[role=textbox]")!;
+    expect(t.lifecycle.onManuscriptLock).toHaveBeenCalledOnce();
+    expect(t.lifecycle.confirmManuscriptLock).not.toHaveBeenCalled();
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(textbox().getAttribute("contenteditable")).toBe("false");
+    expect(t.named("Preview")!.disabled).toBe(true);
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([["lock-1", false]]);
+    await t.lock({ locked: false });
+    expect(textbox().getAttribute("contenteditable")).toBe("true");
+    expect(t.named("Preview")!.disabled).toBe(false);
+    expect(t.lifecycle.confirmManuscriptLock).toHaveBeenCalledOnce();
+    t.collectionSource.dispose();
+  });
+
+  it("confirms a lock with pending text and confirms each new lock again", async () => {
+    const t = await manuscriptChrome();
+    await t.edit();
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(t.named("Save")!.disabled).toBe(true);
+    expect(t.named("Discard changes")!.disabled).toBe(true);
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([["lock-1", true]]);
+    await t.lock({ locked: false });
+    expect(t.named("Save")!.disabled).toBe(false);
+    await act(async () => t.named("Discard changes")!.click());
+    await t.lock({ locked: true, id: "lock-2" });
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([
+      ["lock-1", true],
+      ["lock-2", false],
+    ]);
+    t.collectionSource.dispose();
+  });
+
+  it("counts a composition in progress as pending text when confirming a lock", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await t.lock({ locked: true, id: "lock-1" });
+    await t.lock({ locked: false });
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+    );
+    await t.lock({ locked: true, id: "lock-2" });
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([
+      ["lock-1", true],
+      ["lock-2", false],
+    ]);
+    t.collectionSource.dispose();
+  });
+
+  it("keeps the manuscript locked when confirming the lock is rejected", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    // An unhandled rejection would fail the Vitest run.
+    t.lifecycle.confirmManuscriptLock.mockImplementationOnce(async () => {
+      throw new Error("Command sender admission refused.");
+    });
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(t.lifecycle.confirmManuscriptLock).toHaveBeenCalledExactlyOnceWith("lock-1", false);
+    expect(container.querySelector("[role=textbox]")?.getAttribute("contenteditable")).toBe(
+      "false",
+    );
+    t.collectionSource.dispose();
+  });
+
+  it("still locks the manuscript when the bridge cannot confirm a lock", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const { confirmManuscriptLock } = t.lifecycle;
+    Reflect.deleteProperty(t.lifecycle, "confirmManuscriptLock");
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(container.querySelector("[role=textbox]")?.getAttribute("contenteditable")).toBe(
+      "false",
+    );
+    expect(confirmManuscriptLock).not.toHaveBeenCalled();
+    t.collectionSource.dispose();
+  });
+
+  it("ignores a composition outside the manuscript when confirming a lock and continuing a close", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    // A text field elsewhere in the window, such as a chat composer.
+    const composer = document.createElement("textarea");
+    container.append(composer);
+    await act(async () =>
+      composer.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([["lock-1", false]]);
+    await t.lock({ locked: false });
+    t.lifecycle.setManuscriptPending.mockClear();
+    await t.close("application.quit");
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false]]);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("application.quit");
+    composer.remove();
+    t.collectionSource.dispose();
+  });
+
+  it("ignores a composition in another field of the manuscript view, such as the heading filter", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const filter = document.createElement("input");
+    container.querySelector(".workspace-manuscript-view")!.append(filter);
+    await act(async () =>
+      filter.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await t.lock({ locked: true, id: "lock-1" });
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([["lock-1", false]]);
+    filter.remove();
+    t.collectionSource.dispose();
+  });
+
+  it("counts a manuscript composition that the lock itself ends as pending text", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    // Chromium may end the composition when the lock makes the editor read-only.
+    t.lifecycle.confirmManuscriptLock.mockImplementationOnce(async () => true);
+    await act(async () => {
+      t.lifecycle.onManuscriptLock.mock.calls.at(-1)![0]({ locked: true, id: "lock-ime" });
+      textbox.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+    await t.settle();
+    expect(t.lifecycle.confirmManuscriptLock.mock.calls).toEqual([["lock-ime", true]]);
+    t.collectionSource.dispose();
+  });
+
+  it("ends a manuscript composition when focus leaves the editor without a compositionend", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    t.lifecycle.setManuscriptPending.mockClear();
+    await t.close("application.quit");
+    await t.settle();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    // Focus moving within the editor keeps the composition.
+    await act(async () =>
+      textbox.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: textbox })),
+    );
+    await t.settle();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    await act(async () =>
+      textbox.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null })),
+    );
+    await t.settle();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false]]);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("application.quit");
+    t.collectionSource.dispose();
+  });
+
+  it("holds a quit requested during a manuscript composition and continues it once the composition ends with nothing pending", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    t.lifecycle.setManuscriptPending.mockClear();
+    await t.close("application.quit");
+    await t.settle();
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.setManuscriptPending).not.toHaveBeenCalled();
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+    );
+    await t.settle();
+    expect(t.dialog()).toBeNull();
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[false]]);
+    expect(t.lifecycle.perform).toHaveBeenCalledExactlyOnceWith("application.quit");
+    await t.settle();
+    expect(t.lifecycle.perform).toHaveBeenCalledOnce();
+    t.collectionSource.dispose();
+  });
+
+  it("asks about unsaved changes when a composition that held a quit records text", async () => {
+    const t = await manuscriptChrome();
+    await t.open();
+    await act(async () => t.named("Edit")!.click());
+    const textbox = container.querySelector<HTMLElement>("[role=textbox]")!;
+    await act(async () =>
+      textbox.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    t.lifecycle.setManuscriptPending.mockClear();
+    await t.close("application.quit");
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    // The composed text reaches the drafts as the composition finishes, in the same task.
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: {
+        types: ["text/plain"],
+        getData: (type: string) => (type === "text/plain" ? "Composed " : ""),
+      },
+    });
+    await act(async () => {
+      textbox.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+      textbox.dispatchEvent(paste);
+    });
+    await t.settle();
+    expect(t.dialog()?.querySelector("h2")?.textContent).toBe("Unsaved changes");
+    expect(t.lifecycle.setManuscriptPending.mock.calls).toEqual([[true]]);
+    expect(t.lifecycle.perform).not.toHaveBeenCalled();
+    expect(textbox.textContent).toContain("Composed ");
     t.collectionSource.dispose();
   });
 

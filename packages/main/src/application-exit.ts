@@ -9,6 +9,7 @@ import {
 /** Wait precedes broker shutdown. This controller owns no timer for the running replies. */
 export class ApplicationExit {
   private current: { generation: string; dialog: ExitDialogState; checking: boolean } | undefined;
+  private finished: { generation: string; operationId: string } | undefined;
   private deadline: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private readonly host: {
@@ -31,6 +32,7 @@ export class ApplicationExit {
       return;
     }
     const operationId = this.host.identity();
+    this.finished = undefined;
     this.current = {
       generation,
       checking: true,
@@ -117,7 +119,22 @@ export class ApplicationExit {
     this.clear();
     this.host.finish();
   }
+  /** A later step held the approved quit; let the service dispatch work again. */
+  resumeHeld(): void {
+    const finished = this.finished;
+    this.finished = undefined;
+    if (finished)
+      this.host.send({
+        kind: "application_exit",
+        generation: finished.generation,
+        operationId: finished.operationId,
+        action: "resume",
+      });
+  }
   private finish(): void {
+    const current = this.current;
+    if (current)
+      this.finished = { generation: current.generation, operationId: current.dialog.operationId };
     this.clear();
     this.host.finish();
   }
