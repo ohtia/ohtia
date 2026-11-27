@@ -3311,6 +3311,7 @@
     "tests/workspace-chrome.test.ts::workspace chrome composition > preserves mounted panels, scroll and focus across hide/reopen, focus mode and narrow reflow::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > preserves welcome focus, floors fractional widths and clears obsolete last-panel feedback::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > renders truthful first-run states, fixed Navigator, command names and real availability::case-0",
+    "tests/workspace-chrome.test.ts::workspace chrome composition > keeps only Settings with its shortcut hint in the explorer footer, with or without a project::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > retains rail control focus through registry reset without a mode change::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > retains visible focus when zoom, separators and sizing controls disappear::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome manuscript close guard > reports pending manuscript text and protects unload only while it is pending::case-0",

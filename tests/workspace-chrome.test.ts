@@ -13,6 +13,7 @@ import { ProjectCollections } from "../packages/renderer/src/project-controller.
 import { ConversationController } from "../packages/renderer/src/conversation-controller.js";
 import { LayoutPreferences } from "../packages/renderer/src/layout-preferences.js";
 import {
+  commandDefinitions,
   failure,
   message,
   type FoundationPort,
@@ -218,6 +219,42 @@ describe("workspace chrome composition", () => {
     await click("Open Settings");
     expect(settings).toHaveBeenCalledOnce();
     await act(async () => stop());
+  });
+  it("keeps only Settings with its shortcut hint in the explorer footer, with or without a project", async () => {
+    const { preferences } = store();
+    const footer = () => {
+      const node = container.querySelector(".workspace-explorer-footer")!;
+      return {
+        commands: [...node.querySelectorAll<HTMLButtonElement>("button")].map(
+          (control) => control.dataset.workspaceCommand,
+        ),
+        hints: [...node.querySelectorAll("kbd")].map((key) => key.textContent),
+      };
+    };
+    const hint = commandDefinitions.find((entry) => entry.id === "settings.open")!.shortcuts[
+      commands.context.platform
+    ][0];
+    await render(preferences);
+    expect(footer()).toEqual({ commands: ["settings.open"], hints: [hint] });
+    const date = "2026-11-27T10:00:00.000Z";
+    await render(preferences, {
+      projectScope: "019a8000-0000-7000-8000-000000000445",
+      project: {
+        id: "019a8000-0000-7000-8000-000000000445",
+        projectType: "thesis",
+        title: "Thesis",
+        documentLanguage: "en-US",
+        titleRevision: 1,
+        setupConfirmedAt: date,
+        isDevelopment: false,
+        createdAt: date,
+        updatedAt: date,
+        lastOpenedAt: date,
+      },
+    });
+    expect(container.textContent).not.toContain("No project open");
+    expect(footer()).toEqual({ commands: ["settings.open"], hints: [hint] });
+    expect(container.querySelector('[data-workspace-command="help.open"]')).toBeNull();
   });
   it("preserves mounted panels, scroll and focus across hide/reopen, focus mode and narrow reflow", async () => {
     const { preferences, saved } = store();

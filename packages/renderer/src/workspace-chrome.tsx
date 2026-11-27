@@ -218,9 +218,7 @@ export function ShortcutControl({
         {icon && <LucideGlyph name={icon} size={text ? 16 : 20} />}
         {text && <span>{displayText ?? visibleName}</span>}
         {marked && <ActivityBadges counts={activity} locale={locale} />}
-        {hint && shortcuts.length > 0 && (id === "settings.open" || id === "help.open") && (
-          <kbd>{shortcuts[0]}</kbd>
-        )}
+        {hint && shortcuts.length > 0 && id === "settings.open" && <kbd>{shortcuts[0]}</kbd>}
         {explanation && (
           <span className="primitive-announcement" id={reasonId}>
             {explanation}
@@ -1435,17 +1433,7 @@ export function WorkspaceChrome({
                   </div>
                 )}
                 {panel === "explorer" && (
-                  <footer className="workspace-explorer-footer">
-                    {settings(false)}
-                    <ShortcutControl
-                      id="help.open"
-                      commands={commands}
-                      locale={locale}
-                      icon="circle-question-mark"
-                      text
-                      hint
-                    />
-                  </footer>
+                  <footer className="workspace-explorer-footer">{settings(false)}</footer>
                 )}
                 {panel !== "chat" && sizingControls(panel)}
               </section>

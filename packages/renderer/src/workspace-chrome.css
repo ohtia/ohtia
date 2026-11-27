@@ -333,6 +333,30 @@
   inline-size: 100%;
   justify-content: start;
 }
+/* Settings is a quiet explorer row whose icon aligns with the rows above it in every state. */
+.workspace-explorer-footer .workspace-control {
+  min-block-size: var(--space-8);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--type-ui-body-small-size);
+  font-weight: var(--type-ui-body-small-weight);
+  line-height: var(--type-ui-body-small-height);
+  border-width: var(--space-0);
+  border-radius: var(--radius-small);
+}
+.workspace-explorer-footer .workspace-control:not([aria-disabled="true"]) {
+  color: var(--content-primary);
+  background: transparent;
+  cursor: pointer;
+}
+.workspace-explorer-footer .workspace-control:not([aria-disabled="true"]):hover {
+  color: var(--content-primary);
+  background: var(--surface-emphasis);
+}
+/* While a dialog or composition makes Settings unavailable, the row keeps its shape. */
+.workspace-explorer-footer .workspace-control[aria-disabled="true"] {
+  color: var(--content-disabled);
+  background: transparent;
+}
 .workspace kbd {
   font-family: var(--font-family-ui);
   font-size: var(--type-ui-caption-size);
@@ -512,7 +536,8 @@
   .foundation-titlebar .workspace-control,
   .workspace-sizing button,
   .workspace-tabs button,
-  .workspace-skip {
+  .workspace-skip,
+  .workspace-explorer-footer .workspace-control {
     min-inline-size: var(--component-target-coarse);
     min-block-size: var(--component-target-coarse);
   }
@@ -556,6 +581,9 @@
   }
   .workspace-explorer .workspace-panel-scroll {
     margin-inline: var(--space-0) var(--component-separator-guard-coarse);
+  }
+  .workspace-explorer-footer {
+    padding-inline: var(--space-2) var(--space-8);
   }
   .workspace-explorer .workspace-empty {
     padding-inline: var(--space-8) calc(var(--space-8) - var(--component-separator-guard-coarse));
