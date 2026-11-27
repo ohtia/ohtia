@@ -2697,7 +2697,7 @@ it("retains the original version and typed name through a rename conflict and an
   h.controller.dispose();
 });
 
-it("shows first-page and older-page problems with explicit retry and restores focus after paging", async () => {
+it("shows first-page and older-page problems with explicit retry, restores focus after paging and keeps a failed retry action in view", async () => {
   const latest = { ...summary, latestPrefix: "Latest" };
   const firstRows = Array.from({ length: 50 }, (_, index) => ({ ...latest, id: id(2000 - index) }));
   const next = { latestAt: latest.latestAt, id: firstRows[49]!.id };
@@ -2761,20 +2761,39 @@ it("shows first-page and older-page problems with explicit retry and restores fo
   expect(container.querySelector("[role=status]")?.textContent).toBe(
     "Loading older conversations…",
   );
-  await act(async () => loading.resolve(failure("storage_failed")));
-  expect(container.querySelector("[role=alert]")?.textContent).toContain(
-    "Ohtia couldn’t load older conversations.",
-  );
-  expect(container.querySelector(".chat-history-list")?.children).toHaveLength(50);
-  expect(document.activeElement).toBe(button());
-  const precedingRow = container.querySelector(".chat-history-list li:last-child button");
-  page.mockReturnValueOnce(ok({ items: [older], next: null, hasMore: false }));
-  await act(async () => {
-    button().focus();
-    button().click();
+  // The failure notice renders above the focused action, which is scrolled back into view.
+  const scrolled = vi.fn(function (this: Element) {
+    return this;
   });
-  expect(button()).toBeNull();
-  expect(document.activeElement).toBe(precedingRow);
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrolled,
+  });
+  try {
+    await act(async () => loading.resolve(failure("storage_failed")));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "Ohtia couldn’t load older conversations.",
+    );
+    expect(container.querySelector(".chat-history-list")?.children).toHaveLength(50);
+    expect(document.activeElement).toBe(button());
+    expect(scrolled).toHaveBeenCalledExactlyOnceWith({ block: "nearest" });
+    expect(scrolled.mock.contexts[0]).toBe(button());
+    scrolled.mockClear();
+    const precedingRow = container.querySelector(".chat-history-list li:last-child button");
+    page.mockReturnValueOnce(ok({ items: [older], next: null, hasMore: false }));
+    await act(async () => {
+      button().focus();
+      button().click();
+    });
+    expect(button()).toBeNull();
+    expect(document.activeElement).toBe(precedingRow);
+    // A successful page moves focus to the preceding row instead.
+    expect(scrolled).not.toHaveBeenCalled();
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  }
   expect(container.querySelector("[data-status=waiting]")?.textContent).toBe("Waiting");
   await act(async () => container.querySelector<HTMLButtonElement>(".chat-history-row")!.click());
   expect(select).toHaveBeenCalledWith(latest.id);
@@ -2783,6 +2802,66 @@ it("shows first-page and older-page problems with explicit retry and restores fo
     "Conversations are unavailable",
   );
   controller.dispose();
+});
+
+it("leaves focus and scrolling alone when focus moved away before an older page failed", async () => {
+  const latest = { ...summary, latestPrefix: "Latest" };
+  const firstRows = Array.from({ length: 50 }, (_, index) => ({ ...latest, id: id(3000 - index) }));
+  const next = { latestAt: latest.latestAt, id: firstRows[49]!.id };
+  const page = vi.fn<FoundationPort["listConversations"]>();
+  const controller = new ConversationHistoryController(
+    { listConversations: page } as unknown as FoundationPort,
+    vi.fn(),
+  );
+  function Fixture() {
+    const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
+    return h(ConversationHistory, {
+      controller,
+      state,
+      current: latest.id,
+      select: vi.fn(),
+      locale: "en-US",
+    });
+  }
+  page.mockReturnValueOnce(ok({ items: firstRows, next, hasMore: true }));
+  controller.show();
+  controller.scope(scope.projectId);
+  controller.connected();
+  await act(async () => root.render(h(Fixture)));
+  await act(async () => {
+    controller.show();
+    controller.reload();
+  });
+  const button = () => container.querySelector<HTMLButtonElement>(".chat-history-actions button")!;
+  expect(button().textContent).toBe("Load older conversations");
+  const elsewhere = document.createElement("input");
+  container.append(elsewhere);
+  const loading = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: loading.promise, cancel() {} });
+  const scrolled = vi.fn();
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrolled,
+  });
+  try {
+    await act(async () => {
+      button().focus();
+      button().click();
+    });
+    await act(async () => elsewhere.focus());
+    await act(async () => loading.resolve(failure("storage_failed")));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "Ohtia couldn’t load older conversations.",
+    );
+    expect(document.activeElement).toBe(elsewhere);
+    expect(scrolled).not.toHaveBeenCalled();
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    elsewhere.remove();
+    controller.dispose();
+  }
 });
 
 it("ignores an old project page and keeps rows inside the established history range after reconnecting", async () => {
