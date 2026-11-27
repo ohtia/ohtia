@@ -1,3 +1,4 @@
+import type { PendingWorkGuard } from "./pending-project-work.js";
 import { stagedCommand } from "./staged-command.js";
 import {
   defaultProviderConnections,
@@ -93,6 +94,18 @@ export class ComposerController {
       agent: ReplyAgent,
     ) => void,
   ) {}
+  /** A detach retains window-owned drafts and never sends unsent text. */
+  beforeProjectDetach: PendingWorkGuard = ({ projectId }) => {
+    const ownsScope = () => !this.disposed && this.scope.projectId === projectId;
+    const hasPendingSend = () => {
+      for (const [key, draft] of this.drafts)
+        if (key.startsWith(`${projectId}/`) && draft.state.saving) return true;
+      return false;
+    };
+    if (!ownsScope()) return { status: "keep_open" };
+    if (hasPendingSend()) return { status: "pending_confirmation" };
+    return { status: "safe_to_detach", isCurrent: () => ownsScope() && !hasPendingSend() };
+  };
   snapshot = (): ComposerState => this.draft.state;
   selectedAgent = (): ReplyAgent => this.draft.state.agentId;
   subscribe = (listener: () => void): (() => void) => {

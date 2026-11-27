@@ -14,6 +14,7 @@ import {
   openWorkspaceSettings,
   resetWorkspaceLayoutFromPalette,
 } from "../tooling/command-workspace.mjs";
+import { PendingProjectWork } from "../packages/renderer/src/pending-project-work.js";
 import { ApplicationRoot } from "../packages/renderer/src/application-root.js";
 import { harness, call, deferred } from "./fixtures/settings.js";
 import { createFoundationPort } from "../packages/preload/src/foundation-port.js";
@@ -1680,6 +1681,53 @@ it("browses scoped project collections through late reads, retry and pagination"
   expect(explorer.textContent).toContain("Conversations are unavailable");
   expect(explorer.textContent).not.toContain("Conversation 50");
   expect(button("Sources and documents").getAttribute("aria-expanded")).toBe("true");
+});
+
+it("guards the real composer across a failed send and A to B to A", async () => {
+  const register = vi.spyOn(PendingProjectWork.prototype, "register");
+  const t = raceFixture();
+  const failedAppend = deferred<Outcome<{ resultId: string }>>();
+  const appendMessage = vi.fn(() => ({ result: failedAppend.promise, cancel() {} }));
+  Object.assign(t.port, { appendMessage });
+
+  const currentRegistration = () => ({
+    registry: register.mock.contexts.at(-1) as PendingProjectWork,
+    lease: register.mock.calls.at(-1)![0],
+  });
+  const evaluate = () => {
+    const { registry, lease } = currentRegistration();
+    return registry.evaluate(lease);
+  };
+
+  await mount(t);
+  const origin = currentRegistration();
+  expect(origin.lease.projectId).toBe(t.ids[0]);
+  expect(await evaluate()).toMatchObject({ status: "safe_to_detach" });
+  const draft = "Retained after a failed send";
+  const input = container.querySelector("textarea")!;
+  await act(async () => {
+    const value = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    value.call(input, draft);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const approved = await evaluate();
+  if (approved.status !== "safe_to_detach") throw new Error("Expected unsent text to be retained.");
+  expect(approved.isCurrent()).toBe(true);
+  expect(appendMessage).not.toHaveBeenCalled();
+  await click(`.workspace-chat button[aria-label="${message("en-US", "composer.send")}"]`);
+  expect(appendMessage).toHaveBeenCalledOnce();
+  expect(approved.isCurrent()).toBe(false);
+  expect(await evaluate()).toEqual({ status: "pending_confirmation" });
+
+  await selectRaceProject(1);
+  expect(await evaluate()).toMatchObject({ status: "safe_to_detach" });
+  await selectRaceProject(0);
+  expect(origin.lease.isCurrent()).toBe(false);
+  expect(await origin.registry.evaluate(origin.lease)).toEqual({ status: "keep_open" });
+  expect(await evaluate()).toEqual({ status: "pending_confirmation" });
+  await act(async () => failedAppend.resolve(failure("storage_failed")));
+  expect(container.querySelector("textarea")?.value).toBe(draft);
+  expect(await evaluate()).toMatchObject({ status: "safe_to_detach" });
 });
 
 it("opens history in the chat panel, restores its draft, and reveals a lazy conversation from the registry", async () => {

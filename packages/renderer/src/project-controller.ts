@@ -11,6 +11,7 @@ import {
 } from "@ohtia/contracts";
 import type { ConversationController } from "./conversation-controller.js";
 import type { HistoryState } from "./conversation-history-controller.js";
+import { PendingProjectWork, type ProjectSelectionLease } from "./pending-project-work.js";
 
 interface ProjectCollectionsSnapshot {
   readonly scope: ResearchScope;
@@ -166,6 +167,8 @@ export class ProjectController {
   private renameRefreshing = false;
   private listEpoch = 0;
   private selectionEpoch = 0;
+  private selectedProjectId: string | null = null;
+  private lease: ProjectSelectionLease | undefined;
   private restoreEpoch: number | undefined;
   private readonly knownProjects = new Map<string, ProjectRecord>();
   private disposed = false;
@@ -191,6 +194,19 @@ export class ProjectController {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+  selectionLease = (): ProjectSelectionLease | undefined => {
+    if (this.disposed || !this.selectedProjectId) return;
+    if (!this.lease) {
+      const epoch = this.selectionEpoch;
+      this.lease = Object.freeze({
+        projectId: this.selectedProjectId,
+        isCurrent: () => !this.disposed && this.selectionEpoch === epoch,
+      });
+    }
+    return this.lease;
+  };
+  private readonly work = new PendingProjectWork(this.selectionLease);
+  readonly pendingWork: Pick<PendingProjectWork, "register" | "evaluate"> = this.work;
   private update(patch: Partial<ProjectState>): void {
     if (this.disposed) return;
     this.state = { ...this.state, ...patch };
@@ -291,6 +307,8 @@ export class ProjectController {
     this.pendingTitleRefresh = undefined;
     this.renameRefreshing = false;
     const epoch = ++this.selectionEpoch;
+    this.lease = undefined;
+    this.work.revokeSelection();
     this.update({ rename: null, renameRefreshFailed: false });
     return epoch;
   }
@@ -436,6 +454,7 @@ export class ProjectController {
       return false;
     }
     const refresh = this.hasListed;
+    this.selectedProjectId = scope.projectId;
     this.advanceSelection();
     this.restoreEpoch = undefined;
     ++this.listEpoch;
@@ -538,6 +557,7 @@ export class ProjectController {
         conversationId = page.value.items[0]?.id ?? null;
       }
       if (this.isDisposed() || epoch !== this.selectionEpoch) return;
+      this.selectedProjectId = projectId;
       this.advanceSelection();
       this.renameProject = undefined;
       this.remember({ projectId, conversationId });
@@ -552,6 +572,8 @@ export class ProjectController {
     this.disposed = true;
     this.listEpoch++;
     this.selectionEpoch++;
+    this.lease = undefined;
+    this.work.revokeSelection();
     this.listeners.clear();
   }
 }
