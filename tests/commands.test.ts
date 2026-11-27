@@ -16,6 +16,9 @@ import {
   isCommandContext,
   isCommandResult,
   isWindowCommandResult,
+  isManuscriptLockReply,
+  isManuscriptLockRequest,
+  portLimits,
   isCommandIntent,
   isCommandSnapshot,
   isWindowCommandRequest,
@@ -191,6 +194,59 @@ describe("closed command boundary decoding", () => {
     expect(toString).not.toHaveBeenCalled();
     expect(isCommandResult({ status: "failed" })).toBe(true);
     expect(isWindowCommandResult({ status: "completed", menuDismissed: false })).toBe(true);
+  });
+  it("accepts only exact manuscript lock requests and replies with valid identifiers", () => {
+    const longest = "a".repeat(portLimits.identifier_bytes);
+    const tooLong = "a".repeat(portLimits.identifier_bytes + 1);
+    for (const value of [
+      { locked: true, id: "lock-1" },
+      { locked: true, id: longest },
+      { locked: false },
+    ])
+      expect(isManuscriptLockRequest(value)).toBe(true);
+    for (const value of [
+      { locked: true },
+      { locked: true, id: tooLong },
+      { locked: true, id: "-lock" },
+      { locked: true, id: "lock 1" },
+      { locked: true, id: 1 },
+      { locked: true, id: "lock-1", pending: false },
+      { locked: false, id: "lock-1" },
+      { locked: false, extra: true },
+      { locked: "true", id: "lock-1" },
+      { locked: 1, id: "lock-1" },
+      { id: "lock-1" },
+      {},
+      [true, "lock-1"],
+      "lock-1",
+      true,
+      null,
+      undefined,
+    ])
+      expect(isManuscriptLockRequest(value)).toBe(false);
+    for (const value of [
+      { id: "lock-1", pending: false },
+      { id: "lock-1", pending: true },
+      { id: longest, pending: true },
+    ])
+      expect(isManuscriptLockReply(value)).toBe(true);
+    for (const value of [
+      { id: "lock-1" },
+      { pending: false },
+      { id: "lock-1", pending: false, locked: true },
+      { id: "lock-1", pending: "false" },
+      { id: "lock-1", pending: 0 },
+      { id: "lock-1", pending: null },
+      { id: tooLong, pending: false },
+      { id: "_lock", pending: false },
+      { id: "lock/1", pending: false },
+      { id: 1, pending: false },
+      ["lock-1", false],
+      "lock-1",
+      null,
+      undefined,
+    ])
+      expect(isManuscriptLockReply(value)).toBe(false);
   });
   it("requires the activating input with every application-menu anchor and nowhere else", () => {
     const menu = { intent: intent("menu.open"), anchor: { x: 8, y: 48 } };

@@ -1036,6 +1036,168 @@ describe("manuscript editing across modes", () => {
   });
 });
 
+describe("manuscript edit lock", () => {
+  async function pasteText(text: string) {
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: {
+        types: ["text/plain"],
+        getData: (type: string) => (type === "text/plain" ? text : ""),
+      },
+    });
+    await act(async () => textbox()!.dispatchEvent(paste));
+    return paste;
+  }
+
+  it("while locked disables the mode toggle, Save and Discard and makes the editor read-only until unlocked", async () => {
+    const { foundation, port } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await pasteText("Pending ");
+    expect(footerStatus().textContent).toBe("Unsaved changes");
+    const pending = drafts.get(draftId)!.document;
+
+    await view(foundation, { locked: true });
+    expect(modeButton().textContent).toBe("Preview");
+    expect(modeButton().disabled).toBe(true);
+    expect(button("Save")?.disabled).toBe(true);
+    expect(button("Discard changes")?.disabled).toBe(true);
+    expect(textbox()?.getAttribute("contenteditable")).toBe("false");
+    const refused = await pasteText("Late ");
+    expect(refused.defaultPrevented).toBe(false);
+    expect(drafts.get(draftId)!.document).toBe(pending);
+    await act(async () => button("Save")!.click());
+    await settle();
+    expect(port.saveManuscript).not.toHaveBeenCalled();
+    expect(drafts.pending).toBe(true);
+
+    await view(foundation, { locked: false });
+    expect(modeButton().disabled).toBe(false);
+    expect(button("Save")?.disabled).toBe(false);
+    expect(button("Discard changes")?.disabled).toBe(false);
+    expect(textbox()?.getAttribute("contenteditable")).toBe("true");
+    await pasteText("More ");
+    expect(drafts.get(draftId)!.document).not.toEqual(pending);
+    expect(textbox()?.textContent).toContain("More ");
+    await press("Save");
+    expect(port.saveManuscript).toHaveBeenCalledOnce();
+    expect(drafts.pending).toBe(false);
+  });
+
+  it("disables the Edit toggle in Preview while locked", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation, { locked: true });
+    expect(modeButton().textContent).toBe("Edit");
+    expect(modeButton().disabled).toBe(true);
+    await act(async () => modeButton().click());
+    expect(textbox()).toBeNull();
+    expect(article().hidden).toBe(false);
+  });
+
+  it("mounts the editor read-only when it first appears while locked", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation, { visible: false });
+    await press("Edit");
+    expect(textbox()).toBeNull();
+    await view(foundation, { visible: true, locked: true });
+    expect(textbox()?.getAttribute("contenteditable")).toBe("false");
+    await pasteText("Late ");
+    expect(drafts.pending).toBe(false);
+    await view(foundation, { visible: true, locked: false });
+    expect(textbox()?.getAttribute("contenteditable")).toBe("true");
+    await pasteText("Now ");
+    expect(drafts.pending).toBe(true);
+  });
+
+  // Chromium moves focus off a control the lock disables at its next rendering update; jsdom never
+  // does and cannot blur a disabled control, so the tests apply that focus fixup after locking.
+  const dropFocus = async () => {
+    await act(async () => {
+      const element = document.activeElement as (HTMLElement & { disabled?: boolean }) | null;
+      if (!element) return;
+      const disabled = element.disabled === true;
+      if (disabled) element.disabled = false;
+      element.blur();
+      if (disabled) element.disabled = true;
+    });
+    expect(document.activeElement).toBe(document.body);
+  };
+
+  it("returns focus to the mode toggle after a lock is released", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await act(async () => modeButton().focus());
+    expect(document.activeElement).toBe(modeButton());
+    await view(foundation, { locked: true });
+    expect(modeButton().disabled).toBe(true);
+    await dropFocus();
+    await view(foundation, { locked: false });
+    expect(modeButton().textContent).toBe("Preview");
+    expect(document.activeElement).toBe(modeButton());
+  });
+
+  it("returns focus to Save after a lock is released", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await pasteText("Pending ");
+    await act(async () => button("Save")!.focus());
+    expect(document.activeElement).toBe(button("Save"));
+    await view(foundation, { locked: true });
+    expect(button("Save")!.disabled).toBe(true);
+    await dropFocus();
+    await view(foundation, { locked: false });
+    expect(document.activeElement).toBe(button("Save"));
+  });
+
+  it("returns focus to the editor after a lock is released when the editor had it", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await act(async () => textbox()!.focus());
+    expect(document.activeElement).toBe(textbox());
+    await view(foundation, { locked: true });
+    await dropFocus();
+    await view(foundation, { locked: false });
+    expect(document.activeElement).toBe(textbox());
+  });
+
+  it("does not return focus that had already left the view when the lock began", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await act(async () => modeButton().focus());
+    await dropFocus();
+    await view(foundation, { locked: true });
+    await view(foundation, { locked: false });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves focus where the researcher moved it during a lock", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await view(foundation, { locked: true });
+    const elsewhere = document.createElement("input");
+    document.body.append(elsewhere);
+    await act(async () => elsewhere.focus());
+    await view(foundation, { locked: false });
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("does not move focus when a lock is applied or when an unlocked view rerenders", async () => {
+    const { foundation } = manuscriptPort();
+    await view(foundation);
+    await press("Edit");
+    await dropFocus();
+    await view(foundation, { locked: false });
+    expect(document.activeElement).toBe(document.body);
+    await view(foundation, { locked: true });
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
 describe("manuscript drafts", () => {
   it("tracks pending work per draft and refuses discarding a held save request", () => {
     const store = new ManuscriptDrafts();

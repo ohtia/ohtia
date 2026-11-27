@@ -602,6 +602,29 @@ describe("manuscript editor", () => {
     }
   });
 
+  it("ignores typing, paste and Enter while locked and resumes with its selection and undo history", () => {
+    const view = mount(manuscript([paragraph(firstId, line("Hello"))]));
+    caretAtEnd(firstId);
+    paste({ "text/plain": " world" });
+    expect(texts(latest())).toEqual(["Hello world"]);
+    const reported = changes.length;
+    view.setEditable(false);
+    expect(surface().getAttribute("contenteditable")).toBe("false");
+    expect(paste({ "text/plain": "X" }).defaultPrevented).toBe(false);
+    expect(key("Enter").defaultPrevented).toBe(false);
+    expect(key("a").defaultPrevented).toBe(false);
+    expect(undoKey().defaultPrevented).toBe(false);
+    expect(changes).toHaveLength(reported);
+    expect(block(firstId).textContent).toBe("Hello world");
+    view.setEditable(true);
+    expect(surface().getAttribute("contenteditable")).toBe("true");
+    paste({ "text/plain": "!" });
+    expect(texts(latest())).toEqual(["Hello world!"]);
+    // The edit made before the lock and the one after it share an undo step.
+    expect(undoKey().defaultPrevented).toBe(true);
+    expect(texts(latest())).toEqual(["Hello"]);
+  });
+
   it("removes the editor when destroyed", () => {
     const view = mount(manuscript([paragraph(firstId)]));
     view.destroy();

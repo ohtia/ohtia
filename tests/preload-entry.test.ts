@@ -2081,3 +2081,136 @@ it("delivers only fixed manuscript close commands and bounds and releases their 
   disposers[0]!();
   expect(() => onClose(vi.fn())).not.toThrow();
 });
+
+it("hands the active manuscript lock to a surface that subscribes after it arrived until it is released", async () => {
+  const h = await load();
+  const channel = desktopChannels.manuscriptLock;
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  const onLock = h.bridge.commands.onManuscriptLock!;
+  // The lock arrives before the workspace mounts and is confirmed with nothing pending.
+  h.ipcRenderer.emit(channel, {}, { locked: true, id: "lock-early" });
+  const late = vi.fn();
+  onLock(late);
+  expect(late).not.toHaveBeenCalled();
+  await Promise.resolve();
+  expect(late).toHaveBeenCalledExactlyOnceWith({ locked: true, id: "lock-early" });
+  // A surface disposed before delivery, or one subscribing after the release, receives nothing.
+  const disposed = vi.fn();
+  onLock(disposed)();
+  await Promise.resolve();
+  expect(disposed).not.toHaveBeenCalled();
+  const superseded = vi.fn();
+  onLock(superseded);
+  h.ipcRenderer.emit(channel, {}, { locked: false });
+  await Promise.resolve();
+  expect(superseded).toHaveBeenCalledExactlyOnceWith({ locked: false });
+  const afterRelease = vi.fn();
+  onLock(afterRelease);
+  await Promise.resolve();
+  expect(afterRelease).not.toHaveBeenCalled();
+  // A surface that throws on the handed-over lock is removed.
+  h.ipcRenderer.emit(channel, {}, { locked: true, id: "lock-again" });
+  const failing = vi.fn(() => {
+    throw new Error("Synthetic listener failure");
+  });
+  onLock(failing);
+  await Promise.resolve();
+  expect(failing).toHaveBeenCalledOnce();
+  h.ipcRenderer.emit(channel, {}, { locked: false });
+  expect(failing).toHaveBeenCalledOnce();
+});
+
+it("confirms a manuscript lock at once without a listener and delivers only valid lock requests to listeners", async () => {
+  const h = await load();
+  const channel = desktopChannels.manuscriptLock;
+  h.ipcRenderer.invoke.mockClear();
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  h.ipcRenderer.emit(channel, {}, { locked: true, id: "lock-1" });
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledOnce();
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_locked",
+    { id: "lock-1", pending: false },
+  );
+  h.ipcRenderer.emit(channel, {}, { locked: false });
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledOnce();
+  h.ipcRenderer.invoke.mockRejectedValueOnce(new Error("Synthetic lost reply") as never);
+  h.ipcRenderer.emit(channel, {}, { locked: true, id: "lock-2" });
+  await Promise.resolve();
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(2);
+  const onLock = h.bridge.commands.onManuscriptLock!;
+  const listener = vi.fn();
+  const failing = vi.fn(() => {
+    throw new Error("Synthetic listener failure");
+  });
+  const off = onLock(listener);
+  onLock(failing);
+  h.ipcRenderer.invoke.mockClear();
+  for (const invalid of [
+    { locked: true },
+    { locked: true, id: "-invalid" },
+    { locked: true, id: "lock-3", pending: false },
+    { locked: false, id: "lock-3" },
+    { locked: "true", id: "lock-3" },
+    ["locked"],
+    null,
+    undefined,
+  ])
+    h.ipcRenderer.emit(channel, {}, invalid);
+  expect(listener).not.toHaveBeenCalled();
+  expect(failing).not.toHaveBeenCalled();
+  h.ipcRenderer.emit(channel, { sender: "native" }, { locked: true, id: "lock-3" });
+  expect(listener).toHaveBeenLastCalledWith({ locked: true, id: "lock-3" });
+  expect(listener.mock.calls[0]).toHaveLength(1);
+  expect(failing).toHaveBeenCalledOnce();
+  h.ipcRenderer.emit(channel, {}, { locked: false });
+  expect(listener).toHaveBeenLastCalledWith({ locked: false });
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(failing).toHaveBeenCalledOnce();
+  expect(h.ipcRenderer.invoke).not.toHaveBeenCalled();
+  off();
+  h.ipcRenderer.emit(channel, {}, { locked: true, id: "lock-4" });
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_locked",
+    { id: "lock-4", pending: false },
+  );
+  const disposers = Array.from({ length: portLimits.subscriptions_per_window }, () =>
+    onLock(vi.fn()),
+  );
+  expect(() => onLock(vi.fn())).toThrow("Manuscript lock listener limit reached.");
+  disposers[0]!();
+  expect(() => onLock(vi.fn())).not.toThrow();
+});
+
+it("forwards only well-typed manuscript lock confirmations on the command channel", async () => {
+  const h = await load();
+  const confirm = h.bridge.commands.confirmManuscriptLock!;
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  expect(await confirm("lock-1", true)).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_locked",
+    { id: "lock-1", pending: true },
+  );
+  h.ipcRenderer.invoke.mockResolvedValue(false as never);
+  expect(await confirm("lock-1", false)).toBe(false);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_locked",
+    { id: "lock-1", pending: false },
+  );
+  h.ipcRenderer.invoke.mockResolvedValue("yes" as never);
+  expect(await confirm("lock-1", true)).toBe(false);
+  h.ipcRenderer.invoke.mockClear();
+  for (const [id, pending] of [
+    [1, true],
+    [null, false],
+    ["lock-1", "true"],
+    ["lock-1", 0],
+    ["lock-1", undefined],
+  ])
+    expect(await confirm(id as never, pending as never)).toBe(false);
+  expect(h.ipcRenderer.invoke).not.toHaveBeenCalled();
+});

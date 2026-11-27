@@ -438,6 +438,37 @@ try {
     await close.getByRole("button", { name: "Keep open" }).click();
     await expect(editor.locator("h2")).toHaveCount(3);
 
+    // Before an ordinary quit stops services, main locks manuscript editing and later releases it.
+    const lock = (request) =>
+      native.evaluate(
+        (window, [channel, payload]) => {
+          window.webContents.send(channel, payload);
+        },
+        [desktopChannels.manuscriptLock, request],
+      );
+    const saveButton = toolbar.getByRole("button", { name: "Save", exact: true });
+    const modeButton = toolbar.getByRole("button", { name: "Preview", exact: true });
+    const lockedText = await editor.textContent();
+    await editor.focus();
+    await lock({ locked: true, id: "acceptance-lock" });
+    await expect(editor).toHaveAttribute("contenteditable", "false");
+    await expect(saveButton).toBeDisabled();
+    await expect(modeButton).toBeDisabled();
+    await editor.click();
+    await page.keyboard.insertText("Late text");
+    await page.keyboard.press("Enter");
+    expect(await editor.textContent()).toBe(lockedText);
+    await page.locator("body").evaluate(() => {
+      document.activeElement?.blur?.();
+    });
+    await lock({ locked: false });
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    // Focus returns to the editor the lock took it from.
+    await expect(editor).toBeFocused();
+    await expect(saveButton).toBeEnabled();
+    await expect(modeButton).toBeEnabled();
+    expect(await editor.textContent()).toBe(lockedText);
+
     await row("Resultados").click();
     await expect(editor).toBeFocused();
     await toolbar.getByRole("button", { name: "Preview", exact: true }).click();

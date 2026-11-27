@@ -78,6 +78,7 @@ import {
   type SystemMotionNotice,
   isNativeCommand,
   isExitChoice,
+  isManuscriptLockReply,
   isIdentifier,
   type ExitDialogState,
   isWindowCommandRequest,
@@ -242,6 +243,9 @@ const windows = new Map<
     workspace: boolean;
     boundsSaved: boolean;
     manuscriptPending?: boolean;
+    /** The document attached at least once; a lost renderer can no longer answer a manuscript lock. */
+    documentAttached?: boolean;
+    rendererLost?: boolean;
     presentable: boolean;
     documentPrepared: boolean;
     frameReady: boolean;
@@ -378,6 +382,91 @@ const isQuitting = () => quitting;
 let cleanExit = false;
 let exitApproved = false;
 let systemShutdown = false;
+/** Windows answer a manuscript lock within this time before an ordinary quit stops services. */
+const manuscriptLockMs = 2000;
+interface ManuscriptLockRound {
+  readonly id: string;
+  readonly targets: Set<BrowserWindow>;
+  readonly waiting: Set<BrowserWindow>;
+  readonly pending: BrowserWindow[];
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+let manuscriptLock: ManuscriptLockRound | undefined;
+function releaseManuscripts(): void {
+  for (const [window, state] of windows)
+    if (state.workspace && !window.isDestroyed())
+      window.webContents.send(desktopChannels.manuscriptLock, { locked: false });
+}
+function finishManuscriptLock(round: ManuscriptLockRound, timedOut: boolean): void {
+  for (const window of round.waiting) if (window.isDestroyed()) round.waiting.delete(window);
+  if (!timedOut && round.waiting.size > 0) return;
+  clearTimeout(round.timer);
+  manuscriptLock = undefined;
+  // A quit already under way keeps its lock; operating-system shutdown no longer waits for manuscripts.
+  if (quitting) return;
+  if (systemShutdown) {
+    releaseManuscripts();
+    return;
+  }
+  // A window that reported text or never answered keeps the quit from stopping services.
+  const held = [...round.pending, ...round.waiting].find((window) => !window.isDestroyed());
+  if (!held) {
+    stopForQuit();
+    return;
+  }
+  releaseManuscripts();
+  exitApproved = false;
+  applicationExit.resumeHeld();
+  if (round.pending.includes(held)) {
+    const state = windows.get(held);
+    if (state) state.manuscriptPending = true;
+  }
+  held.webContents.send(desktopChannels.manuscriptClose, "application.quit");
+  presentWindow(held, true);
+}
+/** A document that attaches while a lock round runs is locked and awaited like the others. */
+function joinManuscriptLock(window: BrowserWindow, state: { workspace: boolean }): void {
+  const round = manuscriptLock;
+  if (!round || !state.workspace || round.targets.has(window)) return;
+  round.targets.add(window);
+  round.waiting.add(window);
+  window.webContents.send(desktopChannels.manuscriptLock, { locked: true, id: round.id });
+}
+function forgetManuscriptLock(window: BrowserWindow): void {
+  const round = manuscriptLock;
+  if (!round) return;
+  // Its earlier reply, pending or not, no longer describes a live document.
+  const pending = round.pending.indexOf(window);
+  if (pending >= 0) round.pending.splice(pending, 1);
+  // A new document in the same window joins the round again when it attaches.
+  round.targets.delete(window);
+  if (round.waiting.delete(window) || pending >= 0) finishManuscriptLock(round, false);
+}
+function lockManuscripts(): void {
+  if (manuscriptLock) return;
+  const id = randomUUID();
+  const targets = [...windows]
+    // A window whose document attached can hold manuscript text even while detached by a failed stop.
+    .filter(
+      ([window, state]) =>
+        state.workspace && state.documentAttached && !state.rendererLost && !window.isDestroyed(),
+    )
+    .map(([window]) => window);
+  const round: ManuscriptLockRound = {
+    id,
+    targets: new Set(targets),
+    waiting: new Set(targets),
+    pending: [],
+    // The timer is cleared when the round finishes, so it only fires for the current round.
+    timer: setTimeout(() => {
+      finishManuscriptLock(round, true);
+    }, manuscriptLockMs),
+  };
+  manuscriptLock = round;
+  for (const window of targets)
+    window.webContents.send(desktopChannels.manuscriptLock, { locked: true, id });
+  finishManuscriptLock(round, false);
+}
 let exitWindow: BrowserWindow | undefined;
 let lastFocusedWindow: BrowserWindow | undefined;
 let presentedExitOperation: string | undefined;
@@ -535,7 +624,9 @@ function attach(window: BrowserWindow) {
   });
   if (!permit.ok) return false;
   state.frame = frame;
+  state.documentAttached = true;
   state.detach = permit.value;
+  joinManuscriptLock(window, state);
   return state;
 }
 function detach(window: BrowserWindow): void {
@@ -555,7 +646,8 @@ async function createWindow(
   focused?: BrowserWindow,
   admitted: () => boolean = () => true,
 ): Promise<CommandResult> {
-  if (quitting || !admitted()) return { status: "revoked" };
+  // A window opened during a manuscript lock would escape it; the quit is already deciding.
+  if (quitting || manuscriptLock || !admitted()) return { status: "revoked" };
   if (windows.size + pendingWindows >= portLimits.windows)
     return { status: "unavailable", reason: "window_limit" };
   pendingWindows++;
@@ -593,7 +685,8 @@ function constructWindow(
   placement: ReturnType<typeof windowPlacement>,
   workspace: boolean,
 ): CommandResult {
-  if (quitting) return { status: "revoked" };
+  // A window built during a manuscript lock would escape it, even if its creation began earlier.
+  if (quitting || manuscriptLock) return { status: "revoked" };
   if (windows.size >= portLimits.windows) return { status: "unavailable", reason: "window_limit" };
   if (
     app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >=
@@ -647,6 +740,7 @@ function constructWindow(
   });
   window.webContents.on("did-start-navigation", (_event, url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) {
+      forgetManuscriptLock(window);
       detach(window);
       const state = windows.get(window);
       if (state && url === desktopDocument) state.generation = randomUUID();
@@ -654,7 +748,12 @@ function constructWindow(
   });
   window.webContents.on("render-process-gone", () => {
     const current = windows.get(window);
-    if (current) current.manuscriptPending = false;
+    if (current) {
+      current.manuscriptPending = false;
+      current.rendererLost = true;
+    }
+    // A lost renderer can neither answer the lock nor keep text; stop waiting for it.
+    forgetManuscriptLock(window);
     detach(window);
   });
   window.webContents.on("will-prevent-unload", (event) => {
@@ -687,6 +786,7 @@ function constructWindow(
   window.on("closed", () => {
     detach(window);
     windows.delete(window);
+    if (manuscriptLock) finishManuscriptLock(manuscriptLock, false);
     if (exitWindow === window) {
       exitWindow = undefined;
       presentedExitOperation = undefined;
@@ -1410,6 +1510,13 @@ async function start(): Promise<void> {
   ipcMain.handle(desktopChannels.commands, async (event, action: unknown, payload: unknown) => {
     const window = trusted(event);
     if (!window) throw new Error("Command sender admission refused.");
+    if (action === "manuscript_locked" && isManuscriptLockReply(payload)) {
+      const round = manuscriptLock;
+      if (!round || round.id !== payload.id || !round.waiting.delete(window)) return false;
+      if (payload.pending) round.pending.push(window);
+      finishManuscriptLock(round, false);
+      return true;
+    }
     if (action === "manuscript_pending" && typeof payload === "boolean") {
       const state = windows.get(window);
       if (state) state.manuscriptPending = payload;
@@ -1851,6 +1958,14 @@ app.on("before-quit", (event) => {
     }
     return;
   }
+  if (!systemShutdown) {
+    // Stop manuscript editing and collect late text before services stop.
+    lockManuscripts();
+    return;
+  }
+  stopForQuit();
+});
+function stopForQuit(): void {
   for (const window of windows.keys()) saveWindowBounds(window);
   quitting = true;
   clearTimeout(startup);
@@ -1873,6 +1988,7 @@ app.on("before-quit", (event) => {
       }
       quitting = false;
       exitApproved = false;
+      releaseManuscripts();
       for (const [window, state] of windows) {
         state.boundsSaved = false;
         presentWindow(window);
@@ -1893,6 +2009,7 @@ app.on("before-quit", (event) => {
       }
       quitting = false;
       exitApproved = false;
+      releaseManuscripts();
       for (const [window, state] of windows) {
         state.boundsSaved = false;
         presentWindow(window);
@@ -1910,7 +2027,7 @@ app.on("before-quit", (event) => {
     clearTimeout(startup);
     app.quit();
   })();
-});
+}
 app.on("window-all-closed", () => {
   app.quit();
 });

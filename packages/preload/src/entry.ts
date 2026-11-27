@@ -11,6 +11,8 @@ import {
   decodeBootstrapSnapshot,
   isExitChoice,
   isExitDialogState,
+  isManuscriptLockRequest,
+  type ManuscriptLockRequest,
   type ExitDialogState,
   decodeSystemMotionNotice,
   decodeUpdateStateNotice,
@@ -303,6 +305,27 @@ ipcRenderer.on(desktopChannels.manuscriptClose, (_event, command: unknown) => {
     }
   }
 });
+const manuscriptLockListeners = new Set<
+  NonNullable<Parameters<NonNullable<DesktopBridge["commands"]["onManuscriptLock"]>>[0]>
+>();
+// The active lock reaches a manuscript surface that subscribes after the request arrived.
+let activeManuscriptLock: ManuscriptLockRequest | undefined;
+ipcRenderer.on(desktopChannels.manuscriptLock, (_event, request: unknown) => {
+  if (!isManuscriptLockRequest(request)) return;
+  activeManuscriptLock = request.locked ? request : undefined;
+  // A window without a manuscript surface holds no manuscript text and confirms at once.
+  if (request.locked && manuscriptLockListeners.size === 0) {
+    void commandBoolean("manuscript_locked", { id: request.id, pending: false }).catch(() => {});
+    return;
+  }
+  for (const listener of manuscriptLockListeners) {
+    try {
+      listener(request);
+    } catch {
+      manuscriptLockListeners.delete(listener);
+    }
+  }
+});
 const bridge: DesktopBridge = {
   commands: {
     setManuscriptPending: (pending) =>
@@ -317,6 +340,28 @@ const bridge: DesktopBridge = {
         manuscriptCloseListeners.delete(listener);
       };
     },
+    onManuscriptLock(listener) {
+      if (manuscriptLockListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("Manuscript lock listener limit reached.");
+      manuscriptLockListeners.add(listener);
+      const active = activeManuscriptLock;
+      if (active)
+        queueMicrotask(() => {
+          if (!manuscriptLockListeners.has(listener) || activeManuscriptLock !== active) return;
+          try {
+            listener(active);
+          } catch {
+            manuscriptLockListeners.delete(listener);
+          }
+        });
+      return () => {
+        manuscriptLockListeners.delete(listener);
+      };
+    },
+    confirmManuscriptLock: (id, pending) =>
+      typeof id === "string" && typeof pending === "boolean"
+        ? commandBoolean("manuscript_locked", { id, pending })
+        : Promise.resolve(false),
     async readExitState() {
       const value: unknown = await ipcRenderer.invoke(
         desktopChannels.commands,
