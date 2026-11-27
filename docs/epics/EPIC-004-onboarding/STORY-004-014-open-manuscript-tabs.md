@@ -1,8 +1,9 @@
 ---
 type: Story
-title: "STORY-004-014 — Open project manuscripts in tabs"
-description: "Read the scoped current manuscript in a unique, keyboard-operated workspace tab."
-generated: { by: codex/gpt-6.2-sol }
+title: "STORY-004-014 — Open the project manuscript in the workspace"
+description: "Open the continuous manuscript in its own tab and navigate its headings from the explorer or toolbar."
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:app"]
@@ -14,29 +15,29 @@ components: ["comp:app"]
 applicable_blocks: ["SPEC-004-004", "SPEC-004-021"]
 ---
 
-# STORY-004-014 — Open project manuscripts in tabs
+# STORY-004-014 — Open the project manuscript in the workspace
 
 ## Description
 
-Read the scoped current manuscript in a unique, keyboard-operated workspace tab.
+Open the continuous manuscript in its own tab and navigate its headings from the explorer or toolbar.
 
 ## Applicable specification
 
 - [SPEC-004-004: Writing and attention boundaries](./epic.md#spec-004-004-writing-and-attention-boundaries)
-- [SPEC-004-021: Open project manuscripts in workspace tabs](./epic.md#spec-004-021-open-project-manuscripts-in-workspace-tabs)
+- [SPEC-004-021: Open the project manuscript in the workspace](./epic.md#spec-004-021-open-the-project-manuscript-in-the-workspace)
 
 ## Tasks
 
-- [ ] Bind scoped collection reads, the persistent workspace label and actual revision text to the tab contract.
+- [ ] Bind verified project collection and revision reads to the fixed Manuscript tab.
 - [ ] Before integration, verify STORY-004-001 provides the scoped collection and selection events with ownership and disposal checks. Isolated work can proceed against this contract after coverage approval.
 - [ ] Before integration, verify STORY-004-013 provides trusted list/read and revision notifications with real SQLite tests for scope and versions. Isolated work can proceed against this contract after coverage approval.
-- [ ] Apply V09 viewing and lifecycle rules and expose the content and pending-close extension points.
+- [ ] Connect the manuscript entry, foldable explorer index and toolbar breadcrumbs to the Manuscript tab. Exercise V09 lifecycle and focus behavior.
 
 ## Acceptance criteria
 
-- [ ] Two real manuscript records produce unique tabs. Navigation, closure, overflow and the fixed Navigator behave correctly.
+- [ ] Each project opens a single continuous manuscript in its own tab alongside Navigator. Both heading controls reach chapters in place. Disclosure controls preserve the document position and breadcrumbs expose the current heading path and its searchable choices.
 - [ ] Scope and exact revision language remain correct. Another project's resource cannot be restored, and conversation state is preserved.
 
 ## Quality checklist
 
-- [ ] Verify the V09 viewing scenarios with two real SQLite records, packaged keyboard/reflow, read failure and invalid restored identity.
+- [ ] Verify V09 with two real SQLite projects, legacy extra records, packaged keyboard/reflow, read failure and stale scope.

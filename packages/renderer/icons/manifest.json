@@ -72,10 +72,28 @@
       "sha256": "f055c9b2cacf644d21b66d67792ff81774edd68dc73a5ca17480e79cb5d16cd5"
     },
     {
+      "name": "chevron-down",
+      "file": "chevron-down.svg",
+      "archive_member": "package/icons/chevron-down.svg",
+      "sha256": "21f54984deac62e4be286b4ed04cb84915809abb2078e0736fae52fe9bac8341"
+    },
+    {
       "name": "chevron-left",
       "file": "chevron-left.svg",
       "archive_member": "package/icons/chevron-left.svg",
       "sha256": "f157826f2ae49cb74df90501d0183d84cfe52d5fd4d4ac5a58f8e38ddf49d361"
+    },
+    {
+      "name": "chevron-right",
+      "file": "chevron-right.svg",
+      "archive_member": "package/icons/chevron-right.svg",
+      "sha256": "2b52578742943788abdfb140559fb666be62d8178f233cf936bd2718ab13b9a6"
+    },
+    {
+      "name": "chevrons-down-up",
+      "file": "chevrons-down-up.svg",
+      "archive_member": "package/icons/chevrons-down-up.svg",
+      "sha256": "524006f8f5be8df8de491eb7d4e584821ef101f87af26521591b42489d4dac9a"
     },
     {
       "name": "circle-check",
@@ -186,6 +204,12 @@
       "sha256": "26b2c26f298745d0215b105d1599d3ff3e4f13e29a5f5bbcf48718ed4d45861b"
     },
     {
+      "name": "folder",
+      "file": "folder.svg",
+      "archive_member": "package/icons/folder.svg",
+      "sha256": "8ca9c1dbd10cb4a357ef039dca0aa65d63e7b008db8e4df3b753f76d179ac1a7"
+    },
+    {
       "name": "folder-archive",
       "file": "folder-archive.svg",
       "archive_member": "package/icons/folder-archive.svg",
@@ -246,6 +270,12 @@
       "sha256": "e69deae0fd325cb5746f8f902f789078a233b850d83ab738317da0766eeff204"
     },
     {
+      "name": "locate-fixed",
+      "file": "locate-fixed.svg",
+      "archive_member": "package/icons/locate-fixed.svg",
+      "sha256": "2e5d7d28ae8a485116a239713f2550eba9c1e70ca45a889458ac528a408ddee3"
+    },
+    {
       "name": "lock",
       "file": "lock.svg",
       "archive_member": "package/icons/lock.svg",
@@ -268,6 +298,12 @@
       "file": "message-square-plus.svg",
       "archive_member": "package/icons/message-square-plus.svg",
       "sha256": "9915fdad1b27b88b3b31cba16905ac57e7b59953fb4977d17b85fb11c0cf9b49"
+    },
+    {
+      "name": "messages-square",
+      "file": "messages-square.svg",
+      "archive_member": "package/icons/messages-square.svg",
+      "sha256": "c3098bb5ff11ed2ca9a4e46d08e02cb097a17f3f369a8696cb4dcb523418cde2"
     },
     {
       "name": "minimize-2",

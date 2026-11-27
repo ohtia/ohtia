@@ -21,6 +21,7 @@ export const desktopChannels = {
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",
   exitState: "ohtia:exit-state",
+  manuscriptClose: "ohtia:manuscript-close",
   systemMotion: "ohtia:system-motion",
   updateState: "ohtia:update-state",
 } as const;

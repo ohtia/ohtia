@@ -266,15 +266,18 @@ export class ResearchService {
         respond(receipt);
         return true;
       }
+      const commit = async (command: ResearchCommand) => {
+        const result = await this.storage.executeResearchCommand(command);
+        respond(result, true);
+        if (result.ok && result.value.manuscriptChange?.kind === "committed")
+          await this.publish().catch(this.providerFailure);
+      };
       if (request.operation === "manuscript.create") {
-        respond(
-          await this.storage.executeResearchCommand({
-            command: request.operation,
-            operationId,
-            payload: { projectId, title: request.payload.title },
-          }),
-          true,
-        );
+        await commit({
+          command: request.operation,
+          operationId,
+          payload: { projectId, title: request.payload.title },
+        });
         return true;
       }
       const { draftId, expectedRevisionId, saveReason, markdown } = request.payload;
@@ -287,14 +290,11 @@ export class ResearchService {
         respond(text);
         return true;
       }
-      respond(
-        await this.storage.executeResearchCommand({
-          command: request.operation,
-          operationId,
-          payload: { projectId, draftId, expectedRevisionId, saveReason, markdown: text.value },
-        }),
-        true,
-      );
+      await commit({
+        command: request.operation,
+        operationId,
+        payload: { projectId, draftId, expectedRevisionId, saveReason, markdown: text.value },
+      });
       return true;
     }
     if (isResearchMutation(request.operation)) {

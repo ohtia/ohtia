@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { TextEncoder } from "node:util";
 import {
   ProjectMemoryDrafts,
   ProjectMemoryView,
@@ -102,6 +103,8 @@ function fixture() {
   const localeStop = vi.fn();
   const port = {
     ...settings.port,
+    listManuscripts: ({ projectId }: { projectId: string }) =>
+      call({ ok: true, value: { projectId, manuscripts: [], next: null } }),
     listProjects: vi.fn(() => call({ ok: true, value: { items: [], next: null, hasMore: false } })),
     readManagedStoreLocation: vi.fn(() =>
       call<ManagedStoreLocation>({
@@ -2398,6 +2401,7 @@ it("opens project memory from chat and navigates to a source message in its own 
   await mount(t);
   await click('.workspace-chat [aria-label="Add memory entry…"]');
   const memory = container.querySelector<HTMLElement>("#project-memory")!;
+  expect(document.activeElement).toBe(memory.querySelector("textarea"));
   expect(memory.querySelector("textarea")?.value).toBe("My work.");
   expect(memory.querySelector("select")?.value).toBe("decision");
   let displayedText = memory.querySelector(".memory-entry .memory-text")!;
@@ -2926,3 +2930,218 @@ it("refreshes the selected thesis after a title read failure without replaying t
   expect(container.querySelector(".project-rename-refresh")).toBeNull();
   expect(readProject).toHaveBeenCalledTimes(5);
 });
+
+it("retains only the revalidated project manuscript across scopes and renders the exact saved revision", async () => {
+  const t = raceFixture();
+  const [a, b] = t.ids;
+  const id = (n: number) => `019a8000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+  const first = { draftId: id(402), title: "Saved workspace label", currentRevisionId: id(502) };
+  const second = { draftId: id(403), title: "Second manuscript", currentRevisionId: id(503) };
+  const firstText = `---\nohtia_draft_format: ohtia-markdown-v1\nohtia_draft_id: draft_${first.draftId}\n---\n\n# 연구 제목 {#sec_heading}\n\n::: {#blk_body .ohtia-block}\n문단 하나  \n새 줄\n이어지는 줄\n:::\n`;
+  const chunks = splitText(firstText);
+  const date = "2026-11-17T10:00:00.000Z";
+  const stale = deferred<Outcome<ResearchOutputs["manuscript.list"]>>();
+  let held = false;
+  let removed = false;
+  let failedList = true;
+  let failedPart = true;
+  let subscription = 0;
+  let observer: ((notice: Outcome<ResearchEvent>) => void) | undefined;
+  const aborted = vi.fn();
+  const listManuscripts = vi.fn(
+    ({ projectId, after }: Parameters<FoundationPort["listManuscripts"]>[0]) => {
+      if (projectId === b)
+        return call({ ok: true, value: { projectId, manuscripts: [], next: null } });
+      if (failedList) {
+        failedList = false;
+        return call(failure("storage_failed"));
+      }
+      if (held) return { result: stale.promise, cancel: aborted };
+      const manuscripts = removed || after ? [second] : [first];
+      return call({
+        ok: true,
+        value: { projectId, manuscripts, next: removed || after ? null : first.draftId },
+      });
+    },
+  );
+  const readManuscript = vi.fn(
+    ({ projectId, draftId }: Parameters<FoundationPort["readManuscript"]>[0]) => {
+      const record = draftId === first.draftId ? first : second;
+      const source =
+        draftId === first.draftId
+          ? firstText
+          : `---\nohtia_draft_format: ohtia-markdown-v1\nohtia_draft_id: draft_${draftId}\n---\n`;
+      const sha256 = createHash("sha256").update(source).digest("hex");
+      const markdown =
+        draftId === first.draftId
+          ? {
+              source: record.currentRevisionId,
+              parts: chunks.length,
+              bytes: Buffer.byteLength(source),
+              sha256,
+            }
+          : source;
+      return call({
+        ok: true,
+        value: {
+          markdown,
+          revision: {
+            projectId,
+            draftId,
+            revisionId: record.currentRevisionId,
+            language: "ko-KR",
+            contentSha256: sha256,
+            parentRevisionId: null,
+            restorationOriginId: null,
+            createdAt: date,
+            saveReason: "initial",
+            authorKind: "researcher",
+            recordingActor: "utility",
+          },
+        },
+      });
+    },
+  );
+  const readManuscriptPart = vi.fn(
+    ({
+      projectId,
+      draftId,
+      revisionId,
+      index,
+    }: Parameters<FoundationPort["readManuscriptPart"]>[0]) => {
+      if (failedPart) {
+        failedPart = false;
+        return call(failure("storage_failed"));
+      }
+      return call({
+        ok: true,
+        value: { projectId, draftId, revisionId, index, text: chunks[index - 1] },
+      });
+    },
+  );
+  vi.stubGlobal("crypto", {
+    randomUUID,
+    subtle: {
+      digest: async (_algorithm: string, bytes: Uint8Array) =>
+        Uint8Array.from(createHash("sha256").update(bytes).digest()).buffer,
+    },
+  });
+  vi.stubGlobal("TextEncoder", TextEncoder);
+  Object.assign(t.port, {
+    listManuscripts,
+    readManuscript,
+    readManuscriptPart,
+    subscribeResearch: (_scope: ResearchScope, listener: typeof observer) => {
+      observer = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: `scope-${++subscription}` } }),
+        dispose: vi.fn(),
+      };
+    },
+  });
+  await mount(t);
+  const workspace = container.querySelector(".workspace")!;
+  const buttons = (scope: Element) => [...scope.querySelectorAll<HTMLButtonElement>("button")];
+  const manuscripts = () => {
+    const trigger = buttons(workspace).find((button) => button.textContent === "Manuscript")!;
+    return trigger.closest("li")!;
+  };
+  const tab = (name: string) =>
+    buttons(workspace).find(
+      (button) => button.getAttribute("role") === "tab" && button.textContent === name,
+    );
+  const article = () => workspace.querySelector("article.workspace-manuscript");
+  const surface = () => workspace.querySelector(".workspace-manuscript-surface")!;
+  async function press(scope: Element, name: string) {
+    const button = buttons(scope).find(
+      (entry) => entry.textContent === name || entry.getAttribute("aria-label") === name,
+    );
+    expect(button, name).toBeDefined();
+    await act(async () => {
+      button!.focus();
+      button!.click();
+    });
+  }
+  expect(manuscripts().textContent).toContain("Could not load the manuscript list.");
+  await press(manuscripts(), "Try again");
+  expect(listManuscripts).toHaveBeenLastCalledWith({
+    projectId: a,
+    after: first.draftId,
+    subscriptionId: "scope-1",
+  });
+  await press(manuscripts(), "Manuscript");
+  expect(surface().textContent).toContain("Could not open the manuscript.");
+  expect(article()).toBeNull();
+  await press(surface(), "Try again");
+  expect(article()?.getAttribute("lang")).toBe("ko-KR");
+  expect(article()?.querySelector("h1")?.textContent).toBe("연구 제목");
+  expect(article()?.querySelector("p br")).not.toBeNull();
+  expect(article()?.querySelector("p")?.textContent).toBe("문단 하나새 줄 이어지는 줄");
+  expect(tab(first.title)).toBeUndefined();
+  expect(tab(second.title)).toBeUndefined();
+  expect(readManuscript.mock.calls.every(([input]) => input.draftId === first.draftId)).toBe(true);
+  held = true;
+  await act(async () =>
+    observer?.({ ok: true, value: { kind: "changed", record: "manuscript", id: b, revision: 3 } }),
+  );
+  expect(listManuscripts).toHaveBeenCalledTimes(3);
+  await act(async () =>
+    observer?.({ ok: true, value: { kind: "changed", record: "manuscript", id: a, revision: 4 } }),
+  );
+  expect(manuscripts().textContent).toContain("Loading…");
+  await act(async () =>
+    observer?.({ ok: true, value: { kind: "changed", record: "manuscript", id: a, revision: 5 } }),
+  );
+  expect(aborted).toHaveBeenCalledOnce();
+  await selectRaceProject(1);
+  expect(manuscripts().textContent).toContain("No manuscripts yet.");
+  expect(tab(first.title)).toBeUndefined();
+  expect(tab("Navigator")?.getAttribute("aria-selected")).toBe("true");
+  removed = true;
+  held = false;
+  await selectRaceProject(0);
+  await act(async () =>
+    stale.resolve({ ok: true, value: { projectId: a!, manuscripts: [first], next: null } }),
+  );
+  expect(tab(first.title)).toBeUndefined();
+  expect(tab(second.title)).toBeUndefined();
+  expect(tab("Navigator")?.getAttribute("aria-selected")).toBe("true");
+  expect(readManuscript.mock.calls.every(([input]) => input.projectId === a)).toBe(true);
+  width = 600;
+  await act(async () => resize.forEach((observe) => observe()));
+  await press(workspace, message("en-US", "workspace.contents"));
+  await press(manuscripts(), "Manuscript");
+  expect(surface().hasAttribute("hidden")).toBe(false);
+  expect(surface().textContent).toContain("This manuscript has no text yet.");
+  const retained = article();
+  expect(retained).not.toBeNull();
+  const current = await t.bridge.bootstrap.read();
+  const readsBeforeRecovery = readManuscript.mock.calls.length;
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({ ...current, state: "storage_failed" });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(article()).toBe(retained);
+  expect(retained?.closest(".workspace-manuscript-view")?.hasAttribute("inert")).toBe(true);
+  expect(retained?.closest(".application-workspace")?.hasAttribute("hidden")).toBe(true);
+  expect(readManuscript).toHaveBeenCalledTimes(readsBeforeRecovery);
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    ...current,
+    serviceGeneration: "replacement",
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(retained?.closest(".application-workspace")?.hasAttribute("hidden")).toBe(false);
+  expect(article()).toBe(retained);
+  expect(retained?.closest(".workspace-manuscript-view")?.hasAttribute("inert")).toBe(false);
+  expect(readManuscript.mock.calls.length).toBeGreaterThan(readsBeforeRecovery);
+  failedList = true;
+  await act(async () => observer?.(failure("sequence_gap")));
+  expect(manuscripts().textContent).toContain("Could not load the manuscript list.");
+  expect(article()).toBe(retained);
+  expect(retained?.closest(".workspace-manuscript-view")?.hasAttribute("inert")).toBe(false);
+  const panelStatus = retained
+    ?.closest(".workspace-manuscript-surface")
+    ?.querySelector('[role="status"]');
+  expect(panelStatus?.textContent).toBe("");
+  await press(manuscripts(), "Try again");
+  expect(manuscripts().textContent).not.toContain("Could not load the manuscript list.");
+  expect(article()).toBe(retained);
+}, 60000);

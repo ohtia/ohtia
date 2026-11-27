@@ -16,6 +16,8 @@ import { PendingProjectWork, type ProjectSelectionLease } from "./pending-projec
 interface ProjectCollectionsSnapshot {
   readonly scope: ResearchScope;
   readonly conversations: HistoryState | undefined;
+  readonly subscriptionId: string | undefined;
+  readonly status: ReturnType<ConversationController["snapshot"]>["status"];
 }
 
 /** Project-scoped presentation of the existing conversation and memory collections. */
@@ -30,7 +32,9 @@ export class ProjectCollections {
   ) {}
 
   snapshot = (): ProjectCollectionsSnapshot => {
-    const { scope } = this.conversation.snapshot();
+    const { scope, status, researchScopeReady, researchSubscriptionId } =
+      this.conversation.snapshot();
+    const subscriptionId = researchScopeReady ? researchSubscriptionId : undefined;
     const history = this.conversation.history.snapshot();
     const conversations =
       scope.projectId && history.projectId === scope.projectId ? history : undefined;
@@ -38,10 +42,12 @@ export class ProjectCollections {
       this.state &&
       this.state.scope.projectId === scope.projectId &&
       this.state.scope.conversationId === scope.conversationId &&
-      this.state.conversations === conversations
+      this.state.conversations === conversations &&
+      this.state.subscriptionId === subscriptionId &&
+      this.state.status === status
     )
       return this.state;
-    return (this.state = { scope, conversations });
+    return (this.state = { scope, conversations, status, subscriptionId });
   };
 
   subscribe = (listener: () => void): (() => void) => {
@@ -71,6 +77,19 @@ export class ProjectCollections {
           notice.value.id === this.conversation.snapshot().scope.projectId)
       )
         listener(notice);
+    });
+
+  observeManuscripts = (projectId: string, refresh: () => void): (() => void) =>
+    this.conversation.observe((notice) => {
+      if (
+        this.snapshot().scope.projectId === projectId &&
+        notice !== "ready" &&
+        notice.ok &&
+        notice.value.kind === "changed" &&
+        notice.value.record === "manuscript" &&
+        notice.value.id === projectId
+      )
+        refresh();
     });
 
   loadConversations(projectId: string, action: "initial" | "retry" | "older"): void {

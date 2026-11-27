@@ -3,6 +3,7 @@ export const manuscriptFormat = "ohtia-markdown-v1";
 export const manuscriptLimits = Object.freeze({
   documentBytes: 128 * 1024,
   paragraphCount: 256,
+  sectionCount: 256,
   textBytes: 8 * 1024,
 });
 
@@ -16,21 +17,31 @@ export interface ManuscriptParagraph {
   readonly lines: readonly ManuscriptLine[];
 }
 
+export interface ManuscriptSection {
+  readonly id: string;
+  readonly text: string;
+  readonly level: 2 | 3 | 4 | 5 | 6;
+  /** Number of paragraphs preceding this heading. Equal positions retain heading order. */
+  readonly beforeParagraph: number;
+}
+
 export interface CanonicalManuscript {
   readonly format: typeof manuscriptFormat;
   readonly draftId: string;
   readonly title: { readonly id: string; readonly text: string } | null;
   readonly paragraphs: readonly ManuscriptParagraph[];
+  readonly sections?: readonly ManuscriptSection[];
 }
 
 type DiagnosticLocation =
   | { readonly kind: "document" | "title" }
-  | { readonly kind: "line" | "paragraph"; readonly number: number };
+  | { readonly kind: "line" | "paragraph" | "section"; readonly number: number };
 
 export interface ManuscriptDiagnostic {
   readonly code:
     | "document-limit"
     | "paragraph-limit"
+    | "section-limit"
     | "text-limit"
     | "invalid-text"
     | "invalid-header"

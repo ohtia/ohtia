@@ -303,6 +303,13 @@ export async function buildDesktop(root, { development = false } = {}) {
     "mdast-util-from-markdown",
     "micromark-extension-gfm-table",
     "mdast-util-gfm-table",
+    "prosemirror-commands",
+    "prosemirror-history",
+    "prosemirror-keymap",
+    "prosemirror-model",
+    "prosemirror-state",
+    "prosemirror-transform",
+    "prosemirror-view",
   ])
     bundledNotice(component, rendererResolver);
   // Main imports the base client and the Models and Messages resources. Webhooks and schema helper

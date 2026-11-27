@@ -1,8 +1,9 @@
 ---
 type: Story
 title: "STORY-004-028 — Create a manuscript from the project explorer"
-description: "Create one named manuscript with a durable first revision and open its scoped tab."
-generated: { by: codex/gpt-6.2-sol }
+description: "Create the project manuscript with a named first revision and open its central view."
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:app", "comp:storage"]
@@ -18,7 +19,7 @@ applicable_blocks: ["SPEC-004-037"]
 
 ## Description
 
-Create one named manuscript with a durable first revision and open its scoped tab.
+Create the project manuscript with a named first revision and open its central view.
 
 ## Applicable specification
 
@@ -26,14 +27,14 @@ Create one named manuscript with a durable first revision and open its scoped ta
 
 ## Tasks
 
-- [ ] Expose New manuscript in the manuscript collection with the localized default name.
+- [ ] Expose New manuscript in the Manuscript entry with the localized default name.
 - [ ] Before integration, verify STORY-004-014 supplies the actual collection and read-only open contract with scope tests. Isolated work can proceed against this contract after coverage approval.
 - [ ] Before integration, verify STORY-004-013 supplies atomic named creation and replay with verified first-revision invariants. Isolated work can proceed against this contract after coverage approval.
 - [ ] Issue the checked create command and open the tab only for a matching receipt. Document the action and the workspace label.
 
 ## Acceptance criteria
 
-- [ ] The default or entered workspace label is saved with one header-only first revision. The open tab shows the saved label.
+- [ ] The default or entered workspace label is saved with one header-only first revision. The central view opens the created manuscript.
 - [ ] An uncertain replay creates at most one manuscript. A late successful result does not change the selection of a newer project.
 
 ## Quality checklist

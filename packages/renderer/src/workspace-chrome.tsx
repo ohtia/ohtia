@@ -17,7 +17,11 @@ import {
   formatNumber,
   message,
   workspacePanels,
+  type CommandBridge,
   type CommandId,
+  type ManuscriptCloseCommand,
+  type FoundationPort,
+  type ManuscriptRevision,
   type ProjectRecord,
   type InterfaceLocale,
   type SimpleMessageKey,
@@ -35,11 +39,19 @@ import { designMetrics } from "./design-tokens.js";
 import { separatorRange } from "./workspace-geometry.js";
 import { OhtiaBrand } from "./branding.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
-import { Tooltip } from "./layers.js";
+import { Dialog, Tooltip } from "./layers.js";
 import type { UpdateController, UpdateSnapshot } from "./update-controller.js";
 import { availableVersion, useHeldWhileWriting } from "./update-surfaces.js";
 import type { ProjectCollections } from "./project-controller.js";
 import { ProjectExplorer } from "./project-explorer.js";
+import {
+  ManuscriptView,
+  useManuscripts,
+  type ManuscriptJump,
+  ManuscriptDrafts,
+} from "./manuscript-view.js";
+import type { ManuscriptOutline } from "./manuscript-outline.js";
+import { Tabs } from "./tabs.js";
 
 const panelIcons = {
   explorer: "panel-left",
@@ -66,6 +78,12 @@ export interface WorkspaceChromeProps {
   readonly chat?: ReactNode;
   readonly memory?: ReactNode;
   readonly collections?: ProjectCollections;
+  readonly manuscriptPort?: FoundationPort;
+  readonly manuscriptLifecycle?: Pick<
+    CommandBridge,
+    "perform" | "setManuscriptPending" | "onManuscriptClose"
+  >;
+  readonly onManuscriptVisibility?: (revision: ManuscriptRevision | null) => void;
   readonly memoryRequest?: number;
   readonly revealSourceRequest?: object;
   readonly projectSelector?: ReactNode;
@@ -107,6 +125,13 @@ export interface WorkspaceChromeProps {
     state?: WorkspaceState,
   ) => void;
 }
+interface DocumentTabsState {
+  readonly projectId: string | undefined;
+  readonly selected: string;
+  readonly opened: ReadonlyMap<string, readonly string[]>;
+}
+
+const ignoreManuscriptVisibility = () => {};
 const noUpdateSubscription = () => () => {};
 const noUpdateSnapshot = (): UpdateSnapshot | undefined => undefined;
 function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
@@ -207,11 +232,16 @@ export function ShortcutControl({
 }
 
 /** Real chrome; storage, command ownership and confirmed presentation inputs stay with composition. */
+const pendingReportRetryMs = 1000;
+
 export function WorkspaceChrome({
   chat,
   memory,
   memoryRequest,
   collections,
+  manuscriptPort,
+  manuscriptLifecycle,
+  onManuscriptVisibility = ignoreManuscriptVisibility,
   revealSourceRequest,
   chatTitle,
   chatActivity,
@@ -241,13 +271,14 @@ export function WorkspaceChrome({
   updates,
   writing = false,
 }: WorkspaceChromeProps) {
+  const [writingManuscript, setWritingManuscript] = useState(false);
   const updateSnapshot = useSyncExternalStore(
     updates?.subscribe ?? noUpdateSubscription,
     updates?.snapshot ?? noUpdateSnapshot,
   );
   const newerVersion = useHeldWhileWriting(
     availableVersion(updateSnapshot?.notice?.state),
-    writing,
+    writing || writingManuscript,
   );
   const root = useRef<HTMLDivElement>(null);
   const controller = useRef<WorkspaceController | undefined>(undefined);
@@ -272,24 +303,212 @@ export function WorkspaceChrome({
   }, []);
   const id = useId();
   const panelId = (panel: WorkspacePanel) => `${id}-${panel}`;
-  const [memoryTabs, setMemoryTabs] = useState<ReadonlyMap<string, boolean>>(() => new Map());
-  const memoryOpen = !!memory && !!projectScope && memoryTabs.has(projectScope);
-  const memorySelected = memoryOpen && memoryTabs.get(projectScope) === true;
-  const selectedTab = memorySelected ? "memory" : "navigator";
+  const manuscripts = useManuscripts(
+    manuscriptPort,
+    collections,
+    projectScope,
+    available,
+    !!project?.setupConfirmedAt && project.id === projectScope,
+  );
+  const [documents, setDocuments] = useState<DocumentTabsState>(() => ({
+    projectId: projectScope,
+    selected: "navigator",
+    opened: new Map(),
+  }));
+  if (documents.projectId !== projectScope)
+    setDocuments({ ...documents, projectId: projectScope, selected: "navigator" });
+  const openIds = projectScope ? (documents.opened.get(projectScope) ?? []) : [];
+  const memoryOpen = !!memory && openIds.includes("memory");
+  const primary = manuscripts.rows[0];
+  const manuscriptTab =
+    !!manuscriptPort &&
+    !!projectScope &&
+    (!!primary || (project?.id === projectScope && !!project.setupConfirmedAt));
+  const selectedTab =
+    documents.projectId === projectScope &&
+    ((documents.selected === "memory" && memoryOpen) ||
+      (documents.selected === "manuscript" && manuscriptTab))
+      ? documents.selected
+      : "navigator";
+  const manuscriptSelected = selectedTab === "manuscript";
+  const memorySelected = selectedTab === "memory";
+  const [manuscriptDrafts] = useState(() => new ManuscriptDrafts());
+  const [pendingClose, setPendingClose] = useState<ManuscriptCloseCommand>();
+  const [closingManuscript, setClosingManuscript] = useState(false);
+  const saveForClose = useRef<(() => Promise<void>) | undefined>(undefined);
+  const setSaveForClose = useCallback((save: (() => Promise<void>) | undefined) => {
+    saveForClose.current = save;
+  }, []);
+  const pendingManuscript = useSyncExternalStore(
+    manuscriptDrafts.subscribe,
+    () => manuscriptDrafts.pending,
+  );
+
+  useEffect(() => {
+    const report = manuscriptLifecycle?.setManuscriptPending;
+    if (!report) return;
+    // Main applies reports in sending order. It refuses them while an exit stops services, so a
+    // refused report is sent again until main accepts the current value.
+    let sent: boolean | undefined;
+    let refused = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    const sync = () => {
+      if (disposed) return;
+      const pending = manuscriptDrafts.pending;
+      if (!refused && pending === sent) return;
+      refused = false;
+      sent = pending;
+      const fail = () => {
+        if (disposed) return;
+        refused = true;
+        clearTimeout(retry);
+        retry = setTimeout(sync, pendingReportRetryMs);
+      };
+      void report(pending).then((accepted) => {
+        if (!accepted) fail();
+      }, fail);
+    };
+    sync();
+    const unsubscribe = manuscriptDrafts.subscribe(sync);
+    return () => {
+      disposed = true;
+      unsubscribe();
+      clearTimeout(retry);
+    };
+  }, [manuscriptDrafts, manuscriptLifecycle]);
+
+  useEffect(() => manuscriptLifecycle?.onManuscriptClose?.(setPendingClose), [manuscriptLifecycle]);
+  useEffect(() => {
+    if (!manuscriptLifecycle || !pendingClose || pendingManuscript || closingManuscript) return;
+    // Nothing is left to confirm, for example after a save finished: continue the requested close.
+    setPendingClose(undefined);
+    void manuscriptLifecycle
+      .setManuscriptPending?.(false)
+      .then((ready) => (ready ? manuscriptLifecycle.perform(pendingClose) : undefined))
+      .catch(() => {});
+  }, [closingManuscript, manuscriptLifecycle, pendingClose, pendingManuscript]);
+
+  async function finishManuscriptClose(discard: boolean) {
+    if (!manuscriptLifecycle || !pendingClose || closingManuscript) return;
+    setClosingManuscript(true);
+    try {
+      if (discard) manuscriptDrafts.discard();
+      else await saveForClose.current?.();
+      if (manuscriptDrafts.pending) {
+        setPendingClose(undefined);
+        return;
+      }
+      if (await manuscriptLifecycle.setManuscriptPending?.(false)) {
+        setPendingClose(undefined);
+        await manuscriptLifecycle.perform(pendingClose);
+      }
+    } finally {
+      setClosingManuscript(false);
+    }
+  }
+
+  const [jump, setJump] = useState<ManuscriptJump>();
+  const [outline, setOutline] = useState<{
+    draftId: string;
+    headings: ManuscriptOutline;
+    activeHeading: string | undefined;
+    language: string | undefined;
+  }>();
+  const onOutline = useCallback(
+    (
+      draftId: string,
+      headings: ManuscriptOutline,
+      activeHeading: string | undefined,
+      language: string | undefined,
+    ) => {
+      setOutline({ draftId, headings, activeHeading, language });
+    },
+    [],
+  );
+  const activeOutline =
+    manuscripts.canPresent && outline?.draftId === primary?.draftId ? outline : undefined;
+  const liveProject = useRef(projectScope);
+  useLayoutEffect(() => {
+    liveProject.current = projectScope;
+  }, [projectScope]);
+  const creating = useRef(new Set<string>());
+  const [createFailed, setCreateFailed] = useState<string>();
+
+  useEffect(() => {
+    function protectPending(event: BeforeUnloadEvent) {
+      if (!manuscriptDrafts.pending) return;
+      event.preventDefault();
+    }
+    window.addEventListener("beforeunload", protectPending);
+    return () => {
+      window.removeEventListener("beforeunload", protectPending);
+    };
+  }, [manuscriptDrafts]);
+
   const handledMemoryRequests = useRef(new Map<string, number>());
   const handledSourceRequest = useRef<object | undefined>(undefined);
-  const memoryTabRef = useRef<HTMLButtonElement>(null);
-  const navigatorTabRef = useRef<HTMLButtonElement>(null);
-  const [focusMemory, setFocusMemory] = useState(false);
+  const selectedTabRef = useRef<HTMLButtonElement>(null);
+  const [focusDocument, setFocusDocument] = useState<string>();
+
+  const openDocument = useCallback(
+    (tab: string) => {
+      if (!projectScope) return;
+      const layout = controller.current;
+      if (!layout) return;
+      layout.reveal("documents");
+      setDocuments((previous) => {
+        if (previous.projectId !== projectScope) return previous;
+        const opened = previous.opened.get(projectScope) ?? [];
+        return {
+          ...previous,
+          selected: tab,
+          opened:
+            tab !== "memory" || opened.includes(tab)
+              ? previous.opened
+              : new Map(previous.opened).set(projectScope, [...opened, tab]),
+        };
+      });
+      if (tab === "memory") setFocusDocument(tab);
+    },
+    [projectScope],
+  );
 
   const openMemory = useCallback(() => {
-    if (!projectScope) return;
-    const layout = controller.current;
-    if (!layout) return;
-    layout.reveal("documents");
-    setMemoryTabs((previous) => new Map(previous).set(projectScope, true));
-    setFocusMemory(true);
-  }, [projectScope]);
+    openDocument("memory");
+  }, [openDocument]);
+
+  function openManuscript(headingId?: string) {
+    if (!manuscripts.verifiedScope || (!primary && manuscripts.status !== "ready")) return;
+    if (primary && headingId) setJump({ draftId: primary.draftId, headingId });
+    else setFocusDocument("manuscript");
+    openDocument("manuscript");
+  }
+
+  async function createPrimary() {
+    const scope = manuscripts.verifiedScope;
+    if (!scope || !manuscriptPort || primary || creating.current.has(scope.projectId)) return;
+    creating.current.add(scope.projectId);
+    setCreateFailed(undefined);
+    try {
+      const result = await manuscriptPort.createManuscript(
+        `primary-manuscript-${scope.projectId}`,
+        { ...scope, title: project?.title ?? message(locale, "manuscript.collection") },
+      ).result;
+      if (liveProject.current !== scope.projectId) return;
+      if (result.ok) {
+        manuscripts.retry();
+        openDocument("manuscript");
+      } else {
+        manuscripts.retry();
+        setCreateFailed(scope.projectId);
+      }
+    } catch {
+      if (liveProject.current === scope.projectId) setCreateFailed(scope.projectId);
+    } finally {
+      creating.current.delete(scope.projectId);
+    }
+  }
 
   useLayoutEffect(() => {
     if (
@@ -307,18 +526,6 @@ export function WorkspaceChrome({
   }, [memory, memoryRequest, openMemory, preferences, projectScope, state]);
 
   useLayoutEffect(() => {
-    if (!focusMemory || !memorySelected || !state?.geometry.visible.documents) return;
-    const tab = memoryTabRef.current;
-    if (
-      tab &&
-      !tab.closest("[hidden], [inert]") &&
-      !tab.closest(".workspace-documents")?.contains(document.activeElement)
-    )
-      tab.focus({ preventScroll: true });
-    setFocusMemory(false);
-  }, [focusMemory, memorySelected, state]);
-
-  useLayoutEffect(() => {
     const layout = controller.current;
     if (
       !revealSourceRequest ||
@@ -332,11 +539,6 @@ export function WorkspaceChrome({
     handledSourceRequest.current = revealSourceRequest;
     layout.reveal("chat");
   }, [preferences, revealSourceRequest, state]);
-
-  function selectDocumentTab(active: boolean) {
-    if (projectScope && memoryOpen)
-      setMemoryTabs((previous) => new Map(previous).set(projectScope, active));
-  }
 
   const text = (key: SimpleMessageKey) => message(locale, key);
   useEffect(
@@ -596,6 +798,20 @@ export function WorkspaceChrome({
           : headings.current[intent.panel];
     element?.focus({ preventScroll: true });
   }, [state, zoom]);
+  useLayoutEffect(() => {
+    if (!focusDocument || !state?.geometry.visible.documents) return;
+    setFocusDocument(undefined);
+    if (focusDocument !== selectedTab) return;
+    const tab = selectedTabRef.current;
+    if (
+      tab &&
+      !tab.closest("[hidden], [inert]") &&
+      (focusDocument !== "memory" ||
+        !tab.closest(".workspace-documents")?.contains(document.activeElement))
+    )
+      tab.focus();
+  }, [focusDocument, selectedTab, state]);
+
   const revealedProject = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const layout = controller.current;
@@ -790,6 +1006,44 @@ export function WorkspaceChrome({
         }
       }}
     >
+      <Dialog
+        open={!!pendingClose && pendingManuscript}
+        title={text("manuscript.pending")}
+        closeLabel={text("manuscript.keepOpen")}
+        closePlacement="footer"
+        closeDisabled={closingManuscript}
+        onClose={() => {
+          setPendingClose(undefined);
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="primitive-button"
+              disabled={closingManuscript || !manuscriptDrafts.canDiscard}
+              onClick={() => {
+                void finishManuscriptClose(true).catch(() => {});
+              }}
+            >
+              {text("manuscript.discardClose")}
+            </button>
+            {manuscriptSelected && manuscriptDrafts.count === 1 && !!saveForClose.current && (
+              <button
+                type="button"
+                className="primitive-button primitive-primary"
+                disabled={closingManuscript}
+                onClick={() => {
+                  void finishManuscriptClose(false).catch(() => {});
+                }}
+              >
+                {text("manuscript.saveClose")}
+              </button>
+            )}
+          </>
+        }
+      >
+        <p>{text("manuscript.closeExplanation")}</p>
+      </Dialog>
       <a
         ref={fallbackFocusRef}
         className="workspace-skip"
@@ -980,164 +1234,206 @@ export function WorkspaceChrome({
                 ) : (
                   heading
                 )}
-                {panel === "documents" && (
+                {panel === "documents" ? (
+                  <Tabs
+                    label={text("command.panels.documents")}
+                    className="workspace-document-tabs"
+                    listClassName="workspace-tabs"
+                    panelClassName="workspace-panel-scroll"
+                    items={[
+                      {
+                        id: "navigator",
+                        label: text("workspace.navigator"),
+                        icon: <LucideGlyph name="signpost" size={16} />,
+                        content: projectScope ? (
+                          project && (
+                            <p className="workspace-empty workspace-setup">
+                              {text(
+                                project.setupConfirmedAt
+                                  ? "setup.navigatorConfirmed"
+                                  : "setup.navigator",
+                              )}
+                            </p>
+                          )
+                        ) : (
+                          <div className="workspace-welcome">
+                            {decoration !== "hidden" && <ProductCharacter />}
+                            <h1 data-type="type.ui.display">{text("workspace.welcome")}</h1>
+                            <p>
+                              {text(
+                                hasProjects ? "project.chooseWelcome" : "workspace.welcomeText",
+                              )}
+                            </p>
+                            <div className="workspace-welcome-actions">
+                              <ShortcutControl
+                                id="project.new"
+                                commands={commands}
+                                locale={locale}
+                                icon="plus"
+                                text
+                                primary
+                              />
+                              <ShortcutControl
+                                id="settings.open"
+                                commands={commands}
+                                locale={locale}
+                                icon="settings"
+                                text
+                                label={text("workspace.openSettings")}
+                              />
+                              <ShortcutControl
+                                id="shortcuts.open"
+                                commands={commands}
+                                locale={locale}
+                                icon="keyboard"
+                                text
+                              />
+                              <ShortcutControl
+                                id="about.open"
+                                commands={commands}
+                                locale={locale}
+                                text
+                              />
+                            </div>
+                          </div>
+                        ),
+                      },
+                      ...(manuscriptTab
+                        ? [
+                            {
+                              id: "manuscript",
+                              label: text("manuscript.collection"),
+                              icon: <LucideGlyph name="file-text" size={16} />,
+                              panelClassName: "workspace-manuscript-surface",
+                              content: primary ? (
+                                <ManuscriptView
+                                  key={primary.draftId}
+                                  locale={locale}
+                                  scope={manuscripts.verifiedScope}
+                                  waitingForCollection={manuscripts.status === "loading"}
+                                  canPresent={manuscripts.canPresent}
+                                  port={manuscriptPort}
+                                  manuscript={primary}
+                                  visible={
+                                    available && !!geometry?.visible.documents && manuscriptSelected
+                                  }
+                                  onCommit={onManuscriptVisibility}
+                                  onOutline={onOutline}
+                                  jump={jump}
+                                  drafts={manuscriptDrafts}
+                                  onWriting={setWritingManuscript}
+                                  onSaveForClose={setSaveForClose}
+                                />
+                              ) : (
+                                <div className="workspace-manuscript">
+                                  <p role="status">
+                                    {text(
+                                      manuscripts.status === "loading"
+                                        ? "project.loading"
+                                        : manuscripts.status === "ready"
+                                          ? "manuscript.none"
+                                          : manuscripts.status === "failed"
+                                            ? "manuscript.listFailed"
+                                            : "manuscript.unavailable",
+                                    )}
+                                  </p>
+                                  {manuscripts.status === "ready" && (
+                                    <button
+                                      type="button"
+                                      className="primitive-button"
+                                      onClick={() => {
+                                        void createPrimary();
+                                      }}
+                                    >
+                                      {text("manuscript.create")}
+                                    </button>
+                                  )}
+                                  {createFailed === projectScope && (
+                                    <p role="status">{text("manuscript.createFailed")}</p>
+                                  )}
+                                </div>
+                              ),
+                            },
+                          ]
+                        : []),
+                      ...(memoryOpen
+                        ? [
+                            {
+                              id: "memory",
+                              label: text("memory.title"),
+                              icon: <LucideGlyph name="notebook-text" size={16} />,
+                              content: memory,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    selected={selectedTab}
+                    onSelect={(tab) => {
+                      setDocuments((previous) =>
+                        previous.projectId === projectScope
+                          ? { ...previous, selected: tab }
+                          : previous,
+                      );
+                    }}
+                    selectedTabRef={selectedTabRef}
+                  />
+                ) : (
                   <div
-                    className="workspace-tabs"
-                    role="tablist"
-                    aria-label={text("command.panels.documents")}
+                    className="workspace-panel-scroll"
+                    role="region"
+                    aria-labelledby={`${panelId(panel)}-heading`}
+                    tabIndex={0}
                   >
-                    <button
-                      type="button"
-                      ref={navigatorTabRef}
-                      id={`${id}-navigator-tab`}
-                      role="tab"
-                      tabIndex={memorySelected ? -1 : 0}
-                      aria-selected={!memorySelected}
-                      onClick={() => {
-                        selectDocumentTab(false);
-                      }}
-                      onKeyDown={(event) => {
-                        if (memoryOpen && ["ArrowLeft", "ArrowRight", "End"].includes(event.key)) {
-                          event.preventDefault();
-                          memoryTabRef.current?.focus();
-                        }
-                      }}
-                      aria-controls={`${id}-navigator`}
-                    >
-                      <LucideGlyph name="signpost" size={16} />
-                      {text("workspace.navigator")}
-                    </button>
-                    {memoryOpen && (
-                      <button
-                        type="button"
-                        ref={memoryTabRef}
-                        id={`${id}-memory-tab`}
-                        role="tab"
-                        tabIndex={memorySelected ? 0 : -1}
-                        aria-selected={memorySelected}
-                        aria-controls={`${id}-memory`}
-                        onClick={() => {
-                          selectDocumentTab(true);
-                        }}
-                        onKeyDown={(event) => {
-                          if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) {
-                            event.preventDefault();
-                            navigatorTabRef.current?.focus();
-                          }
-                        }}
-                      >
-                        <LucideGlyph name="notebook-text" size={16} />
-                        {text("memory.title")}
-                      </button>
+                    {panel === "explorer" && collections ? (
+                      <ProjectExplorer
+                        collections={collections}
+                        project={project}
+                        locale={locale}
+                        memoryAvailable={!!memory}
+                        memorySelected={memorySelected}
+                        openMemory={openMemory}
+                        manuscripts={manuscriptPort ? manuscripts : undefined}
+                        manuscriptSelected={manuscriptSelected}
+                        headings={activeOutline?.headings}
+                        activeHeading={activeOutline?.activeHeading}
+                        headingLanguage={activeOutline?.language}
+                        openManuscript={openManuscript}
+                        revealChat={() => controller.current?.reveal("chat")}
+                      />
+                    ) : panel === "explorer" && memory ? (
+                      <>
+                        <button
+                          type="button"
+                          className="workspace-memory-entry primitive-button primitive-quiet"
+                          aria-current={memorySelected || undefined}
+                          onClick={openMemory}
+                        >
+                          <LucideGlyph name="notebook-text" size={16} />
+                          {text("memory.title")}
+                        </button>
+                        <p className="workspace-empty workspace-memory-empty">
+                          <LucideGlyph name={panelIcons.explorer} size={20} />
+                          {text("setup.explorer")}
+                        </p>
+                      </>
+                    ) : panel === "chat" && chat ? (
+                      chat
+                    ) : (
+                      <p className="workspace-empty">
+                        <LucideGlyph name={panelIcons[panel]} size={20} />
+                        {text(
+                          panel === "explorer"
+                            ? projectScope
+                              ? "setup.explorer"
+                              : "workspace.explorerEmpty"
+                            : hasProjects
+                              ? "project.chooseChat"
+                              : "workspace.chatEmpty",
+                        )}
+                      </p>
                     )}
                   </div>
                 )}
-                {panel === "documents" && memoryOpen && (
-                  <div
-                    className="workspace-panel-scroll"
-                    role="tabpanel"
-                    id={`${id}-memory`}
-                    hidden={!memorySelected}
-                    inert={!memorySelected}
-                    tabIndex={0}
-                    aria-labelledby={`${id}-memory-tab`}
-                  >
-                    {memory}
-                  </div>
-                )}
-                <div
-                  hidden={panel === "documents" && selectedTab === "memory"}
-                  className="workspace-panel-scroll"
-                  role={panel === "documents" ? "tabpanel" : "region"}
-                  id={panel === "documents" ? `${id}-navigator` : undefined}
-                  aria-labelledby={
-                    panel === "documents" ? `${id}-navigator-tab` : `${panelId(panel)}-heading`
-                  }
-                  tabIndex={0}
-                >
-                  {panel === "documents" && projectScope ? (
-                    project && (
-                      <p className="workspace-empty workspace-setup">
-                        {text(
-                          project.setupConfirmedAt ? "setup.navigatorConfirmed" : "setup.navigator",
-                        )}
-                      </p>
-                    )
-                  ) : panel === "documents" ? (
-                    <div className="workspace-welcome">
-                      {decoration !== "hidden" && <ProductCharacter />}
-                      <h1 data-type="type.ui.display">{text("workspace.welcome")}</h1>
-                      <p>{text(hasProjects ? "project.chooseWelcome" : "workspace.welcomeText")}</p>
-                      <div className="workspace-welcome-actions">
-                        <ShortcutControl
-                          id="project.new"
-                          commands={commands}
-                          locale={locale}
-                          icon="plus"
-                          text
-                          primary
-                        />
-                        <ShortcutControl
-                          id="settings.open"
-                          commands={commands}
-                          locale={locale}
-                          icon="settings"
-                          text
-                          label={text("workspace.openSettings")}
-                        />
-                        <ShortcutControl
-                          id="shortcuts.open"
-                          commands={commands}
-                          locale={locale}
-                          icon="keyboard"
-                          text
-                        />
-                        <ShortcutControl id="about.open" commands={commands} locale={locale} text />
-                      </div>
-                    </div>
-                  ) : panel === "explorer" && collections ? (
-                    <ProjectExplorer
-                      collections={collections}
-                      project={project}
-                      locale={locale}
-                      memoryAvailable={!!memory}
-                      memorySelected={memorySelected}
-                      openMemory={openMemory}
-                      revealChat={() => controller.current?.reveal("chat")}
-                    />
-                  ) : panel === "explorer" && memory ? (
-                    <>
-                      <button
-                        type="button"
-                        className="workspace-memory-entry primitive-button primitive-quiet"
-                        aria-current={memorySelected || undefined}
-                        onClick={openMemory}
-                      >
-                        <LucideGlyph name="notebook-text" size={16} />
-                        {text("memory.title")}
-                      </button>
-                      <p className="workspace-empty workspace-memory-empty">
-                        <LucideGlyph name={panelIcons.explorer} size={20} />
-                        {text("setup.explorer")}
-                      </p>
-                    </>
-                  ) : panel === "chat" && chat ? (
-                    chat
-                  ) : (
-                    <p className="workspace-empty">
-                      <LucideGlyph name={panelIcons[panel]} size={20} />
-                      {text(
-                        panel === "explorer"
-                          ? projectScope
-                            ? "setup.explorer"
-                            : "workspace.explorerEmpty"
-                          : hasProjects
-                            ? "project.chooseChat"
-                            : "workspace.chatEmpty",
-                      )}
-                    </p>
-                  )}
-                </div>
                 {panel === "explorer" && (
                   <footer className="workspace-explorer-footer">
                     {settings(false)}

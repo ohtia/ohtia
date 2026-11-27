@@ -316,7 +316,7 @@ export function Confirmation({
   );
 }
 /** Reposition on viewport/scroll/content changes and remove every listener on disposal. */
-function useLayerPosition(
+export function useLayerPosition(
   open: boolean,
   anchor: RefObject<HTMLElement | null>,
   layer: RefObject<HTMLElement | null>,
@@ -395,7 +395,9 @@ export function Tooltip({
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         const modal = document.querySelector("dialog[open]");
-        if (modal && !modal.contains(anchor.current)) {
+        // Hover-only help yields the key to the control that has focus, such as an open picker.
+        const focused = anchor.current?.contains(document.activeElement) === true;
+        if (!focused || (modal && !modal.contains(anchor.current))) {
           dismissed.current = true;
           setVisible(false);
           return;

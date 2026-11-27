@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   decodeText,
   encodeEnvelope,
@@ -9,11 +9,15 @@ import {
   researchResultMatches,
   splitText,
   type Outcome,
+  type Envelope,
+  type ResearchOperation,
   type Request,
   type ResearchInputs,
   type ResearchOutputs,
 } from "@ohtia/contracts";
 import { serializeManuscript } from "../packages/utility/src/manuscript.js";
+import { ResearchService } from "../packages/utility/src/research-service.js";
+import type { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { bytes } from "../packages/utility/src/research.js";
 import { objects } from "../packages/utility/src/migrations/0041_manuscript_revisions.mjs";
 import { preManuscriptSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
@@ -423,4 +427,109 @@ describe("file-backed manuscript revisions", () => {
       ),
     ).toBe(false);
   });
+});
+
+it("publishes committed manuscript revisions only to the owning project after the receipt", async () => {
+  const f = storageFixture();
+  await f.store.open();
+  const projectId = await project(f, "viewing", "ko-KR");
+  const foreign = await project(f, "foreign", "es-AR");
+  const wire: Envelope[] = [];
+  const pump = vi.fn();
+  const failed = vi.fn();
+  const service = new ResearchService(
+    f.store,
+    "service",
+    (envelope) => {
+      wire.push(successful(decodeText(successful(encodeEnvelope(envelope)))));
+    },
+    { pump } as unknown as DurableProvider,
+    failed,
+  );
+  async function send<K extends ResearchOperation>(
+    operation: K,
+    payload: ResearchInputs[K],
+    operationId: string,
+    windowGeneration = "window",
+  ) {
+    const request = {
+      ...authority,
+      operation,
+      requestId: `req-${operationId}`,
+      windowGeneration,
+      operationId,
+      payload,
+    } as Extract<Request, { operation: K }>;
+    await service.dispatch(request);
+    const response = wire.findLast(
+      (event) => event.kind === "result" && event.requestId === request.requestId,
+    );
+    if (!response || response.kind !== "result") throw new Error("Missing research response.");
+    return response.payload as Outcome<ResearchOutputs[K]>;
+  }
+  const scope = { projectId, subscriptionId };
+  const changes = () =>
+    wire.filter(
+      (event) =>
+        event.kind === "event" &&
+        event.topic === "research" &&
+        event.payload.kind === "changed" &&
+        event.payload.record === "manuscript",
+    );
+  try {
+    successful(await send("research.subscribe", { ...scope, conversationId: null }, "observing"));
+    successful(
+      await send(
+        "research.subscribe",
+        { ...scope, projectId: foreign, conversationId: null },
+        "foreign",
+        "foreign-window",
+      ),
+    );
+    const before = wire.length;
+    const open = { ...scope, title: "Workspace title" };
+    const first = successful(await send("manuscript.create", open, "create-view")).manuscriptChange
+      .revision;
+    expect(wire[before]).toMatchObject({ kind: "result", operation: "manuscript.create" });
+    expect(changes()).toMatchObject([
+      {
+        subscriptionId,
+        windowGeneration: "window",
+        payload: { id: projectId, revision: 1 },
+      },
+    ]);
+    await send("manuscript.create", open, "create-view");
+    const { draftId, revisionId } = first;
+    const edit = {
+      ...scope,
+      draftId,
+      expectedRevisionId: revisionId,
+      markdown: text(draftId),
+      saveReason: "manual",
+    } as const;
+    const saved = successful(await send("manuscript.save", edit, "save-view")).manuscriptChange
+      .revision;
+    expect(changes()).toMatchObject([
+      { windowGeneration: "window", payload: { id: projectId, revision: 1 } },
+      { windowGeneration: "window", payload: { id: projectId, revision: 2 } },
+    ]);
+    successful(await send("manuscript.save", edit, "conflict-view"));
+    expect(changes()).toHaveLength(2);
+    const current = successful(
+      await send("manuscript.read", { ...scope, draftId, revisionId: null }, "read-view"),
+    );
+    expect(current).toMatchObject({ revision: saved, markdown: edit.markdown });
+    expect(
+      await send(
+        "manuscript.read",
+        { ...scope, draftId, revisionId: null },
+        "foreign-attempt",
+        "foreign-window",
+      ),
+    ).toEqual(failure("unauthorized"));
+    expect(pump).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    service.dispose();
+  }
 });

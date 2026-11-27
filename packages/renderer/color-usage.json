@@ -380,7 +380,7 @@
       "decorativeBorders": "border.subtle"
     },
     {
-      "selector": ".workspace-documents > h2:focus + .workspace-tabs [role=\"tab\"]",
+      "selector": ".workspace-documents > h2:focus + .workspace-document-tabs [role=\"tab\"][aria-selected=\"true\"]",
       "backgrounds": ["surface.page", "surface.panel"],
       "minimum": 3
     },
@@ -1235,8 +1235,117 @@
       "minimum": 3
     },
     {
-      "selector": ".workspace-memory-entry[aria-current=\"true\"], .workspace-tabs button[aria-selected=\"true\"]",
+      "selector": ".workspace-memory-entry[aria-current=\"true\"]",
       "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-tabs",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".workspace-tabs [role=\"tab\"]",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".workspace-tabs button[aria-selected=\"true\"]",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-manuscript",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-manuscript-toolbar",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-manuscript-footer",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-manuscript-footer [data-pending=\"true\"]",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7,
+      "foreground": "attention.content"
+    },
+    {
+      "selector": ".project-explorer-control:not([aria-disabled=\"true\"]), .manuscript-outline-root .manuscript-outline-heading:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".project-explorer-control:not([aria-disabled=\"true\"]):hover",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".project-explorer-chevron",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".project-explorer-materials",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".manuscript-outline-row:hover",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".manuscript-outline-row[data-current=\"true\"]",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".manuscript-outline-row button:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".manuscript-outline-row .manuscript-outline-disclosure:not([aria-disabled=\"true\"]), .manuscript-outline-row .manuscript-outline-tool:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".manuscript-outline",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".manuscript-outline .manuscript-outline-heading:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".manuscript-outline [data-emphasis=\"true\"]:not([aria-disabled=\"true\"]), .manuscript-outline-row:hover [data-heading]:not([aria-disabled=\"true\"])",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
       "minimum": 7,
       "foreground": "content.primary"
     },

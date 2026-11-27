@@ -246,6 +246,7 @@
   --component-tooltip-max-width: 256px;
   --component-menu-max-width: 384px;
   --component-palette-max-width: 600px;
+  --component-outline-indent: 14px;
   --z-base: 0;
   --z-sticky: 10;
   --z-drawer: 20;

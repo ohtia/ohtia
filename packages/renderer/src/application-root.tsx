@@ -28,6 +28,7 @@ import {
   message,
   type SimpleMessageKey,
   type LocaleSnapshot,
+  type ManuscriptRevision,
   type BootstrapSnapshot,
   type BootstrapNotice,
   type DesktopBridge,
@@ -72,6 +73,7 @@ export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) 
 }
 function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   const [createdProject, setCreatedProject] = useState<string>();
+  const [visibleManuscript, setVisibleManuscript] = useState<ManuscriptRevision | null>(null);
   const [memoryDrafts] = useState(() => new ProjectMemoryDrafts());
   const { collections, conversation, projects } = useMemo(() => {
     const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
@@ -544,6 +546,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         projects={projects}
         newProject={newProject}
         composeWorkspace={workspaceMounted.current}
+        manuscriptVisible={visibleManuscript !== null}
         bridge={bridge.commands}
         port={bridge.foundation}
         diagnostics={bridge.diagnostics}
@@ -651,6 +654,9 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                   {...binding}
                   chatActivity={activity.chat}
                   collections={collections}
+                  manuscriptPort={bridge.foundation}
+                  manuscriptLifecycle={bridge.commands}
+                  onManuscriptVisibility={setVisibleManuscript}
                   {...(activeProject?.setupConfirmedAt && currentProjectId
                     ? {
                         memory: (

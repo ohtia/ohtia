@@ -2025,3 +2025,59 @@ it("forwards consultation decisions and contribution retries with their original
   h.window.dispatchEvent(new Event("unload"));
   for (const call of calls) expect(await call.result).toEqual(failure("uncertain"));
 });
+
+it("forwards only boolean manuscript pending reports on the command channel", async () => {
+  const h = await load();
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  expect(await h.bridge.commands.setManuscriptPending!(true)).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_pending",
+    true,
+  );
+  h.ipcRenderer.invoke.mockResolvedValue(false as never);
+  expect(await h.bridge.commands.setManuscriptPending!(false)).toBe(false);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "manuscript_pending",
+    false,
+  );
+  h.ipcRenderer.invoke.mockResolvedValue("yes" as never);
+  expect(await h.bridge.commands.setManuscriptPending!(true)).toBe(false);
+  h.ipcRenderer.invoke.mockClear();
+  for (const invalid of ["true", 1, null, undefined, {}])
+    expect(await h.bridge.commands.setManuscriptPending!(invalid as never)).toBe(false);
+  expect(h.ipcRenderer.invoke).not.toHaveBeenCalled();
+});
+
+it("delivers only fixed manuscript close commands and bounds and releases their listeners", async () => {
+  const h = await load();
+  const onClose = h.bridge.commands.onManuscriptClose!;
+  const listener = vi.fn();
+  const failing = vi.fn(() => {
+    throw new Error("Synthetic listener failure");
+  });
+  const off = onClose(listener);
+  onClose(failing);
+  for (const invalid of ["window.fullscreen", null, { command: "window.close" }, undefined])
+    h.ipcRenderer.emit(desktopChannels.manuscriptClose, {}, invalid);
+  expect(listener).not.toHaveBeenCalled();
+  expect(failing).not.toHaveBeenCalled();
+  h.ipcRenderer.emit(desktopChannels.manuscriptClose, { sender: "native" }, "window.close");
+  expect(listener).toHaveBeenLastCalledWith("window.close");
+  expect(listener.mock.calls[0]).toHaveLength(1);
+  expect(failing).toHaveBeenCalledOnce();
+  h.ipcRenderer.emit(desktopChannels.manuscriptClose, {}, "application.quit");
+  expect(listener).toHaveBeenLastCalledWith("application.quit");
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(failing).toHaveBeenCalledOnce();
+  off();
+  h.ipcRenderer.emit(desktopChannels.manuscriptClose, {}, "window.close");
+  expect(listener).toHaveBeenCalledTimes(2);
+  const disposers = Array.from({ length: portLimits.subscriptions_per_window }, () =>
+    onClose(vi.fn()),
+  );
+  expect(() => onClose(vi.fn())).toThrow("Manuscript close listener limit reached.");
+  disposers[0]!();
+  expect(() => onClose(vi.fn())).not.toThrow();
+});

@@ -3059,3 +3059,131 @@ it("preserves migration recovery gates when automatic configured-store admission
   await h.action("retry_service");
   expect(h.utilityProcess.fork.mock.calls[1][1][3]).toBe("retry");
 });
+
+describe("manuscript close guard", () => {
+  const closeSends = (
+    window: { webContents: { send: ReturnType<typeof vi.fn> } },
+    channel: string,
+  ) =>
+    window.webContents.send.mock.calls
+      .filter(([sent]) => sent === channel)
+      .map(([, value]) => value);
+
+  it("records boolean manuscript pending reports for the sender and holds its close until cleared", async () => {
+    const h = await launch();
+    const channel = h.constants.desktopChannels.manuscriptClose;
+    expect(await h.command("manuscript_pending", "true")).toBe(false);
+    const ignored = { preventDefault: vi.fn() };
+    h.window.emit("close", ignored);
+    expect(closeSends(h.window, channel)).toEqual([]);
+    expect(h.app.quit).toHaveBeenCalledOnce();
+    h.app.quit.mockClear();
+    expect(await h.command("manuscript_pending", true)).toBe(true);
+    const held = { preventDefault: vi.fn() };
+    h.window.emit("close", held);
+    expect(held.preventDefault).toHaveBeenCalledOnce();
+    expect(closeSends(h.window, channel)).toEqual(["window.close"]);
+    expect(h.app.quit).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_pending", false)).toBe(true);
+    h.window.emit("close", { preventDefault: vi.fn() });
+    expect(closeSends(h.window, channel)).toEqual(["window.close"]);
+    expect(h.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it.each(["linux", "win32"] as const)(
+    "lets a %s operating-system shutdown close a window with pending manuscript text",
+    async (platform) => {
+      const h = await launch({ platform });
+      const channel = h.constants.desktopChannels.manuscriptClose;
+      expect(await h.command("manuscript_pending", true)).toBe(true);
+      if (platform === "win32") h.window.emit("session-end");
+      else h.powerMonitor.emit("shutdown");
+      h.app.quit.mockClear();
+      h.window.emit("close", { preventDefault: vi.fn() });
+      expect(closeSends(h.window, channel)).toEqual([]);
+      expect(h.app.quit).toHaveBeenCalledOnce();
+      const unload = { preventDefault: vi.fn() };
+      h.window.webContents.emit("will-prevent-unload", unload);
+      expect(unload.preventDefault).toHaveBeenCalledOnce();
+      expect(closeSends(h.window, channel)).toEqual([]);
+    },
+  );
+
+  it("forgets pending manuscript text when the renderer process is gone", async () => {
+    const h = await launch();
+    expect(await h.command("manuscript_pending", true)).toBe(true);
+    h.window.webContents.emit("render-process-gone");
+    h.window.emit("close", { preventDefault: vi.fn() });
+    expect(closeSends(h.window, h.constants.desktopChannels.manuscriptClose)).toEqual([]);
+    expect(h.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it("asks the renderer about a cancelled unload and holds the next close as pending", async () => {
+    const h = await launch();
+    const channel = h.constants.desktopChannels.manuscriptClose;
+    const unload = { preventDefault: vi.fn() };
+    h.window.webContents.emit("will-prevent-unload", unload);
+    expect(unload.preventDefault).not.toHaveBeenCalled();
+    expect(closeSends(h.window, channel)).toEqual(["window.close"]);
+    const held = { preventDefault: vi.fn() };
+    h.window.emit("close", held);
+    expect(held.preventDefault).toHaveBeenCalledOnce();
+    expect(closeSends(h.window, channel)).toEqual(["window.close", "window.close"]);
+    expect(h.app.quit).not.toHaveBeenCalled();
+  });
+
+  it("routes a quit to the window with pending manuscript text and runs the exit flow once cleared", async () => {
+    const h = await launch();
+    const channel = h.constants.desktopChannels.manuscriptClose;
+    const supervisor = h.supervisors[0];
+    h.window.emit("ready-to-show");
+    await h.action("new_window");
+    const second = h.Window.all[1]!;
+    second.emit("ready-to-show");
+    second.focus.mockClear();
+    second.minimized = true;
+    expect(await h.command("manuscript_pending", true, second)).toBe(true);
+    const quit = { preventDefault: vi.fn() };
+    h.app.emit("before-quit", quit);
+    expect(quit.preventDefault).toHaveBeenCalledOnce();
+    expect(closeSends(second, channel)).toEqual(["application.quit"]);
+    expect(closeSends(h.window, channel)).toEqual([]);
+    expect(second.restore).toHaveBeenCalledOnce();
+    expect(second.focus).toHaveBeenCalledOnce();
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(supervisor.stop).not.toHaveBeenCalled();
+    expect(await h.command("manuscript_pending", false, second)).toBe(true);
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(closeSends(second, channel)).toEqual(["application.quit"]);
+    expect(supervisor.stop).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalled();
+    const unload = { preventDefault: vi.fn() };
+    h.window.webContents.emit("will-prevent-unload", unload);
+    expect(unload.preventDefault).toHaveBeenCalledOnce();
+    expect(closeSends(h.window, channel)).toEqual([]);
+  });
+
+  it("skips the pending manuscript quit prompt during operating-system shutdown", async () => {
+    const h = await launch({ platform: "linux" });
+    const channel = h.constants.desktopChannels.manuscriptClose;
+    expect(await h.command("manuscript_pending", true)).toBe(true);
+    h.powerMonitor.emit("shutdown");
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(closeSends(h.window, channel)).toEqual([]);
+    expect(h.supervisors[0].stop).toHaveBeenCalledOnce();
+  });
+
+  it("ignores pending manuscript text in a destroyed window when quitting", async () => {
+    const h = await launch();
+    await h.action("new_window");
+    const second = h.Window.all[1]!;
+    expect(await h.command("manuscript_pending", true, second)).toBe(true);
+    second.destroyed = true;
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(closeSends(second, h.constants.desktopChannels.manuscriptClose)).toEqual([]);
+    expect(h.supervisors[0].stop).toHaveBeenCalledOnce();
+  });
+});

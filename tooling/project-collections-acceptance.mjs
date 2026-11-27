@@ -131,6 +131,9 @@ try {
   }
   await expect(title).toHaveText(projects[1].title);
   const conversations = button(explorer, "history.title");
+  const conversationGroup = explorer.locator(
+    `[id="${await conversations.getAttribute("aria-controls")}"]`,
+  );
   await conversations.press("Enter");
   await expect(explorer.getByRole("button", { name: "Interview 51", exact: true })).toHaveAttribute(
     "aria-current",
@@ -172,7 +175,9 @@ try {
   await expect
     .poll(() => app.evaluate(() => typeof globalThis.releaseOlderConversations))
     .toBe("function");
-  await expect(explorer.getByRole("status")).toHaveText(message("en-US", "history.olderLoading"));
+  await expect(conversationGroup.getByRole("status")).toHaveText(
+    message("en-US", "history.olderLoading"),
+  );
   await selectProject(projects[0]);
   await selectProject(projects[1]);
   await expect(button(explorer, "history.loadOlder")).toBeEnabled();
@@ -262,7 +267,7 @@ try {
         document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight,
       adjacent: [
         ...document.querySelectorAll(
-          ".workspace-panel:not(.workspace-chat) > .workspace-panel-scroll",
+          ".workspace-explorer > .workspace-panel-scroll, .workspace-document-tabs > .workspace-panel-scroll",
         ),
       ]
         .filter((panel) => panel.getClientRects().length > 0)

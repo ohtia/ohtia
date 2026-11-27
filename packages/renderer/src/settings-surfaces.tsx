@@ -64,6 +64,7 @@ export function SettingsSurfaces({
   children,
   returnFocusRef,
   composeWorkspace = false,
+  manuscriptVisible = false,
   research,
   projects,
   newProject,
@@ -82,6 +83,7 @@ export function SettingsSurfaces({
     openAgents: (agent?: ReplyAgent) => void,
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
+  readonly manuscriptVisible?: boolean;
   readonly research?: ConversationController;
   readonly projects?: ProjectController;
   readonly newProject?: NewProjectController;
@@ -426,6 +428,7 @@ export function SettingsSurfaces({
         bridge={bridge}
         locale={locale}
         decoration={decoration}
+        manuscriptVisible={manuscriptVisible}
         {...(updates ? { updates } : {})}
         registerHandlers={register}
         renderFeedback={(openSettings, inDialog) => (
