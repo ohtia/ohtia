@@ -74,6 +74,7 @@
     "agents.refreshFailed": "Ohtia no ha pogut actualitzar la llista de models. Les teves tries es conserven.",
     "agents.noModel": "{agent} no té cap model seleccionat. Tria’n un a Configuració › Agents.",
     "agents.missingModel": "El model “{model}” de {agent} no està disponible al teu compte ara mateix. Tria’n un altre a Configuració › Agents.",
+    "agents.modelUnavailable": "El model “{model}” no està disponible al teu compte de {service} ara mateix. Tria’n un altre.",
     "agents.open": "Obre la configuració d’Agents",
     "agents.destination": "{agent} no té cap model disponible. Els missatges quedaran en espera.",
     "agents.planWaiting": "En espera: {agent} no té cap model disponible",

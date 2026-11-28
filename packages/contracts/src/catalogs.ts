@@ -59,6 +59,7 @@ export const messageContracts = {
   "agents.refreshFailed": { params: {} },
   "agents.noModel": { params: { agent: "string" } },
   "agents.missingModel": { params: { agent: "string", model: "string" } },
+  "agents.modelUnavailable": { params: { model: "string", service: "string" } },
   "agents.open": { params: {} },
   "agents.destination": { params: { agent: "string" } },
   "agents.planWaiting": { params: { agent: "string" } },

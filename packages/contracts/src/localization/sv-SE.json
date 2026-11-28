@@ -74,6 +74,7 @@
     "agents.refreshFailed": "Ohtia kunde inte uppdatera modellistan. Dina val behålls.",
     "agents.noModel": "Ingen modell har valts för {agent}. Välj en i Inställningar › Agenter.",
     "agents.missingModel": "Modellen “{model}” för {agent} är inte tillgänglig för ditt konto just nu. Välj en annan i Inställningar › Agenter.",
+    "agents.modelUnavailable": "Modellen “{model}” är inte tillgänglig för ditt {service}-konto just nu. Välj en annan modell.",
     "agents.open": "Öppna agentinställningarna",
     "agents.destination": "Ingen användbar modell finns för {agent}. Meddelanden får vänta.",
     "agents.planWaiting": "Väntar: ingen användbar modell för {agent}",

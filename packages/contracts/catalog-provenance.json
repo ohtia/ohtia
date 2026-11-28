@@ -385,6 +385,15 @@
       },
       "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "Unavailable model notice for issue #463: agents.modelUnavailable, in every supported locale",
+      "producer": {
+        "agent": "claude-code",
+        "effective_model": "claude-opus-5-5"
+      },
+      "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
+      "human_linguistic_review": null
     }
   ]
 }

@@ -74,6 +74,7 @@
     "agents.refreshFailed": "Ohtia kon de modellijst niet bijwerken. Je keuzes blijven behouden.",
     "agents.noModel": "Er is geen model gekozen voor {agent}. Kies een model via Instellingen › Agenten.",
     "agents.missingModel": "Het model “{model}” van {agent} is momenteel niet beschikbaar in je account. Kies een ander model via Instellingen › Agenten.",
+    "agents.modelUnavailable": "Het model “{model}” is momenteel niet beschikbaar in je {service}-account. Kies een ander model.",
     "agents.open": "Agentinstellingen openen",
     "agents.destination": "Er is geen bruikbaar model voor {agent}. Berichten blijven wachten.",
     "agents.planWaiting": "Wacht: geen bruikbaar model voor {agent}",

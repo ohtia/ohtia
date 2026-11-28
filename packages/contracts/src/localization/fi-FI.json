@@ -74,6 +74,7 @@
     "agents.refreshFailed": "Ohtia ei voinut päivittää malliluetteloa. Valintasi säilyvät.",
     "agents.noModel": "Agentille {agent} ei ole valittu mallia. Valitse malli kohdassa Asetukset › Agentit.",
     "agents.missingModel": "Agentin {agent} malli “{model}” ei ole nyt käytettävissä tililläsi. Valitse toinen malli kohdassa Asetukset › Agentit.",
+    "agents.modelUnavailable": "Malli “{model}” ei ole nyt käytettävissä {service}-tililläsi. Valitse toinen malli.",
     "agents.open": "Avaa agenttiasetukset",
     "agents.destination": "Agentilla {agent} ei ole käytettävissä olevaa mallia. Viestit jäävät odottamaan.",
     "agents.planWaiting": "Odottaa: agentilla {agent} ei ole käytettävissä olevaa mallia",

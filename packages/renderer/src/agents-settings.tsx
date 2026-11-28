@@ -824,6 +824,15 @@ function PreferenceControls({
     !settings.data ||
     (!!saved?.model &&
       (judged ? listed : lastJudgement?.key === choiceKey ? lastJudgement.listed : true));
+  // The confirmed model that its connection's complete list no longer offers; the read-failure
+  // notice takes precedence, and a choice never judged is not reported.
+  const unavailable =
+    settings.data && saved?.model && !usable && !catalog.failed
+      ? {
+          model: saved.modelName ?? saved.model,
+          service: connections.find((item) => item.id === saved.connection),
+        }
+      : undefined;
   const savedState =
     settings.saveState?.target === target &&
     ["saving", "saved"].includes(settings.saveState.phase) ? (
@@ -866,6 +875,7 @@ function PreferenceControls({
           id={id + "-model"}
           value={currentModel}
           title={modelLabel}
+          aria-describedby={unavailable?.service ? id + "-unavailable" : undefined}
           aria-disabled={disabled || undefined}
           disabled={!models && target === "default"}
           onChange={(event) => {
@@ -935,6 +945,20 @@ function PreferenceControls({
       </RecoveryFocusBoundary>
       {target === "default" && externalNotice}
       {effortReason && <small id={id + "-effort"}>{effortReason}</small>}
+      {unavailable?.service && (
+        <p
+          id={id + "-unavailable"}
+          className="connection-notice connection-attention"
+          role="status"
+          data-settings-attention="triangle-alert"
+        >
+          <Icon name="triangle-alert" />
+          {message(locale, "agents.modelUnavailable", {
+            model: unavailable.model,
+            service: unavailable.service.displayName,
+          })}
+        </p>
+      )}
       <RecoveryFocusBoundary className="agent-focus-recovery" onRecover={focusChoice}>
         {settings.saveState?.target === target &&
           !["saving", "saved"].includes(settings.saveState.phase) && (
