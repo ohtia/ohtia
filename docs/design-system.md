@@ -4,6 +4,8 @@ title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility

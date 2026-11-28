@@ -4,6 +4,8 @@ title: "Data model"
 description: "Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite."
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: biblatex
     resource: "https://www.ctan.org/tex-archive/macros/latex/contrib/biblatex/"

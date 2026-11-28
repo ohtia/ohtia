@@ -4,6 +4,8 @@ title: Workspace layout
 description: Deterministic workspace geometry, accessible panel controls, project document navigation, desktop layout preferences and interaction acceptance scenarios.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Workspace layout
