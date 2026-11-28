@@ -1331,9 +1331,9 @@ it.each(["confirmed", "failed"] as const)(
       expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
         project.title,
       );
-      expect(container.querySelector(".workspace-setup")?.textContent).toContain(
-        "The Navigator isn’t available in this version",
-      );
+      // A setup-confirmed thesis opens its Navigator overview without starting any stage.
+      expect(container.querySelector(".navigator .research-stages")).not.toBeNull();
+      expect(container.querySelector(".workspace-setup")).toBeNull();
     } else {
       expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
         message("en-US", "project.loadFailed"),
@@ -3254,7 +3254,7 @@ it("opens one scoped profile tab from the explorer index and section links while
   await press(navigator, "End");
   expect(document.activeElement).toBe(tab);
   await activate(navigator);
-  await activate(button(workspace, "Open profile research"));
+  await activate(button(workspace.querySelector(".navigator")!, "Research"));
   expect(document.activeElement).toBe(
     article.querySelector('[data-profile-section="research"] h3'),
   );
@@ -3590,7 +3590,7 @@ it("keeps active profile input and a submitted save across conversation observat
   const workspace = container.querySelector(".workspace")!;
   await activate(button(workspace.querySelector(".project-explorer")!, "Research profile"));
   await activate(button(workspace.querySelector('[role="tablist"]')!, "Navigator"));
-  await activate(button(workspace, "Open profile research"));
+  await activate(button(workspace.querySelector(".navigator")!, "Research"));
   const profile = workspace.querySelector(".thesis-profile")!;
   await activate(button(profile, "Edit Research"));
   const field = profile.querySelector('[data-profile-field="discipline"]')!;

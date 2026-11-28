@@ -4,6 +4,7 @@ import { latestProject, ProjectCollections, ProjectController } from "./project-
 import type { ProjectSelectionLease } from "./pending-project-work.js";
 import { ProjectSelector } from "./project-selector.js";
 import { ThesisProfileController } from "./thesis-profile-controller.js";
+import { NavigatorController } from "./navigator-controller.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { ProjectRename, ProjectRenameStatus } from "./project-rename.js";
 import { Dialog } from "./layers.js";
@@ -80,6 +81,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     () => new Map<string, ThesisProfileController>(),
     [bridge.foundation],
   );
+  const navigator = useMemo(() => new NavigatorController(bridge.foundation), [bridge.foundation]);
   const { collections, conversation, projects } = useMemo(() => {
     const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
       projects.rememberStarted(scope);
@@ -188,10 +190,12 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         if (record === "project") projects.noteProject();
         if (record === "profile" && id === conversation.snapshot().scope.projectId)
           profileDrafts.get(id)?.changed(revision);
+        if (record === "researchStage" && id === conversation.snapshot().scope.projectId)
+          navigator.changed(id, revision);
         if (record === "projectTitle" && id === conversation.snapshot().scope.projectId)
           projects.noteProjectTitle(id, revision);
       }),
-    [conversation, profileDrafts, projects],
+    [conversation, navigator, profileDrafts, projects],
   );
   useEffect(() => {
     projects.remember(conversationState.scope);
@@ -680,6 +684,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                   manuscriptPort={bridge.foundation}
                   manuscriptLifecycle={bridge.commands}
                   onManuscriptVisibility={setVisibleManuscript}
+                  navigator={navigator}
                   {...(profile && profileLease && profileLanguage
                     ? {
                         profile: {

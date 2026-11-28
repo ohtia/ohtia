@@ -189,6 +189,7 @@ export const iconMappings = {
   "Conversations explorer group": "messages-square",
   "Edit a research profile section": "pencil",
   "Profile section without unanswered fields": "check",
+  "Workflow milestone, pending": "diamond",
   "Supported by examined content": "circle-dot",
   "Partially supported": "contrast",
   "Ambiguous": "circle-question-mark",

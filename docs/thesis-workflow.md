@@ -59,11 +59,11 @@ Artifact names describe research outputs, not new database entities, mandatory o
 - **Interpret → Describe:** an additional description or data contrast is needed.
 - **Interpret → Literature:** a missing theory or prior study limits the explanation.
 
-The map shows common dependencies, not a compulsory stage sequence. Literature and methodological preparation may overlap; a sufficiently documented subset may be described while collection continues. Existing advanced research enters at its actual point. Writing and review run throughout. Finishing Interpret does not mean a thesis is ready for delivery, defense or final closure; that later academic route needs its own definition.
+The map shows common dependencies, not a compulsory stage sequence. Literature and methodological preparation may overlap; a sufficiently documented subset may be described while collection continues. Existing advanced research enters at its actual point. Writing and review run throughout. Finishing Interpret does not mean a thesis is ready for delivery, defense or final closure; the [Delivery and defense](#stable-stage-identifiers) workflow milestone marks that point, and the academic route leading to it needs its own definition.
 
 ## Stable stage identifiers
 
-The stage identifiers are fixed machine values, independent of translated labels, section wording, output letters and the current focus. They classify research progress; they are not entity UUIDs or evidence of milestone completion.
+Each project type defines its own ordered workflow of stages and workflow milestones; this document defines the thesis workflow. The identifiers are fixed machine values, independent of translated labels, section wording, output letters and the current focus. They classify research progress; they are not entity UUIDs or evidence of milestone completion.
 
 - `onboarding` — Onboarding, described in [1. Onboarding](#1-onboarding).
 - `topic_problem` — Topic–Problem, described in [2. Define the topic and problem](#2-define-the-topic-and-problem).
@@ -72,6 +72,9 @@ The stage identifiers are fixed machine values, independent of translated labels
 - `investigate` — Investigate, described in [5. Investigate](#5-investigate).
 - `describe` — Describe, described in [6. Describe](#6-describe).
 - `interpret` — Interpret, described in [7. Interpret](#7-interpret).
+- `delivery` — Delivery and defense, a workflow milestone after Interpret.
+
+A workflow milestone is a point in the workflow, not a stage. It has no activities, focus, entry or reopening, and reads as `pending` until a recorded event reaches it, then as `reached`. Delivery and defense marks the delivery or defense of the thesis; an institutional approval remains a separately evidenced event. Workflow milestones are separate from the dated milestones in the researcher's profile, which record the researcher's own calendar.
 
 Navigator state and persisted stage references use these identifiers. Changing a label, route focus or plan does not rename the identifier or transfer an earlier review to new content.
 

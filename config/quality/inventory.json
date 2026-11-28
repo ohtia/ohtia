@@ -50,6 +50,7 @@
     "tests/message-composer.test.ts",
     "tests/message-markdown.test.ts",
     "tests/native-failure-observation.test.ts",
+    "tests/navigator.test.ts",
     "tests/new-project.test.ts",
     "tests/openai-provider.test.ts",
     "tests/openrouter-provider.test.ts",

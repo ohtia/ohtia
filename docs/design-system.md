@@ -619,6 +619,8 @@ Fixed mappings:
 | Conversations explorer group                 | `messages-square`      |
 | Edit a research profile section              | `pencil`               |
 | Profile section without unanswered fields    | `check`                |
+| Workflow milestone, pending                  | `diamond`              |
+| Workflow milestone, reached                  | `diamond`, filled      |
 
 A state label never uses an icon that this table or the domain components map to another meaning.
 
@@ -1336,7 +1338,9 @@ The `voice.ohtia.*` tokens identify system/AI-origin contributions and the produ
 #### Navigator
 
 - **`WeeklyActions`.** The week's actions, identified as Ohtia proposals. The Navigator shows at most five; the set of three to five is selected by the capability generating actions. Each action states what to do, why now, how to know it is done and estimated time, according to the [thesis workflow](thesis-workflow.md#navigator-behavior).
-- **`StageStatus`.** Represents stage, stage state and current focus separately. States are “Not started,” “In progress” and “Done,” always as badge text. The focused stage carries a 1 px `border.strong` border and “Focus” marker; it does not use `border-width.state` thickness, which is reserved for trust state. A pending change proposal is marked “Pending proposal” in `voice.ohtia.content`. In the horizontal map, stage names use 12/18 at weight 500 and may wrap; the vertical list uses `type.ui.body-small`.
+- **`StageStatus`.** Represents stage, stage state and current focus separately. It lists the items of the open project's type in their workflow order, so each project type supplies its own stages and the component does not assume the thesis list. An item is either a stage or a workflow milestone. Stage states are “Not started,” “In progress” and “Done,” always as badge text. A workflow milestone, such as Delivery and defense at the end of a thesis, has no activities, purpose text or focus. It shows `diamond` while “Pending” and a filled `diamond` once “Reached”, with the state also as text. The focused stage carries a 1 px `border.strong` border and “Focus” marker; it does not use `border-width.state` thickness, which is reserved for trust state. A pending change proposal is marked “Pending proposal” in `voice.ohtia.content`. In the horizontal map, stage names use 12/18 at weight 500 and may wrap; the vertical list uses `type.ui.body-small`. The Navigator first selects the most recently started or reopened stage, otherwise the first item. Selecting an item shows its details and changes no saved data.
+- **Stage detail.** The selected stage shows its name and state, then its purpose and expected output from the project type's workflow in the interface locale. A started stage adds one line from its latest stage record, such as “In progress since 12 Nov 2026”, and that record's remaining conditions. The interface calls these records stage records and never decisions, which are Project memory entries. The Navigator shows no stage record history and no record reason. What you already have lists the profile sections with their unanswered counts and the recorded questions, each with a link to its profile section. A capability that is not available yet, such as exploratory search or the guided work of a later stage, is stated as such with the local work that remains possible. A stage-actions area holds only controls that are actually eligible, and is absent when there are none.
+- **Schedule summary.** Shows the profile's thesis deadline inline as a calendar date in the interface locale, without a time-zone shift. A deadline without an answer shows “Pending”, one marked as not yet known shows “Unknown” and an inapplicable one shows “Not applicable”, each as badge text with a link to edit it. A failed profile read says that the schedule cannot be shown, offers Retry and implies nothing about the date. Below it, up to three milestones that are not done: dated ones from the earliest date, then undated ones in profile order. Each row shows the title and the date when known, and a past date adds “Date passed” in the `attention` tone. Done milestones are omitted, more than three add “N more in Schedule”, and the empty cases read “No milestones recorded yet.” or “No pending milestones.” Open Schedule opens the profile tab at its Schedule section. These profile milestones are the researcher's calendar and are separate from workflow milestones.
 - **`PaceIndicator`.** Appears only with an agreed deadline and plan. “At the planned pace” uses neutral tone and “behind the plan” uses `attention`; without a plan there is no indicator, only explanatory text. It is never applied to an argument's strength.
 
 #### Manuscript index
@@ -1438,17 +1442,18 @@ These descriptions establish composition and states for the main tasks. They are
 
 #### Navigator
 
-Answers “where was I, and what do I do now?” It shows, in this order:
+Answers “where was I, and what do I do now?” as an overview of the whole project. Detailed work stays in its own tab: the Navigator links to the Research profile, Manuscript and Project memory and does not repeat their editors, entries or histories. It shows, in this order:
 
-1. project name, last session and current focus;
+1. project title and subtitle, last session and current focus;
 2. ways to start, only on day zero and when available;
-3. stages with their state (`StageStatus`) and details of the selected stage;
-4. proposed state changes;
-5. the week's actions (`WeeklyActions`);
-6. counts with their coverage and the `PaceIndicator` when a plan exists;
-7. checks requiring review.
+3. the schedule summary;
+4. the project type's stages and workflow milestones with their state (`StageStatus`) and the selected stage's detail;
+5. proposed state changes;
+6. the week's actions (`WeeklyActions`), which is where the Navigator suggests what to do now;
+7. counts with their coverage and the `PaceIndicator` when a plan exists;
+8. checks requiring review.
 
-A section with no items is not shown, except the heading for the week's actions.
+A section with no items is not shown, except the heading for the week's actions. Blockers and proposed state changes appear only when a capability records them.
 
 #### Source library
 

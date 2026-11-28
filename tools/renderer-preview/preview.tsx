@@ -6,6 +6,7 @@ import { ComposerSpecimen } from "./composer-specimen.js";
 import { ConversationSpecimen } from "./conversation-specimen.js";
 import { CharacterSpecimen } from "./character-specimen.js";
 import { ThesisProfileSpecimen } from "./thesis-profile-specimen.js";
+import { NavigatorSpecimen } from "./navigator-specimen.js";
 import { ResearchSpecimen } from "./research-specimen.js";
 import { WorkspaceSpecimen, ScopedWorkspaceSpecimen } from "./workspace-specimen.js";
 import { CommandSpecimens } from "./command-specimens.js";
@@ -421,6 +422,8 @@ createRoot(root).render(
     <ResearchSpecimen />
   ) : screen === "thesis-profile" ? (
     <ThesisProfileSpecimen />
+  ) : screen === "navigator" ? (
+    <NavigatorSpecimen />
   ) : screen === "workspace" ? (
     <WorkspaceSpecimen />
   ) : screen === "scoped-workspace" ? (
