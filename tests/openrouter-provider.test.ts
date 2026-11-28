@@ -153,7 +153,7 @@ function harness({
 }
 
 describe("OpenRouter declaration", () => {
-  it("connects with a pasted key and declares requests with text, streaming, tools and Stop", () => {
+  it("connects with a pasted key or a sign-in and declares requests with text, streaming, tools and Stop", () => {
     const { provider } = harness();
     expect(provider.declaration).toEqual({
       id: "openrouter",
@@ -164,7 +164,7 @@ describe("OpenRouter declaration", () => {
         kind: "api_key",
         usageUrl: "https://openrouter.ai/settings/credits",
       },
-      signInModes: ["api_key"],
+      signInModes: ["api_key", "provider_login"],
       capabilities: {
         text: true,
         attachments: false,

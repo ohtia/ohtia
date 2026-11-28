@@ -31,6 +31,20 @@ interface Connection {
   deleteFailed: boolean;
   probeWork: boolean;
   checkingKey?: boolean;
+  /** A pending key sign-in: whether its exchange request left, and whether the key is being written. */
+  keySignIn?:
+    | {
+        sent: boolean;
+        writing: boolean;
+        /** The state and reason before the sign-in, restored by Cancel and Deny. */
+        readonly before: {
+          readonly state: ConnectionState;
+          readonly reason: ConnectionReason | null;
+        };
+      }
+    | undefined;
+  /** The last key sign-in may have created a key in the service that Ohtia did not keep. */
+  unkeptKey?: boolean;
   generation: number;
   action: AbortController | undefined;
   signInTimer: ReturnType<typeof setTimeout> | undefined;
@@ -153,6 +167,8 @@ export class ConnectionManager {
           ...(connectedAt ? { connected_at: connectedAt } : {}),
           ...(expiresAt ? { expires_at: expiresAt } : {}),
           ...(c.checkingKey ? { checking_key: true } : {}),
+          ...(c.keySignIn ? { signing_in: true } : {}),
+          ...(c.unkeptKey ? { unkept_key: true } : {}),
           probing: !!c.probe,
           probe_id: c.probe?.id ?? c.lastProbe,
           model_list_revision: c.models === undefined ? null : c.revision,
@@ -266,7 +282,8 @@ export class ConnectionManager {
       } else if (stored.status === "unusable" && c.reason === null && c.state !== "connecting") {
         c.state = "expired";
       } else if (stored.status === "absent" && c.state === "connected") {
-        c.state = "disconnected";
+        // A pending key sign-in can still connect; until it ends, the row is connecting.
+        c.state = c.keySignIn ? "connecting" : "disconnected";
         c.reason = null;
       }
     }
@@ -277,7 +294,13 @@ export class ConnectionManager {
   ): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
-    if (c.adapter.apiKey) return this.startKeyCheck(id, c, options?.key, false);
+    // The payload names the action: a pasted key checks it, no key signs in through the browser.
+    if (c.adapter.apiKey)
+      return options?.key !== undefined
+        ? this.startKeyCheck(id, c, options.key, false)
+        : options?.new_registration === undefined
+          ? this.startKeySignIn(id, c)
+          : failure("invalid_message");
     if (options?.key !== undefined) return failure("invalid_message");
     if (!c.storeUnavailable && (c.state === "connected" || c.state === "connecting"))
       return { ok: true, value: this.requireSnapshot(id) };
@@ -389,7 +412,11 @@ export class ConnectionManager {
     const apiKey = c.adapter.apiKey;
     if (!apiKey || !isProviderApiKey(key)) return failure("invalid_message");
     const currentSnapshot = () => ({ ok: true as const, value: this.requireSnapshot(id) });
-    if (c.checkingKey || (!replace && c.state === "connected" && !c.storeUnavailable))
+    if (
+      c.checkingKey ||
+      c.keySignIn ||
+      (!replace && c.state === "connected" && !c.storeUnavailable)
+    )
       return currentSnapshot();
     if (replace && c.state !== "connected" && c.state !== "expired") return currentSnapshot();
 
@@ -399,6 +426,7 @@ export class ConnectionManager {
     const generation = ++c.generation;
     c.action = action;
     c.checkingKey = true;
+    c.unkeptKey = false;
     c.reason = null;
     c.initialized = true;
     c.deleteFailed = false;
@@ -470,6 +498,141 @@ export class ConnectionManager {
       });
     return currentSnapshot();
   }
+  /**
+   * Obtain a key through the adapter's browser sign-in and keep it only after the key check of a
+   * pasted key passes. Until the write starts, a failure, Deny or cancellation keeps the key and
+   * state the connection had; a disconnected connection is `connecting` meanwhile.
+   */
+  private startKeySignIn(id: string, c: Connection): Outcome<ConnectionSnapshot> {
+    const apiKey = c.adapter.apiKey;
+    const signIn = apiKey?.signIn?.bind(apiKey);
+    if (!apiKey || !signIn || !c.adapter.declaration.signInModes.includes("provider_login"))
+      return failure("invalid_message");
+    if (c.checkingKey || c.keySignIn) return { ok: true, value: this.requireSnapshot(id) };
+    this.cancelProbe(id, c);
+    this.clearSignIn(c);
+    c.action?.abort();
+    const action = new AbortController();
+    const generation = ++c.generation;
+    const pending = { sent: false, writing: false, before: { state: c.state, reason: c.reason } };
+    c.action = action;
+    c.keySignIn = pending;
+    c.unkeptKey = false;
+    c.reason = null;
+    c.initialized = true;
+    c.deleteFailed = false;
+    c.storeUnavailable = false;
+    if (c.state !== "connected" && c.state !== "expired") c.state = "connecting";
+    const finish = (
+      reason: KeyCheckReason | "store_unavailable" | "sign_in_rejected" | "sign_in_timeout" | null,
+      unkept: boolean,
+      models?: readonly ProviderModel[],
+    ) => {
+      if (!this.current(c, generation) || c.keySignIn !== pending) return;
+      this.endKeySignIn(c);
+      c.unkeptKey = unkept;
+      if (models) {
+        c.state = "connected";
+        c.reason = null;
+        c.storeUnavailable = false;
+        c.models = undefined;
+        c.lastProbe = null;
+        delete c.listReport;
+        this.modelReads.delete(id);
+        this.applyModels(id, c, models);
+        this.diagnostic?.({ event_name: "ohtia.connection.connected" });
+      } else if (reason) {
+        // A keyring failure seen during the wait stays until a read or a stored key clears it.
+        if (reason === "store_unavailable") c.storeUnavailable = true;
+        c.reason = reason;
+        this.diagnostic?.({ event_name: "ohtia.connection.failed", error_code: reason });
+      } else this.restoreReason(c, pending.before);
+      this.emit(id);
+    };
+    c.signInTimer = setTimeout(() => {
+      action.abort();
+      finish("sign_in_timeout", pending.sent);
+    }, portLimits.sign_in_wait_ms);
+    this.emit(id);
+    this.diagnostic?.({ event_name: "ohtia.connection.connect" });
+    const interrupted = () => action.signal.aborted;
+    void Promise.resolve()
+      .then(async () => {
+        const stored = await c.adapter.credentials.read();
+        if (interrupted()) return;
+        if (stored.status === "unavailable") {
+          finish("store_unavailable", false);
+          return;
+        }
+        const result = await signIn(action.signal, () => {
+          pending.sent = true;
+        });
+        if (interrupted()) return;
+        if (result.status === "denied") {
+          finish(null, false);
+          return;
+        }
+        if (result.status === "rejected") {
+          finish("sign_in_rejected", result.unkept);
+          return;
+        }
+        // From here OpenRouter holds a key; any failure leaves one that Ohtia did not keep.
+        const checked = await apiKey.check(result.key, action.signal);
+        if (interrupted()) return;
+        if ("reason" in checked) {
+          finish(checked.reason, true);
+          return;
+        }
+        const models = this.validateModels(id, c, checked.models);
+        if (!models) {
+          finish("key_check_unavailable", true);
+          return;
+        }
+        // A native write already started cannot be cancelled; Cancel sign-in no longer applies.
+        pending.writing = true;
+        this.clearSignIn(c);
+        const written = await apiKey.save(result.key, checked);
+        if (written.status === "stored") finish(null, false, models);
+        else finish("store_unavailable", true);
+      })
+      .catch(() => {
+        finish("sign_in_rejected", pending.sent);
+      });
+    return { ok: true, value: this.requireSnapshot(id) };
+  }
+  /** End a pending key sign-in, keeping the key and state the connection had before it. */
+  cancelSignIn(id: string): Outcome<ConnectionSnapshot> {
+    const c = this.connections.get(id);
+    if (!c || this.disposed) return failure("invalid_message");
+    const pending = c.keySignIn;
+    if (pending && !pending.writing) {
+      c.generation++;
+      c.action?.abort();
+      this.endKeySignIn(c);
+      this.restoreReason(c, pending.before);
+      c.unkeptKey = pending.sent;
+      this.diagnostic?.({ event_name: "ohtia.connection.cancel_sign_in" });
+      this.emit(id);
+    }
+    return { ok: true, value: this.requireSnapshot(id) };
+  }
+  /**
+   * Cancel and Deny end without a reason of their own. An expired key keeps the explanation the
+   * session gave for it (such as `key_needs_workspace`), and one reported during the wait stays.
+   */
+  private restoreReason(
+    c: Connection,
+    before: { readonly state: ConnectionState; readonly reason: ConnectionReason | null },
+  ): void {
+    if (c.reason === null && c.state === "expired" && before.state === "expired")
+      c.reason = before.reason;
+  }
+  private endKeySignIn(c: Connection): void {
+    this.clearSignIn(c);
+    c.action = undefined;
+    c.keySignIn = undefined;
+    if (c.state === "connecting") c.state = "disconnected";
+  }
   private clearSignIn(c: Connection): void {
     clearTimeout(c.signInTimer);
     c.signInTimer = undefined;
@@ -498,7 +661,8 @@ export class ConnectionManager {
       !c.deleteFailed &&
       c.initialized &&
       c.state === "disconnected" &&
-      c.reason === null
+      c.reason === null &&
+      !c.unkeptKey
     )
       return { ok: true, value: this.requireSnapshot(id) };
     const cancellingSignIn = c.state === "connecting" && c.adapter.cancelSignIn !== undefined;
@@ -506,6 +670,8 @@ export class ConnectionManager {
     c.action?.abort();
     c.action = undefined;
     c.checkingKey = false;
+    c.keySignIn = undefined;
+    c.unkeptKey = false;
     const generation = ++c.generation;
     // Revoke task admission before an OS unlock or deletion can wait.
     c.state = "disconnected";
@@ -545,7 +711,8 @@ export class ConnectionManager {
   probe(id: string): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
-    if (c.probe || c.checkingKey) return { ok: true, value: this.requireSnapshot(id) };
+    if (c.probe || c.checkingKey || c.keySignIn)
+      return { ok: true, value: this.requireSnapshot(id) };
     const abort = new AbortController();
     const probeId = randomUUID();
     let probingAccount: string | undefined;

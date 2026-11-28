@@ -40,6 +40,17 @@ const cases: readonly ConnectionSnapshot[] = [
     model_count: 2,
   },
   { ...base, state: "expired", reason: null },
+  {
+    ...base,
+    state: "connected",
+    reason: null,
+    signing_in: true,
+    connected_at: "2026-11-26T10:00:00.000Z",
+    expires_at: "2026-12-03T10:00:00.000Z",
+    model_list_revision: 1,
+    model_count: 2,
+  },
+  { ...base, state: "disconnected", reason: "sign_in_rejected", unkept_key: true },
 ];
 function port(snapshot: ConnectionSnapshot): FoundationPort {
   const call = <T,>(value: T) => ({

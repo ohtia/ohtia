@@ -54,6 +54,7 @@
     "tests/openai-provider.test.ts",
     "tests/openrouter-provider.test.ts",
     "tests/openrouter-requests.test.ts",
+    "tests/openrouter-sign-in.test.ts",
     "tests/pending-project-work.test.ts",
     "tests/port.test.ts",
     "tests/preload-entry.test.ts",

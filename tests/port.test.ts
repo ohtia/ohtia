@@ -275,6 +275,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "readConnection",
         "connectConnection",
         "replaceConnectionKey",
+        "cancelConnectionSignIn",
         "disconnectConnection",
         "probeConnection",
         "listAgentPreferences",

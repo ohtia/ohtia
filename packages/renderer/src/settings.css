@@ -574,6 +574,17 @@
 .connection-links > li {
   display: block;
 }
+.connection-unkept {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  color: var(--content-secondary);
+  font-size: var(--type-ui-caption-size);
+}
+.connection-unkept p {
+  margin: var(--space-0);
+  overflow-wrap: anywhere;
+}
 .connection-danger {
   background: var(--danger-surface);
   color: var(--danger-content);

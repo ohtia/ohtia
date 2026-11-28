@@ -1321,6 +1321,7 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
     h.bridge.foundation.readConnection("fake"),
     h.bridge.foundation.connectConnection("fake"),
     h.bridge.foundation.replaceConnectionKey("anthropic_api_key", "synthetic-replacement"),
+    h.bridge.foundation.cancelConnectionSignIn("openrouter"),
     h.bridge.foundation.disconnectConnection("fake"),
     h.bridge.foundation.probeConnection("fake"),
     h.bridge.foundation.listConnectionModels({
@@ -1337,6 +1338,14 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
     expect.objectContaining({
       operation: "connection.replaceKey",
       payload: { connection: "anthropic_api_key", key: "synthetic-replacement" },
+    }),
+  );
+  expect(
+    h.ipcRenderer.send.mock.calls.map(([, text]: [string, string]) => JSON.parse(text)),
+  ).toContainEqual(
+    expect.objectContaining({
+      operation: "connection.cancelSignIn",
+      payload: { connection: "openrouter" },
     }),
   );
   const listener = vi.fn();

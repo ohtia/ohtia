@@ -754,6 +754,12 @@
       "minimum": 7
     },
     {
+      "selector": ".connection-unkept",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
       "selector": ".connection-danger",
       "foreground": "danger.content",
       "backgrounds": ["danger.surface"],

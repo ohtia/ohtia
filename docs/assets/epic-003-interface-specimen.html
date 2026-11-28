@@ -11377,6 +11377,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                   <div class="conn-actions">
                     <button class="button">Test connection</button
                     ><button class="button">Replace key</button
+                    ><button class="button">
+                      Sign in with OpenRouter<svg
+                        class="icon icon-16"
+                        data-i="external-link"
+                        role="img"
+                        aria-label="opens in your browser"
+                      ></svg></button
                     ><button class="button">Disconnect OpenRouter</button>
                   </div>
                   <div class="notice notice-status">
@@ -11446,8 +11453,9 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
       <div class="variant" data-variant="openrouter">
         <h2 class="specimen-title">Settings › AI services scrolled to OpenRouter, 1280 × 1000</h2>
         <p class="specimen-note">
-          Issue #447. The same page scrolled to its end: OpenRouter is connected with a key that
-          expires, and its privacy line with four links stays below the row.
+          Issues #447 and #449. The same page scrolled to its end: OpenRouter is connected with a
+          key that expires, offers "Sign in with OpenRouter" next to "Replace key", and its privacy
+          line with four links stays below the row.
         </p>
         <div class="frame" style="width: 1280px; height: 1000px">
           <div data-use="settings-backdrop"></div>
@@ -11549,6 +11557,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                   <div class="conn-actions">
                     <button class="button">Test connection</button
                     ><button class="button">Replace key</button
+                    ><button class="button">
+                      Sign in with OpenRouter<svg
+                        class="icon icon-16"
+                        data-i="external-link"
+                        role="img"
+                        aria-label="opens in your browser"
+                      ></svg></button
                     ><button class="button">Disconnect OpenRouter</button>
                   </div>
                   <div class="notice notice-status">
@@ -11601,6 +11616,182 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                   <div class="group-heading"><h3 id="c-limits-or">Simultaneous work</h3></div>
                   <label class="field-label" for="c-limit-or">AI replies at the same time</label>
                   <input class="text-input" id="c-limit-or" value="3" inputmode="numeric" />
+                  <p class="help">
+                    More replies at once can use more of your ChatGPT plan at the same time.
+                  </p>
+                  <p class="help">
+                    More replies at once can spend your Anthropic key's credit faster.
+                  </p>
+                  <p class="help">ChatGPT allows at most 3 replies at a time.</p>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="variant" data-variant="openrouter-sign-in">
+        <h2 class="specimen-title">
+          Settings › AI services with OpenRouter waiting for sign-in, 1280 × 1000
+        </h2>
+        <p class="specimen-note">
+          Issue #449. The same page after "Sign in with OpenRouter": while the browser sign-in is
+          pending, the group keeps its key and state and offers only "Cancel sign-in", which keeps
+          them.
+        </p>
+        <div class="frame" style="width: 1280px; height: 1000px">
+          <div data-use="settings-backdrop"></div>
+          <div
+            class="dialog dialog-tall dialog-settings"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings"
+          >
+            <div class="dialog-header">
+              <h1 class="dialog-title">Settings</h1>
+              <button class="icon-button" aria-label="Close Settings" title="Close · Esc">
+                <svg class="icon icon-20" data-i="x"></svg>
+              </button>
+            </div>
+            <div class="settings-layout">
+              <nav class="settings-pages" aria-label="Settings pages">
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="sun"></svg
+                  ><span>Accessibility and appearance</span>
+                </button>
+                <button class="settings-page-button" aria-current="page">
+                  <svg class="icon icon-20" data-i="plug"></svg><span>AI services</span>
+                </button>
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="users"></svg><span>Agents</span>
+                </button>
+              </nav>
+              <div class="dialog-body" data-scroll="end">
+                <h2 class="page-title">AI services</h2>
+                <section class="group" aria-labelledby="c-chatgpt-ors">
+                  <div class="group-heading"><h3 id="c-chatgpt-ors">ChatGPT</h3></div>
+                  <p class="conn-state">Connected · <bdi>researcher@example.org</bdi></p>
+                  <div class="conn-actions">
+                    <button class="button">Test connection</button
+                    ><button class="button">Sign out of ChatGPT</button>
+                  </div>
+                  <div class="notice notice-status" role="status">
+                    <svg class="icon icon-16" data-i="info"></svg>
+                    <div class="notice-body">
+                      <p>Your ChatGPT sign-in works.</p>
+                      <p>Models: GPT-6.1 Sol, GPT-6.1 Terra, and GPT-6 Luna</p>
+                      <p class="notice-small">
+                        ChatGPT doesn't say in advance whether your plan can be used in Ohtia. The
+                        first reply will show it.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="model-line">
+                    <p class="help">Model list from ChatGPT, updated 5 min. ago</p>
+                    <button class="button">
+                      <svg class="icon icon-16" data-i="list-restart"></svg>Refresh ChatGPT model
+                      list
+                    </button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-anthropic-ors">
+                  <div class="group-heading"><h3 id="c-anthropic-ors">Anthropic</h3></div>
+                  <p class="conn-state">Anthropic · API key · Connected Nov 9, 2026</p>
+                  <div class="conn-actions">
+                    <button class="button">Test connection</button
+                    ><button class="button">Replace key</button
+                    ><button class="button">Disconnect Anthropic</button>
+                  </div>
+                  <div class="model-line">
+                    <p class="help">Model list from Anthropic, updated 12 min. ago</p>
+                    <button class="button">
+                      <svg class="icon icon-16" data-i="list-restart"></svg>Refresh Anthropic model
+                      list
+                    </button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-openai-ors">
+                  <div class="group-heading"><h3 id="c-openai-ors">OpenAI</h3></div>
+                  <p class="conn-state">Not connected</p>
+                  <p class="help">
+                    OpenAI charges this key's usage per token to the key's OpenAI account. It is
+                    separate from any subscription to OpenAI's apps.
+                  </p>
+                  <label class="field-label" for="key-openai-ors">OpenAI API key</label>
+                  <input
+                    class="text-input focus-ring"
+                    id="key-openai-ors"
+                    type="password"
+                    value="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <div class="conn-actions">
+                    <button class="button button-primary">Save key</button
+                    ><button class="button">Close key entry</button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-openrouter-ors">
+                  <div class="group-heading"><h3 id="c-openrouter-ors">OpenRouter</h3></div>
+                  <p class="conn-state">
+                    OpenRouter · API key · Connected Nov 26, 2026 · Expires Dec 3, 2026
+                  </p>
+                  <div class="conn-actions">
+                    <button class="button">Cancel sign-in</button>
+                  </div>
+                  <p class="help" role="status">
+                    Waiting for you to finish signing in to OpenRouter in your browser…
+                  </p>
+                  <div class="notice notice-status">
+                    <svg class="icon icon-16" data-i="info"></svg>
+                    <div class="notice-body">
+                      <p>
+                        OpenRouter applies the privacy settings, guardrails, plugins and
+                        observability destinations of the account and workspace this key belongs to.
+                        They decide which models and providers receive your messages, what
+                        OpenRouter adds to them or removes from them, and where it sends copies.
+                      </p>
+                      <div class="notice-actions">
+                        <a class="notice-link" href="https://openrouter.ai/settings/privacy"
+                          >OpenRouter privacy settings<svg
+                            class="icon icon-16"
+                            data-i="external-link"
+                            role="img"
+                            aria-label="opens in your browser"
+                          ></svg
+                        ></a>
+                        <a class="notice-link" href="https://openrouter.ai/settings/plugins"
+                          >OpenRouter plugins<svg
+                            class="icon icon-16"
+                            data-i="external-link"
+                            role="img"
+                            aria-label="opens in your browser"
+                          ></svg
+                        ></a>
+                        <a class="notice-link" href="https://openrouter.ai/settings/observability"
+                          >OpenRouter observability<svg
+                            class="icon icon-16"
+                            data-i="external-link"
+                            role="img"
+                            aria-label="opens in your browser"
+                          ></svg
+                        ></a>
+                        <a class="notice-link" href="https://openrouter.ai/settings/credits"
+                          >Check usage<svg
+                            class="icon icon-16"
+                            data-i="external-link"
+                            role="img"
+                            aria-label="opens in your browser"
+                          ></svg
+                        ></a>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-limits-ors">
+                  <div class="group-heading"><h3 id="c-limits-ors">Simultaneous work</h3></div>
+                  <label class="field-label" for="c-limit-ors">AI replies at the same time</label>
+                  <input class="text-input" id="c-limit-ors" value="3" inputmode="numeric" />
                   <p class="help">
                     More replies at once can use more of your ChatGPT plan at the same time.
                   </p>
