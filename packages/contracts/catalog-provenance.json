@@ -358,6 +358,24 @@
       },
       "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "Initial profile.* messages for STORY-004-022 in every supported locale, except the entries rewritten or added for the issue #424 design",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.2-sol"
+      },
+      "effective_model_evidence": "The active implementation rollout, matched to the runtime thread identifier, records gpt-6.2-sol with effort high in turn_context.",
+      "human_linguistic_review": null
+    },
+    {
+      "scope": "Research profile design entries for issue #424, in every supported locale: profile.field.tools, profile.field.bibliography, profile.help.*, profile.state.pending, profile.state.unknown, profile.state.inapplicable, profile.origin.*, profile.source, profile.documentLanguage, profile.documentLanguageNote, profile.milestoneDone, profile.datePassed, profile.addMilestone, profile.priorWorkPrompt, profile.deadlinePrompt, profile.researchPrompt, profile.editSection, profile.removeItem, profile.savedVersion, profile.unset, profile.tally.*, profile.sectionUnanswered, profile.sectionComplete, profile.toggleSections, profile.changeTitle, profile.addSubtitle, profile.noSubtitle, profile.save, profile.saving, profile.discard, profile.cancelEdit, profile.leave*, profile.keepEditing, profile.saveLeave, profile.discardLeave, project.rename.subtitle; the es-AR wording of profile.addItem, profile.unavailable, profile.readFailed, profile.saveFailed, profile.tooLarge, profile.conflict, profile.uncertain, profile.refreshFailed, profile.invalid and profile.invalidField; and the en-* wording of profile.conflict, profile.refreshFailed, profile.invalidField and profile.compare",
+      "producer": {
+        "agent": "claude-code",
+        "effective_model": "claude-opus-5-5"
+      },
+      "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
+      "human_linguistic_review": null
     }
   ]
 }

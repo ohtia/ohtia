@@ -1,0 +1,260 @@
+/* The profile fills the documents panel width inside the standard document insets. */
+.thesis-profile {
+  display: grid;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--component-workspace-document-padding);
+  min-inline-size: 0;
+}
+.thesis-profile :is(h2, h3, p, ul, dl, dd) {
+  margin: var(--space-0);
+  max-inline-size: none;
+}
+.profile-header {
+  display: grid;
+  gap: var(--space-2);
+  padding-block-end: var(--space-5);
+  border-block-end: var(--border-width-default) solid var(--border-subtle);
+}
+.profile-eyebrow,
+.profile-meta,
+.profile-hint,
+.profile-help,
+.profile-origin,
+.profile-subtitle-empty {
+  color: var(--content-secondary);
+}
+.profile-eyebrow,
+.profile-meta,
+.profile-hint,
+.profile-help,
+.profile-tally {
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+}
+.profile-thesis-title {
+  inline-size: 100%;
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h2-size);
+  line-height: var(--type-doc-h2-height);
+  font-weight: var(--type-doc-h2-weight);
+  overflow-wrap: anywhere;
+}
+.profile-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.profile-subtitle-text,
+.profile-subtitle-empty {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-note-size);
+  line-height: var(--type-doc-note-height);
+  overflow-wrap: anywhere;
+}
+.profile-subtitle-empty {
+  font-style: italic;
+}
+.profile-link {
+  padding-inline: var(--space-1);
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+  text-decoration: underline;
+}
+.profile-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+}
+.profile-tally > li {
+  display: block;
+}
+.profile-notice:has(p:empty):not(:has(button)) {
+  display: none;
+}
+.profile-section {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-inline-size: 0;
+  scroll-margin: var(--space-3) var(--space-0) var(--space-0);
+}
+.profile-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.profile-section-head h3 {
+  font-size: var(--type-ui-heading-size);
+  line-height: var(--type-ui-heading-height);
+}
+.profile-edit-action {
+  margin-inline-start: auto;
+}
+.profile-facts {
+  display: grid;
+}
+/* A narrow panel moves the value below its label. */
+.profile-fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding-block: var(--space-2);
+  border-block-start: var(--border-width-default) solid var(--border-subtle);
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+}
+.profile-fact dt {
+  flex: 0 1 14rem;
+  color: var(--content-secondary);
+}
+.profile-fact dd {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--space-1);
+  justify-items: start;
+  min-inline-size: 0;
+}
+.profile-values {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+}
+.profile-values li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.profile-value {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-note-size);
+  line-height: var(--type-doc-note-height);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.profile-values li[data-done="true"] .profile-value {
+  text-decoration: line-through;
+}
+.profile-origin {
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}
+.profile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border: var(--border-width-default) solid var(--border-control);
+  border-radius: var(--radius-pill);
+  color: var(--content-secondary);
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}
+.profile-state[data-state="pending"] {
+  border-style: dashed;
+}
+.profile-state[data-state="late"] {
+  border-color: var(--attention-border);
+  color: var(--attention-content);
+}
+.profile-editor {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-width-default) solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+}
+.profile-editor-fields {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.profile-edit-field {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.profile-saved-compare {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: var(--border-width-default) solid var(--border-subtle);
+}
+.profile-saved-label {
+  color: var(--content-secondary);
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}
+.profile-edit-field legend {
+  padding: 0;
+  font-weight: var(--type-ui-label-weight);
+}
+.profile-states,
+.profile-milestone-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+.profile-states label,
+.profile-done {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.profile-input-row,
+.profile-input-row > label,
+.profile-milestone-controls > label:not(.profile-done) {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.profile-input-row {
+  padding-inline: var(--space-3) var(--space-0);
+  border-inline-start: var(--border-width-default) solid var(--border-subtle);
+}
+.profile-input-row :is(textarea, input[type="text"], select) {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.profile-input-row button,
+.profile-edit-field > button {
+  justify-self: start;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+/* Section names are interface labels, unlike the manuscript headings that share the index rows. */
+.manuscript-outline .profile-index-row {
+  justify-content: space-between;
+  font-family: var(--font-family-ui);
+}
+.profile-index-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+  font-variant-numeric: tabular-nums;
+}
+.manuscript-outline-row:not([data-current="true"]) .profile-index-count {
+  color: var(--content-secondary);
+}
+@media (forced-colors: active) {
+  .profile-state {
+    border-color: CanvasText;
+  }
+}

@@ -117,6 +117,10 @@ export class ProjectCollections {
 export interface ProjectRenameDraft {
   readonly projectId: string;
   readonly text: string;
+  /** An empty subtitle removes it. */
+  readonly subtitle: string;
+  /** The field that receives initial focus. */
+  readonly focus?: "subtitle" | undefined;
   readonly expectedTitleRevision: number;
   readonly busy: boolean;
   readonly intent?:
@@ -127,6 +131,7 @@ export interface ProjectRenameDraft {
     | undefined;
   readonly needsRevision?: boolean | undefined;
   readonly confirmedTitle?: string | undefined;
+  readonly confirmedSubtitle?: string | null | undefined;
   readonly notice?: "invalid" | "stale" | "uncertain" | "failed" | "readFailed" | undefined;
 }
 
@@ -289,23 +294,28 @@ export class ProjectController {
         : this.state.rename
           ? "modal_open"
           : undefined;
-  beginRename = (): boolean => {
+  beginRename = (focus?: "subtitle"): boolean => {
     const project = this.renameProject;
     if (!project || project.title === null || this.renameReason()) return false;
     const draft = this.renameDrafts.get(project.id) ?? {
       projectId: project.id,
       text: project.title,
+      subtitle: project.subtitle ?? "",
       expectedTitleRevision: project.titleRevision,
       busy: false,
     };
-    this.update({ rename: draft });
+    this.update({ rename: { ...draft, focus } });
     return true;
   };
-  editRename = (text: string): void => {
+  editRename = (text: string, field: "title" | "subtitle" = "title"): void => {
     const draft = this.state.rename;
     if (!draft || draft.busy || draft.intent) return;
     this.update({
-      rename: { ...draft, text, notice: draft.notice === "invalid" ? undefined : draft.notice },
+      rename: {
+        ...draft,
+        ...(field === "title" ? { text } : { subtitle: text }),
+        notice: draft.notice === "invalid" ? undefined : draft.notice,
+      },
     });
   };
   closeRename = (): void => {
@@ -347,7 +357,11 @@ export class ProjectController {
     const draft = this.state.rename;
     const project = this.renameProject;
     if (!draft || draft.busy || !project || project.id !== draft.projectId) return;
-    if (!draft.needsRevision && projectTitleError(draft.text)) {
+    const subtitle = draft.subtitle === "" ? null : draft.subtitle;
+    if (
+      !draft.needsRevision &&
+      (projectTitleError(draft.text) || (subtitle !== null && projectTitleError(subtitle)))
+    ) {
       this.update({ rename: { ...draft, notice: "invalid" } });
       return;
     }
@@ -363,6 +377,7 @@ export class ProjectController {
             ...draft,
             expectedTitleRevision: latest.titleRevision,
             confirmedTitle: latest.title,
+            confirmedSubtitle: latest.subtitle,
             needsRevision: false,
             notice: "stale",
           },
@@ -375,6 +390,7 @@ export class ProjectController {
       input: {
         projectId: draft.projectId,
         title: draft.text,
+        subtitle,
         expectedTitleRevision: draft.expectedTitleRevision,
       },
     };

@@ -234,6 +234,12 @@
       "sha256": "7cab2717fb8f49f950267195a938fae18adb712dcb51043810c4e1bcb19f7f06"
     },
     {
+      "name": "id-card",
+      "file": "id-card.svg",
+      "archive_member": "package/icons/id-card.svg",
+      "sha256": "92e4988a721d1e0dc0df561300c47aa28021f64d5372100bcd62e383bebdae94"
+    },
+    {
       "name": "image",
       "file": "image.svg",
       "archive_member": "package/icons/image.svg",

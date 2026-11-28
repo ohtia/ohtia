@@ -1,5 +1,5 @@
 import { useCallback, useId, useRef, type RefObject } from "react";
-import { message, type InterfaceLocale } from "@ohtia/contracts";
+import { message, projectTitleError, type InterfaceLocale } from "@ohtia/contracts";
 import type { ProjectController, ProjectRenameDraft, ProjectState } from "./project-controller.js";
 import { Dialog } from "./layers.js";
 
@@ -19,6 +19,7 @@ export function ProjectRename({
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
   const field = useId();
+  const subtitleField = useId();
   const notice = useId();
   const text = draft?.notice;
   const described = !available || !!text;
@@ -64,6 +65,18 @@ export function ProjectRename({
             id={field}
             describedBy={described ? notice : undefined}
             draft={draft}
+            field="title"
+            available={available}
+            language={language ?? locale}
+            controller={controller}
+          />
+          <label htmlFor={subtitleField}>{message(locale, "project.rename.subtitle")}</label>
+          <RenameField
+            key={`${draft.projectId}:subtitle`}
+            id={subtitleField}
+            describedBy={described ? notice : undefined}
+            draft={draft}
+            field="subtitle"
             available={available}
             language={language ?? locale}
             controller={controller}
@@ -84,6 +97,11 @@ export function ProjectRename({
                   <bdi lang={language ?? locale}>{draft.confirmedTitle}</bdi>
                 </p>
               )}
+              {draft.confirmedSubtitle && (
+                <p>
+                  <bdi lang={language ?? locale}>{draft.confirmedSubtitle}</bdi>
+                </p>
+              )}
             </div>
           )}
         </form>
@@ -97,6 +115,7 @@ function RenameField({
   id,
   describedBy,
   draft,
+  field,
   language,
   controller,
 }: {
@@ -104,22 +123,29 @@ function RenameField({
   id: string;
   describedBy: string | undefined;
   draft: ProjectRenameDraft;
+  field: "title" | "subtitle";
   language: string;
   controller: ProjectController;
 }) {
   const composition = useRef<"idle" | "active" | "ended">("idle");
   const confirming = useRef(false);
   const selected = useRef(false);
+  const value = field === "title" ? draft.text : draft.subtitle;
+  // The subtitle is optional: only a non-empty invalid value marks it. Otherwise the title does.
+  const subtitleInvalid = draft.subtitle !== "" && !!projectTitleError(draft.subtitle);
+  const invalid =
+    draft.notice === "invalid" &&
+    (field === "subtitle" ? subtitleInvalid : !!projectTitleError(draft.text) || !subtitleInvalid);
   return (
     <input
-      required
-      data-safe
+      required={field === "title"}
+      data-safe={(field === "subtitle") === (draft.focus === "subtitle") || undefined}
       id={id}
       dir="auto"
       lang={language}
-      value={draft.text}
+      value={value}
       readOnly={draft.busy || !!draft.intent}
-      aria-invalid={draft.notice === "invalid" || undefined}
+      aria-invalid={invalid || undefined}
       aria-describedby={describedBy}
       onFocus={(event) => {
         if (selected.current) return;
@@ -127,7 +153,7 @@ function RenameField({
         event.currentTarget.select();
       }}
       onChange={(event) => {
-        controller.editRename(event.currentTarget.value);
+        controller.editRename(event.currentTarget.value, field);
       }}
       onCompositionStart={() => {
         composition.current = "active";

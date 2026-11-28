@@ -56,7 +56,7 @@ function profile(projectId: string, expectedRevision: number) {
       projectId,
       expectedRevision,
       patch: encodeProfileContent({
-        schemaVersion: 1,
+        schemaVersion: 2,
         fields: {
           topic: expectedRevision === 0 ? { state: "unknown" } : { state: "inapplicable" },
         },
@@ -187,7 +187,7 @@ describe("research stage decisions in file-backed SQLite", () => {
     prior.close();
     await f.store.open();
     const upgraded = f.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(43);
     upgraded.close();
     const checkpointDir = path.join(f.root, "recovery", "migrations");
     expect(

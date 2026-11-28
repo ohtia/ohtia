@@ -126,6 +126,7 @@ export const designMetrics = {
 export const iconMappings = {
   "Navigator": "signpost",
   "Project memory": "notebook-text",
+  "Research profile": "id-card",
   "Supervisor": "user-round",
   "Thesis": "graduation-cap",
   "Open project or chosen agent in a selector": "check",
@@ -186,6 +187,8 @@ export const iconMappings = {
   "Fold every manuscript index branch": "chevrons-down-up",
   "Sources and documents explorer group": "folder",
   "Conversations explorer group": "messages-square",
+  "Edit a research profile section": "pencil",
+  "Profile section without unanswered fields": "check",
   "Supported by examined content": "circle-dot",
   "Partially supported": "contrast",
   "Ambiguous": "circle-question-mark",

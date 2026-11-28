@@ -22,6 +22,7 @@ import { createFoundationPort } from "../packages/preload/src/foundation-port.js
 import { rejectedEnvelopes } from "./fixtures/port-corpus.js";
 import { decodeText, encodeEnvelope, policyId, type Request } from "@ohtia/contracts";
 import {
+  encodeProfileContent,
   failure,
   message,
   type DesktopBridge,
@@ -31,6 +32,9 @@ import {
   type LayoutRecord,
   type LayoutChange,
   type ProjectSummary,
+  type ProfileReadResult,
+  type ProfileReceiptResult,
+  type ProfileSaveResult,
   type ConversationSummary,
   type ResearchEvent,
   type FoundationPort,
@@ -1350,6 +1354,7 @@ function raceFixture() {
     id,
     projectType: "thesis",
     title: `Project ${n + 1}`,
+    subtitle: null,
     titleRevision: 1,
     documentLanguage: "en-US",
     isDevelopment: false,
@@ -2684,7 +2689,10 @@ it("renames by keyboard after IME and shows a committed title through refresh fa
   const rename = vi.fn<FoundationPort["renameProject"]>((_operation, input) =>
     call({
       ok: true,
-      value: { resultId: input.projectId, titleChange: { title: input.title, titleRevision: 2 } },
+      value: {
+        resultId: input.projectId,
+        titleChange: { title: input.title, subtitle: input.subtitle, titleRevision: 2 },
+      },
     }),
   );
   let observe: ((event: Outcome<ResearchEvent>) => void) | undefined;
@@ -2755,6 +2763,7 @@ it("renames by keyboard after IME and shows a committed title through refresh fa
   expect(rename).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
     projectId: t.ids[0],
     title,
+    subtitle: null,
     expectedTitleRevision: 1,
   });
   expect(document.activeElement === trigger).toBe(true);
@@ -3145,3 +3154,497 @@ it("retains only the revalidated project manuscript across scopes and renders th
   expect(manuscripts().textContent).not.toContain("Could not load the manuscript list.");
   expect(article()).toBe(retained);
 }, 60000);
+function profileHelpers() {
+  const button = (root: ParentNode, label: string) => {
+    const match = [...root.querySelectorAll("button")].find(
+      (node) => (node.getAttribute("aria-label") ?? node.textContent) === label,
+    );
+    if (!match) throw new Error(`Missing button: ${label}`);
+    return match;
+  };
+  const activate = async (node: HTMLElement) =>
+    act(async () => {
+      node.focus();
+      node.click();
+    });
+  const press = async (node: HTMLElement, key: string) =>
+    act(async () => node.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+  const change = async (
+    input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+    value: string,
+  ) =>
+    act(async () => {
+      const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")!.set!;
+      set.call(input, value);
+      input.dispatchEvent(
+        new Event(input instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }),
+      );
+    });
+  const choose = async (field: Element, state: string) =>
+    activate(field.querySelector<HTMLInputElement>(`input[type="radio"][value="${state}"]`)!);
+  return { button, activate, press, change, choose };
+}
+
+it("opens one scoped profile tab from the explorer index and section links while preserving pending input", async () => {
+  const t = raceFixture();
+  const registrations = vi.spyOn(PendingProjectWork.prototype, "register");
+  const read = vi.fn(({ projectId }: { projectId: string }) =>
+    call({ ok: true, value: { projectId, profile: null } }),
+  );
+  const save = vi.fn(() => call(failure("storage_failed")));
+  Object.assign(t.port, { readThesisProfile: read, saveThesisProfile: save });
+  await mount(t);
+  const { button, activate, press, choose } = profileHelpers();
+  const workspace = container.querySelector(".workspace")!;
+  const explorer = workspace.querySelector(".project-explorer")!;
+  const title = message("en-US", "profile.title");
+  // The explorer reads the saved profile to count each section's unanswered fields.
+  expect(read).toHaveBeenLastCalledWith({
+    projectId: t.ids[0],
+    subscriptionId: "research-1",
+    revisionId: null,
+  });
+  const entries = [
+    ...explorer.querySelectorAll(".manuscript-outline-root, .project-explorer-control"),
+  ];
+  expect(entries[0]?.textContent).toBe(title);
+  expect(entries[0]?.querySelector("svg")).not.toBeNull();
+  const index = (section: string) =>
+    [...explorer.querySelectorAll<HTMLButtonElement>(".profile-index-row")].find(
+      (row) =>
+        row.firstElementChild?.textContent ===
+        message("en-US", `profile.section.${section}` as never),
+    )!;
+  expect(index("research").textContent).toContain("8 unanswered");
+  expect(index("prior_work").textContent).toContain("6 unanswered");
+  const disclosure = button(explorer, message("en-US", "profile.toggleSections"));
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  await activate(disclosure);
+  expect(
+    explorer.querySelector(`#${disclosure.getAttribute("aria-controls")}`)?.hasAttribute("hidden"),
+  ).toBe(true);
+  await activate(disclosure);
+
+  await activate(button(explorer, title));
+  const tab = button(workspace.querySelector('[role="tablist"]')!, title);
+  expect(document.activeElement).toBe(tab);
+  const article = workspace.querySelector(".thesis-profile")!;
+  expect(article.querySelector("h2")?.textContent).toBe("Project 1");
+  expect(article.textContent).toContain(message("en-US", "profile.unset"));
+  expect(article.textContent).toContain(message("en-US", "profile.noSubtitle"));
+  expect(article.textContent).toContain("0 known");
+  expect(article.textContent).toContain("34 unanswered");
+
+  const schedule = () => article.querySelector('[data-profile-section="schedule"]')!;
+  await activate(button(article, "Edit Schedule"));
+  const deadline = () => schedule().querySelector('[data-profile-field="deadline"]')!;
+  expect(document.activeElement).toBe(deadline().querySelector("input:checked"));
+  expect(button(article, "Edit Research").disabled).toBe(false);
+  await choose(deadline(), "unknown");
+  expect(button(article, "Edit Research").disabled).toBe(true);
+  await activate(button(schedule(), "Save"));
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(article.textContent).toContain(message("en-US", "profile.saveFailed"));
+  expect(deadline().querySelector<HTMLInputElement>("input:checked")?.value).toBe("unknown");
+
+  const navigator = button(workspace.querySelector('[role="tablist"]')!, "Navigator");
+  await activate(tab);
+  await press(tab, "Home");
+  expect(document.activeElement).toBe(navigator);
+  await press(navigator, "End");
+  expect(document.activeElement).toBe(tab);
+  await activate(navigator);
+  await activate(button(workspace, "Open profile research"));
+  expect(document.activeElement).toBe(
+    article.querySelector('[data-profile-section="research"] h3'),
+  );
+  expect(index("research").getAttribute("aria-current")).toBe("location");
+  await activate(index("schedule"));
+  expect(document.activeElement).toBe(schedule().querySelector("h3"));
+  expect(index("schedule").getAttribute("aria-current")).toBe("location");
+  expect(index("research").getAttribute("aria-current")).toBeNull();
+  expect(workspace.querySelectorAll('[role="tab"][aria-selected="true"]')).toHaveLength(1);
+  expect(workspace.querySelectorAll(".thesis-profile")).toHaveLength(1);
+
+  await selectRaceProject(1);
+  expect(workspace.querySelector(".thesis-profile")).toBeNull();
+  await selectRaceProject(0);
+  const returned = workspace.querySelector(".thesis-profile")!;
+  expect(
+    returned.querySelector<HTMLInputElement>('[data-profile-field="deadline"] input:checked')
+      ?.value,
+  ).toBe("unknown");
+
+  const [lease] = registrations.mock.calls.at(-1)!;
+  const guard = registrations.mock.contexts.at(-1) as PendingProjectWork;
+  const first = deferred<Awaited<ReturnType<PendingProjectWork["evaluate"]>>>();
+  await act(async () => {
+    void guard.evaluate(lease).then(first.resolve);
+  });
+  let dialog = document.querySelector("dialog[open]")!;
+  expect(dialog.textContent).toContain(message("en-US", "profile.leavePrompt"));
+  await activate(button(dialog, "Keep editing"));
+  expect(await first.promise).toEqual({ status: "keep_open" });
+  const second = deferred<Awaited<ReturnType<PendingProjectWork["evaluate"]>>>();
+  await act(async () => {
+    void guard.evaluate(lease).then(second.resolve);
+  });
+  dialog = document.querySelector("dialog[open]")!;
+  await activate(button(dialog, "Save and continue"));
+  expect(dialog.textContent).toContain(message("en-US", "profile.leaveFailed"));
+  await activate(button(dialog, "Discard and continue"));
+  expect(await second.promise).toMatchObject({ status: "safe_to_detach" });
+  expect(returned.querySelector('[data-profile-field="deadline"] input')).toBeNull();
+});
+
+it("reads and edits attributed profile sections, milestones and amounts with localized controls", async () => {
+  const t = raceFixture();
+  const origin = { kind: "researcher_statement" } as const;
+  const savedProfile = encodeProfileContent({
+    schemaVersion: 2,
+    fields: {
+      deadline: { state: "known", value: "2027-02-02", origin },
+      milestones: {
+        state: "known",
+        items: [
+          {
+            state: "known",
+            value: { title: "Submit draft", date: "2027-02-02", done: false },
+            origin,
+          },
+          {
+            state: "known",
+            value: { title: "Ethics form", date: "2026-01-15", done: false },
+            origin,
+          },
+          { state: "known", value: { title: "Pilot interview", done: true }, origin },
+        ],
+      },
+      weekly_availability_minutes: { state: "known", value: 45, origin },
+      decisions: {
+        state: "known",
+        items: [
+          {
+            state: "known",
+            value: "Existing decision",
+            origin: {
+              kind: "artifact_version",
+              artifact: "conversation_message",
+              id: t.ids[1]!,
+              revision: 1,
+            },
+          },
+        ],
+      },
+      topic: {
+        state: "known",
+        value: "Existing topic",
+        origin: {
+          kind: "adopted_proposal",
+          producer: "virgilio",
+          attemptId: t.ids[1]!,
+          proposalId: t.ids[2]!,
+        },
+      },
+      goals: { state: "known", items: [] },
+      autonomy: { state: "inapplicable" },
+    },
+  });
+  const profileRevision = (revision: number) => ({
+    revision,
+    revisionId: t.ids[revision % t.ids.length]!,
+    previousRevisionId: revision > 1 ? t.ids[(revision - 1) % t.ids.length]! : null,
+    changedFields: ["deadline", "milestones"] as const,
+  });
+  // Another window's revision 2 changes the same milestone that this window edits.
+  const competingProfile = savedProfile.replace(
+    '"title":"Submit draft"',
+    '"title":"Competing draft"',
+  );
+  const readVersion = (projectId: string, revision: number) =>
+    call<ProfileReadResult>({
+      ok: true,
+      value: {
+        projectId,
+        profile: {
+          ...profileRevision(revision),
+          content: revision >= 2 ? competingProfile : savedProfile,
+        },
+      },
+    });
+  const read = vi.fn(({ projectId }: { projectId: string }) => readVersion(projectId, 1));
+  const save = vi.fn(() => call(failure("storage_failed")));
+  const receipt = vi.fn(({ projectId, operationId }: { projectId: string; operationId: string }) =>
+    call<ProfileReceiptResult>({
+      ok: true,
+      value: {
+        projectId,
+        operationId,
+        receipt: {
+          resultId: profileRevision(3).revisionId,
+          profileChange: { projectId, revision: profileRevision(3) },
+        },
+      },
+    }),
+  );
+  let receive: ((notice: Outcome<ResearchEvent>) => void) | undefined;
+  read.mockReturnValueOnce(call(failure("storage_failed")));
+  Object.assign(t.port, {
+    subscribeResearch: (_scope: ResearchScope, listener: typeof receive) => {
+      receive = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-1" } }),
+        dispose() {},
+      };
+    },
+    readThesisProfile: read,
+    saveThesisProfile: save,
+    readThesisProfileReceipt: receipt,
+  });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-27T12:00:00"));
+  try {
+    await mount(t);
+    const { button, activate, change, choose } = profileHelpers();
+    await activate(button(container.querySelector(".project-explorer")!, "Research profile"));
+    const profile = container.querySelector(".thesis-profile")!;
+    expect(profile.textContent).toContain(message("en-US", "profile.readFailed"));
+    await activate(button(profile, message("en-US", "taskNotice.tryAgain")));
+    expect(profile.textContent).toContain("Revision 1");
+    const section = (id: string) => profile.querySelector(`[data-profile-section="${id}"]`)!;
+    const field = (id: string) => profile.querySelector(`[data-profile-field="${id}"]`)!;
+    expect(field("deadline").textContent).toContain("Feb 2, 2027");
+    const milestones = [...field("milestones").querySelectorAll("li")];
+    expect(milestones.map((row) => row.textContent)).toEqual([
+      expect.not.stringMatching(/Date passed|Done/),
+      expect.stringContaining("Date passed"),
+      expect.stringContaining("Done"),
+    ]);
+    expect(milestones[2]?.dataset.done).toBe("true");
+    expect(field("weekly_availability_minutes").textContent).toContain("45");
+    expect(field("decisions").textContent).toContain("Conversation message");
+    expect(field("topic").textContent).toContain("Adopted proposal");
+    expect(field("goals").textContent).toContain("No items recorded");
+    expect(field("autonomy").textContent).toContain("Does not apply");
+    expect(field("tools").textContent).toContain("Unanswered");
+    expect(section("requirements").textContent).toContain("Thesis language");
+    expect(section("requirements").textContent).toContain("en-US");
+    expect(section("prior_work").textContent).toContain("References you already have");
+    expect(profile.textContent).toContain("6 known");
+
+    await activate(button(profile, "Edit Prior work"));
+    const bibliography = () => field("bibliography");
+    expect(bibliography().textContent).toContain(message("en-US", "profile.help.bibliography"));
+    await choose(bibliography(), "known");
+    await activate(button(bibliography(), "Add item"));
+    expect(document.activeElement).toBe(bibliography().querySelector("textarea"));
+    await change(bibliography().querySelector("textarea")!, "Researcher-reported reference");
+    await change(bibliography().querySelector('select[id$="-source"]')!, "described_material");
+    await change(
+      bibliography().querySelector("label textarea")!,
+      "Draft bibliography from supervisor",
+    );
+    expect(field("decisions").querySelector('select[id$="-source"]')).toBeNull();
+    await change(field("decisions").querySelector("textarea")!, "Written by the researcher");
+    expect(
+      field("decisions").querySelector<HTMLSelectElement>('select[id$="-source"]')?.value,
+    ).toBe("researcher_statement");
+    await activate(
+      button(
+        bibliography(),
+        "Remove Bibliography · Item 1".replace("Bibliography", "References you already have"),
+      ),
+    );
+    expect(bibliography().querySelector("textarea")).toBeNull();
+    await activate(button(section("prior_work"), "Discard changes"));
+    expect(document.activeElement).toBe(button(profile, "Edit Prior work"));
+    expect(field("decisions").textContent).toContain("Existing decision");
+
+    await activate(button(profile, "Edit Schedule"));
+    const minutes = field("weekly_availability_minutes").querySelector<HTMLInputElement>(
+      'input[type="text"]',
+    )!;
+    await change(minutes, "-1");
+    await activate(button(section("schedule"), "Save"));
+    expect(document.activeElement).toBe(minutes);
+    expect(minutes.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      document.getElementById(minutes.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toContain("Check the value and its origin");
+    await change(minutes, "0");
+    const dates = () =>
+      field("milestones").querySelectorAll<HTMLInputElement>('input[type="date"]');
+    await change(dates()[0]!, "2027-03-02");
+    const done = field("milestones").querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(done.checked).toBe(false);
+    await activate(done);
+    expect(done.checked).toBe(true);
+
+    read.mockReturnValueOnce(readVersion(t.ids[0]!, 2));
+    await act(async () =>
+      receive?.({
+        ok: true,
+        value: { kind: "changed", record: "profile", id: t.ids[0]!, revision: 2 },
+      }),
+    );
+    expect(profile.textContent).toContain(message("en-US", "profile.conflict"));
+    expect(profile.textContent).toContain("Revision 1");
+    read.mockReturnValueOnce(readVersion(t.ids[0]!, 2));
+    await activate(button(profile, message("en-US", "profile.compare")));
+    expect(profile.textContent).toContain("Revision 2");
+    expect(dates()[0]?.value).toBe("2027-03-02");
+    const compare = field("milestones").querySelector(".profile-saved-compare");
+    expect(compare?.textContent).toContain("Saved value");
+    expect(compare?.textContent).toContain("Competing draft");
+    expect(field("milestones").querySelector("textarea")?.value).toBe("Submit draft");
+    save.mockReturnValueOnce(call(failure("uncertain")));
+    await activate(button(section("schedule"), "Save"));
+    expect(profile.textContent).toContain(message("en-US", "profile.uncertain"));
+    read.mockReturnValueOnce(call(failure("storage_failed")));
+    await activate(button(profile, message("en-US", "profile.checkSave")));
+    expect(receipt).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledOnce();
+    expect(profile.textContent).toContain("Revision 3");
+    expect(profile.textContent).toContain(message("en-US", "profile.refreshFailed"));
+    expect(section("schedule").querySelector('input[type="date"]')).toBeNull();
+    read.mockReturnValueOnce(readVersion(t.ids[0]!, 3));
+    await activate(button(profile, message("en-US", "taskNotice.tryAgain")));
+    expect(read).toHaveBeenLastCalledWith(
+      expect.objectContaining({ revisionId: profileRevision(3).revisionId }),
+    );
+    expect(profile.textContent).toContain(message("en-US", "profile.saved"));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("opens the rename form from the profile header and shows a saved subtitle", async () => {
+  const t = raceFixture();
+  Object.assign(t.port, {
+    readThesisProfile: ({ projectId }: { projectId: string }) =>
+      call({ ok: true, value: { projectId, profile: null } }),
+  });
+  await mount(t);
+  const { button, activate } = profileHelpers();
+  await activate(button(container.querySelector(".project-explorer")!, "Research profile"));
+  const profile = container.querySelector(".thesis-profile")!;
+  const add = button(profile, message("en-US", "profile.addSubtitle"));
+  await activate(add);
+  let dialog = document.querySelector("dialog[open]")!;
+  const [titleInput, subtitleInput] = dialog.querySelectorAll("input");
+  expect(titleInput?.value).toBe("Project 1");
+  expect(subtitleInput?.value).toBe("");
+  expect(document.activeElement).toBe(subtitleInput);
+  await activate(button(dialog, message("en-US", "dialog.close")));
+  expect(document.activeElement).toBe(add);
+  await activate(button(profile, message("en-US", "profile.changeTitle")));
+  dialog = document.querySelector("dialog[open]")!;
+  expect(document.activeElement).toBe(dialog.querySelector("input"));
+});
+
+it("keeps active profile input and a submitted save across conversation observation replacement", async () => {
+  const t = raceFixture();
+  const projectId = t.ids[0]!;
+  const savedContent = encodeProfileContent({
+    schemaVersion: 2,
+    fields: {
+      discipline: { state: "known", value: "Geography", origin: { kind: "researcher_statement" } },
+    },
+  });
+  const revision = {
+    revision: 1,
+    revisionId: t.ids[1]!,
+    previousRevisionId: null,
+    changedFields: ["discipline"] as const,
+  };
+  const pending = deferred<Outcome<ProfileSaveResult>>();
+  const cancel = vi.fn();
+  const save = vi.fn(() => ({ result: pending.promise, cancel }));
+  const receipt = vi.fn();
+  let receive: ((event: Outcome<ResearchEvent>) => void) | undefined;
+  let opening: ReturnType<typeof deferred<Outcome<{ subscriptionId: string }>>> | undefined;
+  const subscribe = vi.fn((_scope: ResearchScope, listener: typeof receive) => {
+    receive = listener;
+    return {
+      ready: opening
+        ? opening.promise
+        : Promise.resolve({ ok: true, value: { subscriptionId: "initial" } }),
+      dispose() {},
+    };
+  });
+  const read = vi.fn(
+    ({ projectId, revisionId }: { projectId: string; revisionId: string | null }) =>
+      call<ProfileReadResult>({
+        ok: true,
+        value: { projectId, profile: revisionId ? { ...revision, content: savedContent } : null },
+      }),
+  );
+  Object.assign(t.port, {
+    subscribeResearch: subscribe,
+    readThesisProfile: read,
+    saveThesisProfile: save,
+    readThesisProfileReceipt: receipt,
+  });
+  await mount(t);
+  const { button, activate, choose } = profileHelpers();
+  const workspace = container.querySelector(".workspace")!;
+  await activate(button(workspace.querySelector(".project-explorer")!, "Research profile"));
+  await activate(button(workspace.querySelector('[role="tablist"]')!, "Navigator"));
+  await activate(button(workspace, "Open profile research"));
+  const profile = workspace.querySelector(".thesis-profile")!;
+  await activate(button(profile, "Edit Research"));
+  const field = profile.querySelector('[data-profile-field="discipline"]')!;
+  await choose(field, "known");
+  const editor = field.querySelector("textarea")!;
+  opening = deferred();
+  await act(async () => {
+    editor.focus();
+    receive?.(failure("sequence_gap"));
+  });
+  expect(document.activeElement).toBe(editor);
+  expect(profile.querySelector<HTMLFieldSetElement>(".profile-editor-fields")?.disabled).toBe(
+    false,
+  );
+  await act(async () => {
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    set.call(editor, "Geography");
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(editor.value).toBe("Geography");
+  expect(profile.querySelector(".primitive-primary")?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => opening?.resolve({ ok: true, value: { subscriptionId: "recovered" } }));
+  await activate(button(profile, "Save"));
+  expect(save).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({ subscriptionId: "recovered" }),
+  );
+
+  opening = deferred();
+  await click('.workspace-chat [data-workspace-command="conversation.new"]');
+  expect(subscribe).toHaveBeenLastCalledWith(
+    { projectId, conversationId: null },
+    expect.any(Function),
+  );
+  await act(async () =>
+    opening?.resolve({ ok: true, value: { subscriptionId: "new-conversation" } }),
+  );
+  expect(cancel).not.toHaveBeenCalled();
+  expect(editor.isConnected).toBe(true);
+  expect(editor.value).toBe("Geography");
+  await act(async () =>
+    pending.resolve({
+      ok: true,
+      value: { resultId: revision.revisionId, profileChange: { projectId, revision } },
+    }),
+  );
+  expect(cancel).not.toHaveBeenCalled();
+  expect(receipt).not.toHaveBeenCalled();
+  expect(save).toHaveBeenCalledOnce();
+  expect(profile.textContent).toContain("Revision 1");
+  expect(read).toHaveBeenLastCalledWith({
+    projectId,
+    subscriptionId: "new-conversation",
+    revisionId: revision.revisionId,
+  });
+});

@@ -539,7 +539,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
       projectId,
       subscriptionId,
       expectedRevision: 0,
-      patch: '{"fields":{"topic":{"state":"unknown"}},"schemaVersion":1}',
+      patch: '{"fields":{"topic":{"state":"unknown"}},"schemaVersion":2}',
     });
     c.respond({
       resultId: revisionId,

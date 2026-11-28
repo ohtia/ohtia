@@ -10,6 +10,7 @@ import { build, preview } from "vite";
 import { expect } from "@playwright/test";
 import { captureCatalog, verifyCharacterSpecimen, watchCatalogPage } from "./catalog-character.mjs";
 import { verifyResearchSpecimen } from "./catalog-research.mjs";
+import { verifyThesisProfileSpecimen } from "./catalog-thesis-profile.mjs";
 import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
 import { verifyCommandDiscovery } from "./command-discovery.mjs";
 import { verifyCommandSpecimens } from "./command-presentation.mjs";
@@ -203,6 +204,7 @@ export async function verifyCatalog(page, url, engine, output) {
       await connectionsPage.close();
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
+    await verifyThesisProfileSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
     const commandDiscovery = await verifyCommandDiscovery(page, url, engine, output);
     await keyboardJourneys(page, url);

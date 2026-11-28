@@ -9,6 +9,19 @@ import {
   type TextDescriptor,
 } from "@ohtia/contracts";
 
+export async function describeStagedText(
+  text: string,
+  parts: number,
+): Promise<string | TextDescriptor> {
+  if (parts === 1) return text;
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return {
+    parts,
+    bytes: utf8Size(text),
+    sha256: [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join(""),
+  };
+}
+
 export async function stagedCommand<T>(
   port: Pick<FoundationPort, "sendTextPart">,
   id: string,
@@ -18,17 +31,7 @@ export async function stagedCommand<T>(
   try {
     const parts = splitText(text);
     if (parts.length > portLimits.text_parts) return failure("invalid_message");
-    let content: string | TextDescriptor = text;
-    if (parts.length > 1) {
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-      content = {
-        parts: parts.length,
-        bytes: utf8Size(text),
-        sha256: [...new Uint8Array(hash)]
-          .map((byte) => byte.toString(16).padStart(2, "0"))
-          .join(""),
-      };
-    }
+    const content = parts.length > 1 ? await describeStagedText(text, parts.length) : text;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (typeof content !== "string")
         for (let index = 0; index < parts.length; index++) {

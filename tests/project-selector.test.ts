@@ -43,6 +43,7 @@ const project = (n: number): ProjectSummary => ({
   id: id(n),
   projectType: "thesis",
   title: null,
+  subtitle: null,
   titleRevision: 1,
   documentLanguage: null,
   isDevelopment: false,
@@ -888,7 +889,7 @@ it("preserves rename input and operation identity across competing revisions and
         ok: true,
         value: {
           resultId: first.id,
-          titleChange: { title: "My draft", titleRevision: 3 },
+          titleChange: { title: "My draft", subtitle: null, titleRevision: 3 },
         },
       }),
     );
@@ -917,7 +918,7 @@ it("preserves rename input and operation identity across competing revisions and
     ok: true,
     value: {
       resultId: first.id,
-      titleChange: { title: "My draft", titleRevision: 2 },
+      titleChange: { title: "My draft", subtitle: null, titleRevision: 2 },
     },
   });
   await previous;

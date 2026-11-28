@@ -1,6 +1,8 @@
 import {
   canonicalJson,
   decodeProfileContent,
+  decodeStoredProfileContent,
+  profileSchemaVersion,
   failure,
   isProfileField,
   isResearchId,
@@ -114,7 +116,7 @@ function metadata(row: ThesisProfileRevisionRow): ProfileRevision {
 }
 
 function storedProfile(encoded: string): ProfileContent {
-  const decoded = decodeProfileContent(encoded);
+  const decoded = decodeStoredProfileContent(encoded);
   if (!decoded) throw new Error("Invalid stored thesis profile content.");
   return decoded;
 }
@@ -167,7 +169,7 @@ async function verifyOrigins(
           prior?.state === "known" ? ("items" in prior ? prior.items : [prior]) : [];
         if (
           !proposal ||
-          proposal.proposed_value !== canonicalJson(item.value) ||
+          !adoptedValue(field, proposal.proposed_value, item.value) ||
           ((proposal.base_revision_id && identifier(proposal.base_revision_id)) !==
             (previous ? identifier(previous.id) : null) &&
             !priorItems.some((old) => canonicalJson(old) === canonicalJson(item)))
@@ -177,6 +179,23 @@ async function verifyOrigins(
     }
   }
   return true;
+}
+
+/**
+ * A proposed milestone stored before schema version 2 has no done mark; it matches the same
+ * milestone read as not done. The stored proposal stays unchanged.
+ */
+function adoptedValue(field: string, proposed: string, value: unknown): boolean {
+  if (proposed === canonicalJson(value)) return true;
+  if (field !== "milestones") return false;
+  const legacy: unknown = JSON.parse(proposed);
+  return (
+    legacy !== null &&
+    typeof legacy === "object" &&
+    !Array.isArray(legacy) &&
+    !Object.hasOwn(legacy, "done") &&
+    canonicalJson({ ...legacy, done: false }) === canonicalJson(value)
+  );
 }
 
 /** Runs inside the same writer transaction that inserts the command receipt. */
@@ -200,7 +219,10 @@ export async function saveProfile(
   if (input.expectedRevision !== version) return staleRevision(version);
   if (version === Number.MAX_SAFE_INTEGER) return failure("limit_reached");
   const existing = previous ? storedProfile(previous.content).fields : {};
-  const next = canonicalJson({ schemaVersion: 1, fields: { ...existing, ...patch.fields } });
+  const next = canonicalJson({
+    schemaVersion: profileSchemaVersion,
+    fields: { ...existing, ...patch.fields },
+  });
   if (utf8Size(next) > profileRevisionBytes) return failure("limit_reached");
   if (!(await verifyOrigins(db, project.value, previous, existing, patch)))
     return failure("record_not_found");

@@ -44,13 +44,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=43");
+    newer.pragma("user_version=44");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=42");
+    current.pragma("user_version=43");
     current.close();
     close.mockClear();
     await store.open();
@@ -681,12 +681,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=43");
+    db.pragma("user_version=44");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=42");
+    again.pragma("user_version=43");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -1430,7 +1430,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 42 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 43 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1631,7 +1631,7 @@ describe("file-backed native window preferences", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 42 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 43 }));
   });
 });
 

@@ -1565,7 +1565,7 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     const profileScope = { projectId, subscriptionId };
     const operationId = "entry-profile-save";
     const patch = encodeProfileContent({
-      schemaVersion: 1,
+      schemaVersion: 2,
       fields: { topic: { state: "unknown" } },
     });
     expect(
@@ -1717,16 +1717,18 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       port.renameProject("entry-rename-project", {
         projectId,
         title: "Synthetic renamed thesis",
+        subtitle: null,
         expectedTitleRevision: 1,
       }),
     );
     expect(renamed).toEqual({
       resultId: projectId,
-      titleChange: { title: "Synthetic renamed thesis", titleRevision: 2 },
+      titleChange: { title: "Synthetic renamed thesis", subtitle: null, titleRevision: 2 },
     });
     expect(await expectValue(port.readProject({ projectId }))).toMatchObject({
       id: projectId,
       title: "Synthetic renamed thesis",
+      subtitle: null,
       titleRevision: 2,
     });
     const alternate = await expectValue(port.createProject("entry-stage-alternate-project"));

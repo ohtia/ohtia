@@ -301,7 +301,7 @@ export function SettingsSurfaces({
                 (!storageAvailable.current ? "busy" : projects.renameReason());
               return unavailable ? { reason: unavailable } : {};
             },
-            run: projects.beginRename,
+            run: () => projects.beginRename(),
           }),
           projects.subscribe(() => {
             registry.changed();

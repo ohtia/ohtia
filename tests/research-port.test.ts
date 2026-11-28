@@ -2859,7 +2859,12 @@ it("checks active thesis scope in each session and reconciles a lost rename ackn
   value(await first.ready);
   value(await second.ready);
 
-  const payload = { projectId: h.projectId, title: "Title B", expectedTitleRevision: 1 };
+  const payload = {
+    projectId: h.projectId,
+    title: "Title B",
+    subtitle: null,
+    expectedTitleRevision: 1,
+  };
   const crossScope = { ...payload, projectId: otherProject };
   expect(await h.port.renameProject("wrong-thesis", crossScope).result).toEqual(
     failure("unauthorized"),
@@ -2894,7 +2899,7 @@ it("checks active thesis scope in each session and reconciles a lost rename ackn
   );
   expect(value(await h.port.renameProject("lost-rename", payload).result)).toEqual({
     resultId: h.projectId,
-    titleChange: { title: "Title B", titleRevision: 2 },
+    titleChange: { title: "Title B", subtitle: null, titleRevision: 2 },
   });
   expect(value(await h.port.readProject({ projectId: h.projectId }).result)).toMatchObject({
     title: "Research",
@@ -2950,7 +2955,7 @@ it("scopes thesis profile reads, parts, changes and receipt replay to the active
   const fact = (value: string) => ({ state: "known", value, origin }) as const;
   const fullProfile = (topic: string) =>
     encodeProfileContent({
-      schemaVersion: 1,
+      schemaVersion: 2,
       fields: {
         topic: fact(topic),
         bibliography: {
@@ -3031,7 +3036,7 @@ it("scopes thesis profile reads, parts, changes and receipt replay to the active
   ).toEqual(failure("record_not_found"));
 
   const patch = encodeProfileContent({
-    schemaVersion: 1,
+    schemaVersion: 2,
     fields: { deadline: { state: "unknown" }, topic: fact("Revised topic") },
   });
   expect(await other.readThesisProfileReceipt({ ...receiptInput, patch }).result).toEqual(

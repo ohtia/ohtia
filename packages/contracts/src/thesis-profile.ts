@@ -5,8 +5,10 @@ import { isResearchId, type PortText } from "./research-port.js";
 export const profileTextBytes = 2 * 1024;
 export const profileRevisionBytes = 32 * 1024;
 export const profileListLimit = 16;
+/** Saves write this version. Version 1 snapshots predate the milestone `done` mark. */
+export const profileSchemaVersion = 2;
 
-const fieldTypes = {
+export const profileFieldTypes = {
   thesis_level: "text",
   modality: "text",
   institution: "text",
@@ -42,9 +44,9 @@ const fieldTypes = {
   passages: "list",
   decisions: "list",
 } as const;
-export type ProfileField = keyof typeof fieldTypes;
+export type ProfileField = keyof typeof profileFieldTypes;
 export function isProfileField(value: unknown): value is ProfileField {
-  return typeof value === "string" && Object.hasOwn(fieldTypes, value);
+  return typeof value === "string" && Object.hasOwn(profileFieldTypes, value);
 }
 
 export type ProfileOrigin =
@@ -65,7 +67,7 @@ export type ProfileOrigin =
 type Known<T> = { readonly state: "known"; readonly value: T; readonly origin: ProfileOrigin };
 type Unresolved = { readonly state: "unknown" | "inapplicable" };
 type List<T> = { readonly state: "known"; readonly items: readonly Known<T>[] };
-type Milestone = { readonly title: string; readonly date?: string };
+type Milestone = { readonly title: string; readonly date?: string; readonly done: boolean };
 type ProfileFactType = {
   text: Known<string>;
   date: Known<string>;
@@ -74,10 +76,10 @@ type ProfileFactType = {
   milestones: List<Milestone>;
 };
 export type ProfileFields = {
-  readonly [K in ProfileField]?: ProfileFactType[(typeof fieldTypes)[K]] | Unresolved;
+  readonly [K in ProfileField]?: ProfileFactType[(typeof profileFieldTypes)[K]] | Unresolved;
 };
 export interface ProfileContent {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: typeof profileSchemaVersion;
   readonly fields: ProfileFields;
 }
 export interface ProfileRevision {
@@ -128,13 +130,15 @@ function calendarDate(value: unknown): boolean {
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
-function milestone(value: unknown): boolean {
+function milestone(value: unknown, version: number): boolean {
+  const keys = version === 1 ? ["title"] : ["title", "done"];
   return (
     object(value) &&
     boundedText(value.title) &&
+    (version === 1 || typeof value.done === "boolean") &&
     (Object.hasOwn(value, "date")
-      ? exact(value, ["title", "date"]) && calendarDate(value.date)
-      : exact(value, ["title"]))
+      ? exact(value, [...keys, "date"]) && calendarDate(value.date)
+      : exact(value, keys))
   );
 }
 function origin(value: unknown): boolean {
@@ -170,9 +174,9 @@ function known(value: unknown, valid: (item: unknown) => boolean): boolean {
     origin(value.origin)
   );
 }
-function fieldValue(field: ProfileField, value: unknown): boolean {
+function fieldValue(field: ProfileField, value: unknown, version: number): boolean {
   if (exact(value, ["state"])) return value.state === "unknown" || value.state === "inapplicable";
-  switch (fieldTypes[field]) {
+  switch (profileFieldTypes[field]) {
     case "text":
       return known(value, boundedText);
     case "date":
@@ -191,31 +195,72 @@ function fieldValue(field: ProfileField, value: unknown): boolean {
         Array.isArray(value.items) &&
         value.items.length <= profileListLimit &&
         value.items.every((item: unknown) =>
-          known(item, fieldTypes[field] === "list" ? boundedText : milestone),
+          known(
+            item,
+            profileFieldTypes[field] === "list"
+              ? boundedText
+              : (entry: unknown) => milestone(entry, version),
+          ),
         )
       );
   }
 }
 
-/** The same bounded canonical body represents a sparse save and an immutable snapshot. */
-export function decodeProfileContent(encoded: string): ProfileContent | undefined {
+function decode(encoded: string, versions: readonly number[]): ProfileContent | undefined {
   try {
     if (utf8Size(encoded) > profileRevisionBytes) return;
     const value: unknown = JSON.parse(encoded);
     if (
-      exact(value, ["schemaVersion", "fields"]) &&
-      value.schemaVersion === 1 &&
-      object(value.fields) &&
-      Object.keys(value.fields).length > 0 &&
-      Object.entries(value.fields).every(
-        ([key, fact]) => isProfileField(key) && fieldValue(key, fact),
-      ) &&
-      canonicalJson(value) === encoded
+      !exact(value, ["schemaVersion", "fields"]) ||
+      typeof value.schemaVersion !== "number" ||
+      !versions.includes(value.schemaVersion) ||
+      !object(value.fields) ||
+      Object.keys(value.fields).length === 0 ||
+      canonicalJson(value) !== encoded
     )
-      return value as unknown as ProfileContent;
+      return;
+    const version = value.schemaVersion;
+    if (
+      !Object.entries(value.fields).every(
+        ([key, fact]) => isProfileField(key) && fieldValue(key, fact, version),
+      )
+    )
+      return;
+    if (version === profileSchemaVersion) return value as unknown as ProfileContent;
+    // A version 1 milestone predates the done mark and reads as not done.
+    const fields = value.fields;
+    const milestones = fields.milestones as
+      | { state: "known"; items: { value: Record<string, unknown> }[] }
+      | { state: string }
+      | undefined;
+    return {
+      schemaVersion: profileSchemaVersion,
+      fields: {
+        ...fields,
+        ...(milestones && "items" in milestones
+          ? {
+              milestones: {
+                ...milestones,
+                items: milestones.items.map((item) => ({
+                  ...item,
+                  value: { ...item.value, done: false },
+                })),
+              },
+            }
+          : {}),
+      },
+    } as unknown as ProfileContent;
   } catch {
     return;
   }
+}
+/** The same bounded canonical body represents a sparse save and an immutable snapshot. */
+export function decodeProfileContent(encoded: string): ProfileContent | undefined {
+  return decode(encoded, [profileSchemaVersion]);
+}
+/** Reads a stored snapshot of any released version as current content. */
+export function decodeStoredProfileContent(encoded: string): ProfileContent | undefined {
+  return decode(encoded, [1, profileSchemaVersion]);
 }
 export function encodeProfileContent(content: ProfileContent): string {
   const encoded = canonicalJson(content);

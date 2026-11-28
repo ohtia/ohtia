@@ -4,8 +4,6 @@ title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -556,6 +554,7 @@ Fixed mappings:
 | Ohtia                                        | Original glasses       |
 | Navigator                                    | `signpost`             |
 | Project memory                               | `notebook-text`        |
+| Research profile                             | `id-card`              |
 | Supervisor                                   | `user-round`           |
 | Thesis                                       | `graduation-cap`       |
 | Open project or chosen agent in a selector   | `check`                |
@@ -616,6 +615,8 @@ Fixed mappings:
 | Fold every manuscript index branch           | `chevrons-down-up`     |
 | Sources and documents explorer group         | `folder`               |
 | Conversations explorer group                 | `messages-square`      |
+| Edit a research profile section              | `pencil`               |
+| Profile section without unanswered fields    | `check`                |
 
 A state label never uses an icon that this table or the domain components map to another meaning.
 
@@ -1346,6 +1347,16 @@ The explorer's Manuscript entry lists the manuscript's section headings as a fol
 - **Rail and indentation.** A 1 px `border.subtle` line runs along the start of the index. Heading text starts `space.3` after it, plus `component.outline.indent` for each level below level two.
 - **Current heading.** The row uses `surface.emphasis`, weight 600 and the `component.list-row.selection-indicator` over the rail. In forced colors the indicator uses `Highlight`. Hover uses `surface.emphasis` without the indicator.
 - **Disclosure.** A heading with children ends its row with a disclosure button showing `chevron-down` when expanded and `chevron-right` when folded. Folding changes only the index.
+
+#### Research profile
+
+The explorer's Research profile entry and the profile tab present the project's [thesis profile](data-model.md#thesis-profile). [Workspace layout](workspace-layout.md#presentation-integration) defines their behavior.
+
+- **Explorer entry and index.** The entry uses `id-card` and the root row of the [manuscript index](#manuscript-index), followed by its disclosure. The index lists the five sections on the same `border.subtle` rail, quiet rows and current-section mark. Each row ends with “N unanswered” in `type.ui.caption` and `content.secondary`, or `check` with the accessible text “No unanswered fields”.
+- **Header.** An eyebrow in `type.ui.body-small` names the profile. The working title uses `font.family.document` at the `type.doc.h2` size, line height and weight across the full document width, and long titles wrap. The subtitle uses `font.family.document` at `type.doc.note`; without one, “No subtitle” appears in italic `content.secondary`. Add subtitle and Change title are quiet underlined actions. The revision and the field counts use `type.ui.body-small`.
+- **Reading view.** Section headings use `type.ui.heading`, with an Edit action showing `pencil` at the end. Fields are rows separated by `border.subtle`: the label in `content.secondary`, then each value in `font.family.document` at `type.doc.note` with its origin in `type.ui.caption`. A narrow panel moves the value below its label.
+- **States.** Unanswered, not yet known and inapplicable fields show their state as a pill with a `border.control` outline; an unanswered field adds `circle-dashed` and a dashed outline. A done milestone shows “Done” and strikes its title through. A milestone whose date has passed and that is not done shows “Date passed” with the `attention` border and content.
+- **Editing.** The open section is a `border.subtle` box with `radius.medium` and `space.4` padding. Each field is a fieldset whose state is a radio group; known values add their inputs, origin and, for milestones, an optional date and a Done checkbox. A field with pending input shows “Saved value” and the saved value on a `border.subtle` rail above its inputs, with the label in `type.ui.caption` and `content.secondary`. Save and Discard changes close the box.
 
 #### Activity
 

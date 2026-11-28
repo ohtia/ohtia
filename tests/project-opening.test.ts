@@ -163,7 +163,7 @@ describe("project opening", () => {
       original.map((p) => [p.id, p.createdAt, p.createdAt, p.updatedAt]),
     );
     const upgraded = fixture.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(43);
     upgraded.close();
   });
 
@@ -202,7 +202,7 @@ describe("project opening", () => {
       received.push(...page.items.map((item) => item.id));
       cursor = page.next;
     } while (cursor);
-    expect(sizes).toEqual([40, 40, 15]);
+    expect(sizes).toEqual([38, 38, 19]);
     expect(received).toEqual([...ids].sort().reverse());
     expect(new Set(received).size).toBe(all.length);
     const id = received.at(-1)!;
@@ -280,10 +280,15 @@ it("migrates confirmed titles and retains exact rename receipts and setup histor
       payload: {},
     }),
   ).resultId;
-  const command = (operationId: string, title: string, expectedTitleRevision: number) => ({
+  const command = (
+    operationId: string,
+    title: string,
+    expectedTitleRevision: number,
+    subtitle: string | null = null,
+  ) => ({
     command: "project.rename" as const,
     operationId,
-    payload: { projectId, title, expectedTitleRevision },
+    payload: { projectId, title, subtitle, expectedTitleRevision },
   });
   expect(
     await fixture.store.executeResearchCommand(command("bad-revision", "Another title", 0)),
@@ -318,11 +323,16 @@ it("migrates confirmed titles and retains exact rename receipts and setup histor
   const unchanged = command("unchanged", "Working title A", 1);
   expect(value(await migrated.executeResearchCommand(unchanged)).titleChange).toEqual({
     title: "Working title A",
+    subtitle: null,
     titleRevision: 1,
   });
   const first = command("first-title", "연구 제목 — مراجعة", 1);
   const accepted = await migrated.executeResearchCommand(first);
-  expect(value(accepted).titleChange).toEqual({ title: first.payload.title, titleRevision: 2 });
+  expect(value(accepted).titleChange).toEqual({
+    title: first.payload.title,
+    subtitle: null,
+    titleRevision: 2,
+  });
   expect(
     await migrated.executeResearchCommand(command("stale", "Working title A", 1)),
   ).toMatchObject({
@@ -339,6 +349,32 @@ it("migrates confirmed titles and retains exact rename receipts and setup histor
     ok: false,
     error: { code: "stale_revision", parameters: { currentRevision: 3 } },
   });
+  // The subtitle shares the title revision: adding or removing it advances the revision once.
+  const subtitled = command("subtitle-added", "Working title A", 3, "Redes de cuidado — 연구");
+  expect(value(await migrated.executeResearchCommand(subtitled)).titleChange).toEqual({
+    title: "Working title A",
+    subtitle: "Redes de cuidado — 연구",
+    titleRevision: 4,
+  });
+  expect(value(await migrated.readProjects())[0]).toMatchObject({
+    subtitle: "Redes de cuidado — 연구",
+    titleRevision: 4,
+  });
+  for (const invalid of [" leading", "", "x".repeat(201), "a\0b"])
+    expect(
+      await migrated.executeResearchCommand(command("bad-subtitle", "Working title A", 4, invalid)),
+    ).toEqual(failure("name_invalid"));
+  expect(
+    value(
+      await migrated.executeResearchCommand(
+        command("subtitle-unchanged", "Working title A", 4, "Redes de cuidado — 연구"),
+      ),
+    ).titleChange,
+  ).toMatchObject({ titleRevision: 4 });
+  expect(
+    value(await migrated.executeResearchCommand(command("subtitle-removed", "Working title A", 4)))
+      .titleChange,
+  ).toEqual({ title: "Working title A", subtitle: null, titleRevision: 5 });
   await migrated.close();
 
   const restarted = new DurableStore(fixture.options);
@@ -348,7 +384,11 @@ it("migrates confirmed titles and retains exact rename receipts and setup histor
   expect(
     await restarted.executeResearchCommand(command("first-title", "Different title", 1)),
   ).toEqual(failure("operation_conflict"));
-  expect(value(await restarted.readProjects())).toEqual([{ ...before, titleRevision: 3 }]);
+  expect(await restarted.executeResearchCommand(subtitled)).toMatchObject({
+    ok: true,
+    value: { titleChange: { subtitle: "Redes de cuidado — 연구", titleRevision: 4 } },
+  });
+  expect(value(await restarted.readProjects())).toEqual([{ ...before, titleRevision: 5 }]);
   expect(value(await restarted.readConversations(projectId))).toEqual(context);
   const current = fixture.raw();
   try {
@@ -356,14 +396,36 @@ it("migrates confirmed titles and retains exact rename receipts and setup histor
     expect(
       current
         .prepare(
-          "SELECT previous_revision, title_revision FROM project_title_history ORDER BY rowid",
+          "SELECT previous_subtitle, subtitle, previous_revision, title_revision FROM project_title_history ORDER BY rowid",
         )
         .all(),
     ).toEqual([
-      { previous_revision: 1, title_revision: 1 },
-      { previous_revision: 1, title_revision: 2 },
-      { previous_revision: 2, title_revision: 3 },
+      { previous_subtitle: null, subtitle: null, previous_revision: 1, title_revision: 1 },
+      { previous_subtitle: null, subtitle: null, previous_revision: 1, title_revision: 2 },
+      { previous_subtitle: null, subtitle: null, previous_revision: 2, title_revision: 3 },
+      {
+        previous_subtitle: null,
+        subtitle: "Redes de cuidado — 연구",
+        previous_revision: 3,
+        title_revision: 4,
+      },
+      {
+        previous_subtitle: "Redes de cuidado — 연구",
+        subtitle: "Redes de cuidado — 연구",
+        previous_revision: 4,
+        title_revision: 4,
+      },
+      {
+        previous_subtitle: "Redes de cuidado — 연구",
+        subtitle: null,
+        previous_revision: 4,
+        title_revision: 5,
+      },
     ]);
+    // A subtitle requires a confirmed setup and cannot change outside a counted revision.
+    expect(() =>
+      current.exec("UPDATE projects SET subtitle='Changed' WHERE title_revision=5"),
+    ).toThrow(/Invalid project title revision/);
     expect(
       current
         .prepare(
