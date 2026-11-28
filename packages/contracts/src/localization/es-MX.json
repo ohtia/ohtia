@@ -74,6 +74,7 @@
     "agents.refreshFailed": "Ohtia no pudo actualizar la lista de modelos. Tus elecciones se conservan.",
     "agents.noModel": "{agent} no tiene ningún modelo seleccionado. Elige uno en Ajustes › Agentes.",
     "agents.missingModel": "El modelo “{model}” de {agent} no está disponible en tu cuenta en este momento. Elige otro en Ajustes › Agentes.",
+    "agents.modelUnavailable": "El modelo “{model}” no está disponible en tu cuenta de {service} en este momento. Elige otro modelo.",
     "agents.open": "Abrir los ajustes de Agentes",
     "agents.destination": "{agent} no tiene un modelo disponible. Los mensajes quedarán en espera.",
     "agents.planWaiting": "En espera: {agent} no tiene un modelo disponible",

@@ -1623,6 +1623,7 @@ describe("agent rows in Settings › Agents", () => {
     options: {
       openAgent?: "virgilio" | "josefa" | { current: "virgilio" | "josefa" | undefined };
       replace?: FoundationPort["replaceAgentPreference"];
+      list?: FoundationPort["listProviderModels"];
     } = {},
   ) {
     let preferences: AgentPreferences = {
@@ -1649,6 +1650,7 @@ describe("agent rows in Settings › Agents", () => {
         options.replace ??
         (() => ({ result: Promise.resolve(failure("storage_failed")), cancel() {} })),
       listProviderModels: (input: ProviderModelPageInput) => {
+        if (options.list) return options.list(input);
         const models =
           input.connection === "chatgpt"
             ? [{ id: "first", name: "First model", effortSupport: "unknown" }]
@@ -1694,6 +1696,17 @@ describe("agent rows in Settings › Agents", () => {
         preferences = { ...preferences, preferences: next };
         const revision = next.find((item) => item.target === target)?.revision;
         await act(async () => notify?.(target, revision));
+      },
+      relist: async (connection: string) => {
+        preferences = {
+          ...preferences,
+          lists: preferences.lists.map((list) =>
+            list.connection === connection
+              ? { ...list, list_revision: list.list_revision + 1 }
+              : list,
+          ),
+        };
+        await act(async () => notify?.());
       },
       agent: (target: string) => {
         const element = container.querySelector<HTMLElement>(`[data-agent-row="${target}"]`)!;
@@ -1866,6 +1879,188 @@ describe("agent rows in Settings › Agents", () => {
     expect(josefa.summary()).toBe("Anthropic · API key · Retired model");
     expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
     expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  describe("a confirmed model the list no longer offers", () => {
+    const gone = row("default", {
+      connection: "chatgpt",
+      model: "gone",
+      modelName: "Gone model",
+      inherit: false,
+    });
+    const notices = (element: Element) =>
+      [...element.querySelectorAll(".connection-attention")].map((notice) => notice.textContent);
+    const defaults = (container: HTMLElement) =>
+      container.querySelector<HTMLElement>(".agent-settings > .agent-choice")!;
+    const goneText =
+      "“Gone model” isn’t available in your ChatGPT account now. Choose another model.";
+
+    it("says so in Default model and in every row that inherits it, keeping the choice", async () => {
+      const replace = vi.fn(() => ({
+        result: Promise.resolve(failure("storage_failed")),
+        cancel() {},
+      })) as unknown as FoundationPort["replaceAgentPreference"];
+      const t = render([gone], { replace });
+      await t.mount();
+      expect(notices(defaults(t.container))).toEqual([goneText]);
+      const notice = defaults(t.container).querySelector(".connection-attention")!;
+      expect(notice.getAttribute("role")).toBe("status");
+      expect(notice.getAttribute("data-settings-attention")).toBe("triangle-alert");
+      for (const target of ["virgilio", "josefa"]) {
+        const agent = t.agent(target);
+        expect(agent.button.getAttribute("aria-expanded")).toBe("true");
+        expect(notices(agent.element)).toEqual([goneText]);
+      }
+      const model = defaults(t.container).querySelectorAll("select")[1]!;
+      expect(model.value).toBe("gone");
+      expect([...model.options].map((option) => [option.textContent, option.disabled])).toEqual([
+        ["Choose a model", true],
+        ["Gone model", true],
+        ["First model", false],
+      ]);
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("says so only in the row whose own model is gone", async () => {
+      const t = render([
+        defaultRow,
+        row("josefa", {
+          connection: "anthropic",
+          model: "retired",
+          modelName: "Retired model",
+          inherit: false,
+        }),
+      ]);
+      await t.mount();
+      expect(notices(t.agent("josefa").element)).toEqual([
+        "“Retired model” isn’t available in your Anthropic account now. Choose another model.",
+      ]);
+      expect(notices(defaults(t.container))).toEqual([]);
+      expect(notices(t.agent("virgilio").element)).toEqual([]);
+    });
+
+    it("names a gone model without a stored name by its identifier", async () => {
+      const t = render([{ ...gone, modelName: null }]);
+      await t.mount();
+      expect(notices(defaults(t.container))).toEqual([
+        "“gone” isn’t available in your ChatGPT account now. Choose another model.",
+      ]);
+    });
+
+    it("stays silent for an offered model and for no model", async () => {
+      for (const preferences of [[defaultRow], [row("default", {})]]) {
+        const t = render(preferences);
+        await t.mount();
+        expect(notices(t.container)).toEqual([]);
+      }
+    });
+
+    it("stays silent while the list is unread and leaves a failed read to its own notice", async () => {
+      const unread = render([gone], {
+        list: () => ({ result: new Promise(() => {}), cancel() {} }),
+      });
+      await unread.mount();
+      expect(notices(unread.container)).toEqual([]);
+      const failed = render([gone], {
+        list: () => ({ result: Promise.resolve(failure("storage_failed")), cancel() {} }),
+      });
+      await failed.mount();
+      expect(notices(defaults(failed.container))).toEqual([
+        "Preferences could not be refreshed. Saved changes remain saved. Refresh to check the current values.",
+      ]);
+    });
+
+    it("keeps the judgement while the list updates and clears it when the list offers the model", async () => {
+      let offered = false;
+      const releases: (() => void)[] = [];
+      const list = (input: ProviderModelPageInput) => {
+        const models = [
+          { id: "first", name: "First model", effortSupport: "unknown" },
+          ...(offered ? [{ id: "gone", name: "Gone model", effortSupport: "unknown" }] : []),
+        ];
+        const value = {
+          connection: input.connection,
+          list_revision: input.list_revision,
+          nextCursor: models.length,
+          hasMore: false,
+          models,
+        };
+        return input.list_revision === 1
+          ? call(value)
+          : {
+              result: new Promise((resolve) => {
+                releases.push(() => {
+                  resolve({ ok: true, value });
+                });
+              }),
+              cancel() {},
+            };
+      };
+      const t = render([gone], { list: list as FoundationPort["listProviderModels"] });
+      await t.mount();
+      expect(notices(defaults(t.container))).toEqual([goneText]);
+      offered = true;
+      await t.relist("chatgpt");
+      expect(notices(defaults(t.container))).toEqual([goneText]);
+      expect(releases).not.toEqual([]);
+      await act(async () => {
+        for (const release of releases) release();
+      });
+      expect(notices(t.container)).toEqual([]);
+    });
+
+    it("describes the Model select with the notice", async () => {
+      const t = render([gone]);
+      await t.mount();
+      const model = defaults(t.container).querySelectorAll("select")[1]!;
+      const notice = defaults(t.container).querySelector(".connection-attention")!;
+      expect(model.getAttribute("aria-describedby")).toBe(notice.id);
+      expect(notice.id).not.toBe("");
+    });
+
+    it("keeps the judgement of the confirmed choice while another service is drafted", async () => {
+      const t = render([gone]);
+      await t.mount();
+      const service = defaults(t.container).querySelectorAll("select")[0]!;
+      await act(async () => {
+        service.value = "anthropic";
+        service.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(defaults(t.container).querySelectorAll("select")[1]!.value).toBe("");
+      expect(notices(defaults(t.container))).toEqual([goneText]);
+    });
+
+    it("keeps the notice while the researcher's save is pending and clears it once saved", async () => {
+      let finish: (() => void) | undefined;
+      const replace = vi.fn(() => ({
+        result: new Promise((resolve) => {
+          finish = () => {
+            resolve({ ok: true, value: { resultId: "019a8000-0000-7000-8000-000000000001" } });
+          };
+        }),
+        cancel() {},
+      })) as unknown as FoundationPort["replaceAgentPreference"];
+      const t = render([gone], { replace });
+      await t.mount();
+      const model = defaults(t.container).querySelectorAll("select")[1]!;
+      await act(async () => {
+        model.value = "first";
+        model.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(notices(defaults(t.container))).toEqual([goneText]);
+      await t.update([{ ...defaultRow, revision: 2 }]);
+      await act(async () => finish?.());
+      expect(notices(t.container)).toEqual([]);
+    });
+
+    it("clears once an offered model is saved", async () => {
+      const t = render([gone]);
+      await t.mount();
+      expect(notices(t.container)).not.toEqual([]);
+      await t.update([{ ...defaultRow, revision: 2 }], "default");
+      expect(notices(t.container)).toEqual([]);
+    });
   });
 
   it("summarizes an inherited effort override and an unlisted service as its selects name them", async () => {
