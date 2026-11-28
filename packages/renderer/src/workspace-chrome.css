@@ -205,7 +205,17 @@
   border-block-end: var(--border-width-default) solid var(--border-subtle);
 }
 .workspace-tabs {
+  overflow-x: auto;
   padding: calc(var(--focus-width) + var(--focus-offset)) var(--space-3) var(--space-0);
+}
+.workspace-tab-item {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+.workspace-tab-close {
+  justify-content: center;
+  min-inline-size: var(--component-target-minimum);
 }
 .workspace-tabs button {
   display: flex;

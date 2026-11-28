@@ -166,5 +166,9 @@
   {
     "name": "0042_openrouter_requests",
     "sha256": "4d34209a97a2562723650a7d67f445f6e1abd99d2766e86da649d374953d468c"
+  },
+  {
+    "name": "0043_project_subtitle",
+    "sha256": "4586667ae18fc01896cc85809aa2703d64054ffe127698c1d19034c60e1bb147"
   }
 ]

@@ -3,6 +3,7 @@ import { useId, useSyncExternalStore } from "react";
 import { latestProject, ProjectCollections, ProjectController } from "./project-controller.js";
 import type { ProjectSelectionLease } from "./pending-project-work.js";
 import { ProjectSelector } from "./project-selector.js";
+import { ThesisProfileController } from "./thesis-profile-controller.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { ProjectRename, ProjectRenameStatus } from "./project-rename.js";
 import { Dialog } from "./layers.js";
@@ -75,6 +76,10 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   const [createdProject, setCreatedProject] = useState<string>();
   const [visibleManuscript, setVisibleManuscript] = useState<ManuscriptRevision | null>(null);
   const [memoryDrafts] = useState(() => new ProjectMemoryDrafts());
+  const profileDrafts = useMemo(
+    () => new Map<string, ThesisProfileController>(),
+    [bridge.foundation],
+  );
   const { collections, conversation, projects } = useMemo(() => {
     const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
       projects.rememberStarted(scope);
@@ -181,10 +186,12 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         if (notice === "ready" || !notice.ok || notice.value.kind !== "changed") return;
         const { record, id, revision } = notice.value;
         if (record === "project") projects.noteProject();
+        if (record === "profile" && id === conversation.snapshot().scope.projectId)
+          profileDrafts.get(id)?.changed(revision);
         if (record === "projectTitle" && id === conversation.snapshot().scope.projectId)
           projects.noteProjectTitle(id, revision);
       }),
-    [conversation, projects],
+    [conversation, profileDrafts, projects],
   );
   useEffect(() => {
     projects.remember(conversationState.scope);
@@ -245,6 +252,22 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     conversationState.project,
     projects.project(conversationState.scope.projectId),
   );
+  const profileLease = projects.selectionLease();
+  const profileLanguage = activeProject?.documentLanguage;
+  const profileAvailable =
+    profileLease &&
+    profileLanguage &&
+    activeProject.setupConfirmedAt &&
+    activeProject.id === currentProjectId &&
+    profileLease.projectId === currentProjectId;
+  let profile: ThesisProfileController | undefined;
+  if (profileAvailable) {
+    profile = profileDrafts.get(profileLease.projectId);
+    if (!profile) {
+      profile = new ThesisProfileController(bridge.foundation);
+      profileDrafts.set(profileLease.projectId, profile);
+    }
+  }
   const renameReturn = useRef<HTMLButtonElement>(null);
   const renameProject =
     activeProject?.id === currentProjectId && conversationState.researchScopeReady
@@ -657,6 +680,28 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                   manuscriptPort={bridge.foundation}
                   manuscriptLifecycle={bridge.commands}
                   onManuscriptVisibility={setVisibleManuscript}
+                  {...(profile && profileLease && profileLanguage
+                    ? {
+                        profile: {
+                          controller: profile,
+                          lease: profileLease,
+                          language: profileLanguage,
+                          subscriptionId: conversation.projectSubscription(profileLease.projectId),
+                          unavailable:
+                            !conversationState.researchScopeReady &&
+                            (conversationState.status === "failed" ||
+                              conversationState.status === "unavailable"),
+                          retryConnection: conversation.reload,
+                          guard: projects.pendingWork,
+                          // Rename itself refuses while its form is already open.
+                          rename: renameProject?.setupConfirmedAt
+                            ? (focus?: "subtitle") => {
+                                projects.beginRename(focus);
+                              }
+                            : undefined,
+                        },
+                      }
+                    : {})}
                   {...(activeProject?.setupConfirmedAt && currentProjectId
                     ? {
                         memory: (

@@ -527,7 +527,7 @@ describe("conversation handoffs", () => {
     });
     const db = f.raw();
     try {
-      expect(db.pragma("user_version", { simple: true })).toBe(42);
+      expect(db.pragma("user_version", { simple: true })).toBe(43);
       expect(
         db
           .prepare("SELECT count(*) FROM messages WHERE id IS NOT NULL AND conversation_id=?")

@@ -2929,7 +2929,12 @@ it("binds message-copy scope only to the latest service-admitted research subscr
                     transition: { kind: "enter" },
                   },
                 }
-              : { projectId: target, title: "Working title", expectedTitleRevision: 1 },
+              : {
+                  projectId: target,
+                  title: "Working title",
+                  subtitle: null,
+                  expectedTitleRevision: 1,
+                },
     });
     if (!envelope.ok) throw new Error("Invalid project fixture");
     const before = service.dispatch.mock.calls.length;

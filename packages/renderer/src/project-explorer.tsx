@@ -12,6 +12,17 @@ import {
   type ManuscriptOutline,
 } from "./manuscript-outline.js";
 import type { useManuscripts } from "./manuscript-view.js";
+import { profileSectionIds, type ProfileSection } from "./thesis-profile-fields.js";
+
+/** The explorer's view of the project's research profile. */
+export interface ExplorerProfile {
+  readonly selected: boolean;
+  /** The section last opened from the index while the profile tab is selected. */
+  readonly current: ProfileSection | undefined;
+  /** Unanswered fields per section; absent until the saved profile has been read. */
+  readonly unanswered: Readonly<Record<ProfileSection, number>> | undefined;
+  readonly open: (section?: ProfileSection) => void;
+}
 
 type Group = "conversations" | "materials";
 const initialGroups = { conversations: false, materials: true };
@@ -155,6 +166,7 @@ export function ProjectExplorer({
   memoryAvailable,
   memorySelected,
   openMemory,
+  profile,
   revealChat,
   manuscripts,
   manuscriptSelected,
@@ -169,6 +181,7 @@ export function ProjectExplorer({
   readonly memoryAvailable: boolean;
   readonly memorySelected: boolean;
   readonly openMemory: () => void;
+  readonly profile?: ExplorerProfile | undefined;
   readonly revealChat: () => void;
   readonly manuscripts?: ReturnType<typeof useManuscripts> | undefined;
   readonly manuscriptSelected?: boolean | undefined;
@@ -246,6 +259,8 @@ export function ProjectExplorer({
       ?.scrollIntoView({ block: "nearest" });
   });
 
+  const [profileFolded, setProfileFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const profileExpanded = !!projectId && !profileFolded.has(projectId);
   const manuscriptDisclosure = useRef<HTMLButtonElement>(null);
   const disclosure = useRef<HTMLButtonElement>(null);
   const pageTrigger = useRef<HTMLButtonElement>(null);
@@ -298,6 +313,97 @@ export function ProjectExplorer({
         </p>
       )}
       <ul className="project-explorer-list" role="list">
+        {confirmed && profile && (
+          <li>
+            <div
+              className="manuscript-outline-row manuscript-outline-root"
+              data-current={profile.selected && !profile.current ? "true" : undefined}
+            >
+              <button
+                type="button"
+                className="manuscript-outline-heading primitive-button primitive-quiet"
+                aria-current={profile.selected && !profile.current ? "location" : undefined}
+                onClick={() => {
+                  profile.open();
+                }}
+              >
+                <LucideGlyph name="id-card" size={16} />
+                {message(locale, "profile.title")}
+              </button>
+              <Tooltip
+                label={message(locale, "profile.toggleSections")}
+                className="manuscript-outline-control"
+              >
+                <button
+                  type="button"
+                  className="primitive-button primitive-quiet manuscript-outline-disclosure"
+                  aria-expanded={profileExpanded}
+                  aria-controls={`${id}-profile-sections`}
+                  aria-label={message(locale, "profile.toggleSections")}
+                  onClick={() => {
+                    setProfileFolded((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(projectId)) next.delete(projectId);
+                      else next.add(projectId);
+                      return next;
+                    });
+                  }}
+                >
+                  <LucideGlyph
+                    name={profileExpanded ? "chevron-down" : "chevron-right"}
+                    size={16}
+                  />
+                </button>
+              </Tooltip>
+            </div>
+            <div
+              className="project-explorer-group manuscript-outline-group"
+              id={`${id}-profile-sections`}
+              hidden={!profileExpanded}
+            >
+              <div className="manuscript-outline">
+                <ul className="project-explorer-list manuscript-chapters" role="list">
+                  {profileSectionIds.map((section) => {
+                    const current = profile.selected && profile.current === section;
+                    const count = profile.unanswered?.[section];
+                    return (
+                      <li key={section}>
+                        <div
+                          className="manuscript-outline-row"
+                          data-current={current ? "true" : undefined}
+                        >
+                          <button
+                            type="button"
+                            className="manuscript-outline-heading primitive-button primitive-quiet profile-index-row"
+                            aria-current={current ? "location" : undefined}
+                            onClick={() => {
+                              profile.open(section);
+                            }}
+                          >
+                            <span>{message(locale, `profile.section.${section}`)}</span>
+                            {count !== undefined &&
+                              (count > 0 ? (
+                                <span className="profile-index-count">
+                                  {message(locale, "profile.sectionUnanswered", { count })}
+                                </span>
+                              ) : (
+                                <span className="profile-index-count">
+                                  <LucideGlyph name="check" size={16} />
+                                  <span className="primitive-announcement">
+                                    {message(locale, "profile.sectionComplete")}
+                                  </span>
+                                </span>
+                              ))}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          </li>
+        )}
         {manuscripts && (
           <li>
             <div

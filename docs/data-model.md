@@ -3,7 +3,7 @@ type: Specification
 title: "Data model"
 description: "Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite."
 generated:
-  by: codex/gpt-6.2-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -162,11 +162,12 @@ An original PDF, extraction, corrected extraction and later edition are not inte
 
 - `id`: stable research-project identity.
 - `title`, document language and observed creation/update metadata describe the investigation; the document language is the BCP 47 language of the document's text, confirmed by the researcher during setup and never changed afterwards, in which agents work and answer.
-- `title_revision` is a positive safe integer. Existing and new projects start at 1. For an active, setup-confirmed thesis, the rename command compares the supplied expected revision against the stored revision in the write transaction. A stale revision rejects the save. A changed title advances the revision by exactly one. An unchanged title records the confirmed result at the same revision. Opening a thesis and confirming its initial setup leave the title revision intact.
+- `subtitle` is an optional subtitle of a setup-confirmed thesis, with the same text rules as the title. Existing projects have none.
+- `title_revision` is a positive safe integer shared by the title and the subtitle. Existing and new projects start at 1. For an active, setup-confirmed thesis, the rename command takes the title, the subtitle or `null` to remove it, and the expected revision, and compares that revision against the stored revision in the write transaction. A stale revision rejects the save. A changed title or subtitle advances the revision by exactly one. Unchanged values record the confirmed result at the same revision. Opening a thesis and confirming its initial setup leave the title revision intact.
 - `project_type` classifies the research undertaking using a code-owned typed catalog. SQLite enforces the released catalog with a `CHECK` constraint; the application validates the same values. It is not a user-editable lookup table. Localized display names live in interface message catalogs, while stored values are stable English identifiers. Catalog changes require coordinated application/schema changes, and the feature contract defines the exact values before implementation.
 - The research profile, plan and workflow state belong to this project under their respective feature contracts.
 
-Each accepted rename stores its previous and resulting title and revision in immutable history alongside the command receipt, in the same transaction. Reconciliation of the same operation and payload returns that exact recorded result. The project identity, opening order, confirmed language, setup proposal history and manuscript labels are preserved ([PRIN-004 and PRIN-013](product-definition.md#product-principles)).
+Each accepted rename stores its previous and resulting title, subtitle and revision in immutable history alongside the command receipt, in the same transaction. Reconciliation of the same operation and payload returns that exact recorded result. The project identity, opening order, confirmed language, setup proposal history and manuscript labels are preserved ([PRIN-004 and PRIN-013](product-definition.md#product-principles)).
 
 The diagram defines manuscript ownership and cardinality. A project title is not a storage path. Interface locale remains separate from the project's document language, which is also the manuscript's language.
 
@@ -187,13 +188,13 @@ A setup-confirmed thesis has at most one row in `thesis_profile_heads`. Before t
 
 Each immutable `thesis_profile_revisions` row has a UUIDv7, owning project, positive sequence number, immediate predecessor, complete encoded snapshot, changed field keys and a durable command receipt. SQLite requires the head and predecessor to point to revisions of the same project. A save checks the expected revision, using zero for an unset profile, and replaces only the submitted fields. Omitted fields retain their prior values. The stored change set lists fields whose encoded values actually changed, including attribution, in lexical order. An accepted save with identical values appends a revision with an empty change set. History, the new head and the receipt commit in one transaction. Reusing the operation identity and equivalent canonical payload reconciles to the original receipt and its revision.
 
-### Profile schema version 1
+### Profile schema version 2
 
-The canonical UTF-8 JSON body contains `schemaVersion` and a sparse `fields` object with these keys.
+The canonical UTF-8 JSON body contains `schemaVersion` and a sparse `fields` object with these keys. Saves write version 2. A stored version 1 snapshot has the same fields without the milestone `done` mark; readers treat its milestones as not done, and its revision stays unchanged. The next save writes the complete snapshot as version 2.
 
 - Attributed text fields are `thesis_level`, `modality`, `institution`, `program`, `discipline`, `approach`, `working_point`, `topic`, `estimated_length`, `citation_practice`, `experience` and `autonomy`.
 - Lists of attributed text are `interests`, `goals`, `target_languages`, `questions`, `objectives`, `institutional_requirements`, `integrity_conditions`, `ai_use_conditions`, `restrictions`, `academic_support`, `tools`, `difficulties`, `adaptations`, `bibliography`, `corpus`, `data`, `methods`, `passages` and `decisions`.
-- `deadline` takes an attributed Gregorian calendar date in `YYYY-MM-DD` form. `milestones` is a list of attributed values with a title and an optional date in the same form. `weekly_availability_minutes` takes an attributed integer between 0 and 10,080 inclusive.
+- `deadline` takes an attributed Gregorian calendar date in `YYYY-MM-DD` form. `milestones` is a list of attributed values with a title, an optional date in the same form and a `done` boolean. Marking a profile milestone done records the researcher's own planning and says nothing about Ohtia's research stages. `weekly_availability_minutes` takes an attributed integer between 0 and 10,080 inclusive.
 
 Every field may be explicitly `unknown` or `inapplicable`. A missing key represents an unrecorded field. A `known` scalar carries a `value` and an `origin`. A `known` list carries `items`, each with its own known value and origin. Known zero availability and a known empty list are explicit values.
 

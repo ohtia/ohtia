@@ -5,6 +5,7 @@ import { ConnectionsSpecimen } from "./connections-specimen.js";
 import { ComposerSpecimen } from "./composer-specimen.js";
 import { ConversationSpecimen } from "./conversation-specimen.js";
 import { CharacterSpecimen } from "./character-specimen.js";
+import { ThesisProfileSpecimen } from "./thesis-profile-specimen.js";
 import { ResearchSpecimen } from "./research-specimen.js";
 import { WorkspaceSpecimen, ScopedWorkspaceSpecimen } from "./workspace-specimen.js";
 import { CommandSpecimens } from "./command-specimens.js";
@@ -418,6 +419,8 @@ createRoot(root).render(
     <CharacterSpecimen />
   ) : screen === "research" ? (
     <ResearchSpecimen />
+  ) : screen === "thesis-profile" ? (
+    <ThesisProfileSpecimen />
   ) : screen === "workspace" ? (
     <WorkspaceSpecimen />
   ) : screen === "scoped-workspace" ? (

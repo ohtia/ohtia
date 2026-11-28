@@ -1212,6 +1212,72 @@
       "decorativeBorders": "border.subtle"
     },
     {
+      "selector": ".profile-header",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".profile-eyebrow, .profile-meta, .profile-hint, .profile-help, .profile-origin, .profile-subtitle-empty",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".profile-fact",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".profile-fact dt",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".profile-state",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".profile-state[data-state=\"late\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "attention.content"
+    },
+    {
+      "selector": ".profile-editor",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".profile-input-row",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".profile-saved-compare",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".profile-saved-label",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".manuscript-outline-row:not([data-current=\"true\"]) .profile-index-count",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
       "selector": ".memory-attribution",
       "backgrounds": ["surface.page"],
       "minimum": 7,

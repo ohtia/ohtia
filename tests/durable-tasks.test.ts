@@ -623,7 +623,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(43);
       upgraded.close();
     },
   );
@@ -1189,7 +1189,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>, legacy = false): str
       version: 1,
       operation: "synthetic-recovery",
       source: 9,
-      target: 42,
+      target: 43,
       ...(legacy ? {} : { release: f.options.release }),
     }),
   );
@@ -2546,7 +2546,7 @@ describe("OpenRouter request migration", () => {
       }
     };
     const upgraded = f.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(43);
     expect(upgraded.pragma("foreign_key_check")).toEqual([]);
     expect(
       upgraded.prepare("SELECT count(*) FROM attempts WHERE served_by IS NOT NULL").pluck().get(),

@@ -57,6 +57,7 @@ export function NewProjectSpecimen() {
     id: projectId,
     projectType: "thesis" as const,
     title: decision === "confirmed" ? "Redes de cuidado en Rosario" : null,
+    subtitle: null,
     titleRevision: 1,
     documentLanguage: decision === "confirmed" ? "es-AR" : null,
     isDevelopment: false,

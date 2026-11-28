@@ -1,6 +1,9 @@
 import { objects as researchStages } from "../packages/utility/src/migrations/0040_research_stages.mjs";
 import { objects as thesisProfile } from "../packages/utility/src/migrations/0039_thesis_profile.mjs";
-import { objects as projectTitle } from "../packages/utility/src/migrations/0038_project_title_revision.mjs";
+import {
+  objects as projectTitle,
+  historySchema as projectTitleHistory,
+} from "../packages/utility/src/migrations/0038_project_title_revision.mjs";
 import { objects as beforeProjectTitle } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
 import {
   tables as durableTaskTables,
@@ -123,7 +126,26 @@ import { preferencesSchema as entryTextPreferencesSchema } from "../packages/uti
 
 const preferenceAttemptFields =
   attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preProjectSubtitleSql = `
+  DROP TRIGGER projects_subtitle_setup;
+  DROP TRIGGER projects_title_revision;
+  ALTER TABLE project_title_history RENAME TO project_title_history_with_subtitle;
+  ${projectTitleHistory};
+  INSERT INTO project_title_history
+    SELECT operation_id,project_id,previous_title,title,previous_revision,title_revision
+    FROM project_title_history_with_subtitle WHERE subtitle IS previous_subtitle OR title<>previous_title;
+  DROP TABLE project_title_history_with_subtitle;
+  ALTER TABLE projects DROP COLUMN subtitle;
+  ${projectTitle.projects_title_revision};
+  ${projectTitle.project_title_history_scope};
+  ${projectTitle.project_title_history_update};
+  ${projectTitle.project_title_history_delete};
+  DELETE FROM kysely_migration WHERE name='0043_project_subtitle';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0043_project_subtitle';
+  PRAGMA user_version=42;
+`;
 export const preOpenrouterSql = `
+  ${preProjectSubtitleSql}
   DROP TRIGGER attempts_served_by;
   DROP TRIGGER usage_one_open_key;
   ALTER TABLE attempts DROP COLUMN served_by;

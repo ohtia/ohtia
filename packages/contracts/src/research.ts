@@ -7,6 +7,8 @@ export interface ProjectRecord {
   readonly id: string;
   readonly projectType: "thesis";
   readonly title: string | null;
+  /** Optional subtitle of a setup-confirmed thesis; it shares the title revision. */
+  readonly subtitle: string | null;
   readonly titleRevision: number;
   readonly documentLanguage: string | null;
   readonly isDevelopment: boolean;
@@ -210,6 +212,8 @@ export interface ResearchPayloads {
   readonly "project.rename": {
     readonly projectId: string;
     readonly title: string;
+    /** `null` removes the subtitle. */
+    readonly subtitle: string | null;
     readonly expectedTitleRevision: number;
   };
   readonly "manuscript.create": import("./manuscript.js").ManuscriptCreatePayload;
@@ -248,6 +252,7 @@ export interface ResearchResult {
 }
 interface ProjectTitleChange {
   readonly title: string;
+  readonly subtitle: string | null;
   readonly titleRevision: number;
 }
 export interface RenameProjectResult extends ResearchResult {

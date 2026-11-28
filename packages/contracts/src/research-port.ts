@@ -40,6 +40,7 @@ import {
 import { utf8Size, type PortCall, type Request, type Subscription, type Outcome } from "./port.js";
 import {
   decodeProfileContent,
+  decodeStoredProfileContent,
   isProfileField,
   profileRevisionBytes,
   type ProfileReadResult,
@@ -1460,7 +1461,7 @@ function profileReadResult(value: unknown): boolean {
   return (
     profileRevision(revision) &&
     (typeof encoded === "string"
-      ? !!decodeProfileContent(encoded)
+      ? !!decodeStoredProfileContent(encoded)
       : isTextReference(encoded) &&
         encoded.source === revision.revisionId &&
         encoded.bytes <= profileRevisionBytes)
@@ -1716,9 +1717,10 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
     case "project.rename":
       return (
-        exact(value, ["projectId", "title", "expectedTitleRevision"]) &&
+        exact(value, ["projectId", "title", "subtitle", "expectedTitleRevision"]) &&
         isResearchId(value.projectId) &&
         typeof value.title === "string" &&
+        nullable(value.subtitle, (x) => typeof x === "string") &&
         integer(value.expectedTitleRevision)
       );
     case "planEvent.list":
@@ -1907,6 +1909,7 @@ function project(value: unknown, summary: boolean): boolean {
       "id",
       "projectType",
       "title",
+      "subtitle",
       "titleRevision",
       "documentLanguage",
       "isDevelopment",
@@ -1920,6 +1923,7 @@ function project(value: unknown, summary: boolean): boolean {
     value.projectType === "thesis" &&
     integer(value.titleRevision) &&
     nullable(value.title, (x) => typeof x === "string") &&
+    nullable(value.subtitle, (x) => typeof x === "string" && projectTitleError(x) === null) &&
     nullable(value.documentLanguage, (x) => typeof x === "string") &&
     typeof value.isDevelopment === "boolean" &&
     nullable(value.setupConfirmedAt, date) &&
@@ -2411,9 +2415,13 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
     return (
       exact(value, ["resultId", "titleChange"]) &&
       isResearchId(value.resultId) &&
-      exact(value.titleChange, ["title", "titleRevision"]) &&
+      exact(value.titleChange, ["title", "subtitle", "titleRevision"]) &&
       typeof value.titleChange.title === "string" &&
       projectTitleError(value.titleChange.title) === null &&
+      nullable(
+        value.titleChange.subtitle,
+        (x) => typeof x === "string" && projectTitleError(x) === null,
+      ) &&
       integer(value.titleChange.titleRevision)
     );
   if (isResearchMutation(operation))
@@ -3197,10 +3205,12 @@ export function researchResultMatches(
     );
   if (operation === "project.read") return output.id === input.projectId;
   if (operation === "project.rename") {
-    const { title, titleRevision } = (output as unknown as RenameProjectResult).titleChange;
+    const { title, subtitle, titleRevision } = (output as unknown as RenameProjectResult)
+      .titleChange;
     return (
       output.resultId === input.projectId &&
       title === input.title &&
+      subtitle === input.subtitle &&
       (titleRevision === input.expectedTitleRevision ||
         titleRevision === Number(input.expectedTitleRevision) + 1)
     );

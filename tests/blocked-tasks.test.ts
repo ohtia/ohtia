@@ -701,7 +701,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 42,
+          target: 43,
         }),
       );
       await f.store.retry();
@@ -755,7 +755,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 42,
+          target: 43,
         }),
       );
       await exhausted.store.retry();
@@ -784,7 +784,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 42,
+          target: 43,
         }),
       );
       await f.store.retry();
@@ -1036,7 +1036,7 @@ describe("reply control composed with connection and usage pauses", () => {
             operation: "composed-recovery",
             release: f.options.release,
             source: 9,
-            target: 42,
+            target: 43,
           }),
         );
         await f.store.retry();
@@ -1055,13 +1055,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(42);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(43);
       expect(
         upgraded
           .prepare("SELECT name FROM kysely_migration WHERE name >= ? ORDER BY name DESC")
           .pluck()
           .all("0010_reply_control"),
       ).toEqual([
+        "0043_project_subtitle",
         "0042_openrouter_requests",
         "0041_manuscript_revisions",
         "0040_research_stages",
@@ -1119,7 +1120,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 42 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 43 }),
       );
       await f.store.retry();
       seedDefaultModel(f.raw, "test-model");

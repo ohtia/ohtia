@@ -52,6 +52,19 @@ import {
 } from "./manuscript-view.js";
 import type { ManuscriptOutline } from "./manuscript-outline.js";
 import { Tabs } from "./tabs.js";
+import { ThesisProfileView, type ProfileSectionTarget } from "./thesis-profile-view.js";
+import { profileSectionIds, unanswered, type ProfileSection } from "./thesis-profile-fields.js";
+import type {
+  PendingProjectWork,
+  PendingWorkDecision,
+  PendingWorkScope,
+  ProjectSelectionLease,
+} from "./pending-project-work.js";
+
+interface DetachProfilePrompt {
+  readonly scope: PendingWorkScope;
+  readonly resolve: (decision: PendingWorkDecision) => void;
+}
 
 const panelIcons = {
   explorer: "panel-left",
@@ -88,6 +101,12 @@ export interface WorkspaceChromeProps {
     | "confirmManuscriptLock"
   >;
   readonly onManuscriptVisibility?: (revision: ManuscriptRevision | null) => void;
+  readonly profile?: Omit<
+    Parameters<typeof ThesisProfileView>[0],
+    "target" | "locale" | "title" | "subtitle"
+  > & {
+    readonly guard: Pick<PendingProjectWork, "register">;
+  };
   readonly memoryRequest?: number;
   readonly revealSourceRequest?: object;
   readonly projectSelector?: ReactNode;
@@ -136,6 +155,8 @@ interface DocumentTabsState {
 }
 
 const ignoreManuscriptVisibility = () => {};
+const noSubscription = () => () => {};
+const noProfile = () => undefined;
 const noUpdateSubscription = () => () => {};
 const noUpdateSnapshot = (): UpdateSnapshot | undefined => undefined;
 function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
@@ -244,6 +265,7 @@ export function WorkspaceChrome({
   manuscriptPort,
   manuscriptLifecycle,
   onManuscriptVisibility = ignoreManuscriptVisibility,
+  profile,
   revealSourceRequest,
   chatTitle,
   chatActivity,
@@ -321,6 +343,11 @@ export function WorkspaceChrome({
     setDocuments({ ...documents, projectId: projectScope, selected: "navigator" });
   const openIds = projectScope ? (documents.opened.get(projectScope) ?? []) : [];
   const memoryOpen = !!memory && openIds.includes("memory");
+  const profileOpen =
+    !!profile &&
+    profile.lease.projectId === projectScope &&
+    !!project?.setupConfirmedAt &&
+    openIds.includes("profile");
   const primary = manuscripts.rows[0];
   const manuscriptTab =
     !!manuscriptPort &&
@@ -329,11 +356,13 @@ export function WorkspaceChrome({
   const selectedTab =
     documents.projectId === projectScope &&
     ((documents.selected === "memory" && memoryOpen) ||
+      (documents.selected === "profile" && profileOpen) ||
       (documents.selected === "manuscript" && manuscriptTab))
       ? documents.selected
       : "navigator";
   const manuscriptSelected = selectedTab === "manuscript";
   const memorySelected = selectedTab === "memory";
+  const profileSelected = selectedTab === "profile";
   const [manuscriptDrafts] = useState(() => new ManuscriptDrafts());
   const [pendingClose, setPendingClose] = useState<ManuscriptCloseCommand>();
   const [closingManuscript, setClosingManuscript] = useState(false);
@@ -526,7 +555,7 @@ export function WorkspaceChrome({
           ...previous,
           selected: tab,
           opened:
-            tab !== "memory" || opened.includes(tab)
+            (tab !== "memory" && tab !== "profile") || opened.includes(tab)
               ? previous.opened
               : new Map(previous.opened).set(projectScope, [...opened, tab]),
         };
@@ -539,6 +568,77 @@ export function WorkspaceChrome({
   const openMemory = useCallback(() => {
     openDocument("memory");
   }, [openDocument]);
+
+  // The profile controller observes its project while the explorer can count its sections.
+  const profileController = profile?.controller;
+  const profileLease = profile?.lease;
+  const profileSubscription = profile?.subscriptionId;
+  useLayoutEffect(
+    () => (profileController && profileLease ? profileController.attach(profileLease) : undefined),
+    [profileController, profileLease],
+  );
+  useLayoutEffect(() => {
+    profileController?.setSubscription(profileSubscription);
+  }, [profileController, profileLease, profileSubscription]);
+  const profileState = useSyncExternalStore(
+    profileController?.subscribe ?? noSubscription,
+    profileController?.snapshot ?? noProfile,
+  );
+  const [sectionTarget, setSectionTarget] = useState<
+    (ProfileSectionTarget & { readonly lease: ProjectSelectionLease }) | undefined
+  >();
+  function openProfile(scope: ProjectSelectionLease, section?: ProfileSection) {
+    if (profile?.lease !== scope || !scope.isCurrent()) return;
+    openDocument("profile");
+    // A section request focuses its heading; a direct open focuses the tab.
+    setSectionTarget(section ? { lease: scope, section } : undefined);
+    if (!section) setFocusDocument("profile");
+  }
+  const profileCurrent =
+    profileSelected && sectionTarget?.lease === profile?.lease ? sectionTarget?.section : undefined;
+
+  const [closingProfile, setClosingProfile] = useState<ProjectSelectionLease>();
+  const closeAttempt = useRef(0);
+  const detachPrompt = useRef<DetachProfilePrompt | undefined>(undefined);
+  const [closeFailed, setCloseFailed] = useState(false);
+  const profileGuard = profile?.guard;
+  useLayoutEffect(() => {
+    if (!profileController || !profileLease || !profileGuard) return;
+    return profileGuard.register(profileLease, (scope) => {
+      const decision = profileController.beforeDetach(scope);
+      if (decision.status !== "keep_open" || !scope.isCurrent()) return decision;
+      // Pending profile input asks before the project selection changes.
+      return new Promise<PendingWorkDecision>((resolve) => {
+        const abort = () => {
+          detachPrompt.current = undefined;
+          closeAttempt.current++;
+          setClosingProfile((current) => (current === profileLease ? undefined : current));
+          resolve({ status: "keep_open" });
+        };
+        detachPrompt.current = {
+          scope,
+          resolve: (next) => {
+            scope.signal.removeEventListener("abort", abort);
+            resolve(next);
+          },
+        };
+        scope.signal.addEventListener("abort", abort, { once: true });
+        setCloseFailed(false);
+        setClosingProfile(profileLease);
+      });
+    });
+  }, [profileController, profileGuard, profileLease]);
+  function settleProfilePrompt(keep = false) {
+    const prompt = detachPrompt.current;
+    detachPrompt.current = undefined;
+    closeAttempt.current++;
+    setClosingProfile(undefined);
+    prompt?.resolve(
+      !keep && profileController
+        ? profileController.beforeDetach(prompt.scope)
+        : { status: "keep_open" },
+    );
+  }
 
   function openManuscript(headingId?: string) {
     if (!manuscripts.verifiedScope || (!primary && manuscripts.status !== "ready")) return;
@@ -1309,13 +1409,37 @@ export function WorkspaceChrome({
                         icon: <LucideGlyph name="signpost" size={16} />,
                         content: projectScope ? (
                           project && (
-                            <p className="workspace-empty workspace-setup">
-                              {text(
-                                project.setupConfirmedAt
-                                  ? "setup.navigatorConfirmed"
-                                  : "setup.navigator",
+                            <div className="workspace-empty workspace-setup">
+                              <p>
+                                {text(
+                                  project.setupConfirmedAt
+                                    ? "setup.navigatorConfirmed"
+                                    : "setup.navigator",
+                                )}
+                              </p>
+                              {profile && project.setupConfirmedAt && (
+                                <div className="profile-actions">
+                                  <button
+                                    type="button"
+                                    className="primitive-button"
+                                    onClick={() => {
+                                      openProfile(profile.lease, "schedule");
+                                    }}
+                                  >
+                                    {text("profile.openSchedule")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="primitive-button"
+                                    onClick={() => {
+                                      openProfile(profile.lease, "research");
+                                    }}
+                                  >
+                                    {text("profile.openResearch")}
+                                  </button>
+                                </div>
                               )}
-                            </p>
+                            </div>
                           )
                         ) : (
                           <div className="workspace-welcome">
@@ -1429,6 +1553,31 @@ export function WorkspaceChrome({
                             },
                           ]
                         : []),
+                      ...(profileOpen && project.title
+                        ? [
+                            {
+                              id: "profile",
+                              label: text("profile.title"),
+                              icon: <LucideGlyph name="id-card" size={16} />,
+                              content: (
+                                <ThesisProfileView
+                                  key={profile.lease.projectId}
+                                  {...profile}
+                                  locale={locale}
+                                  title={project.title}
+                                  subtitle={project.subtitle}
+                                  target={
+                                    profileSelected &&
+                                    geometry?.visible.documents &&
+                                    sectionTarget?.lease === profile.lease
+                                      ? sectionTarget
+                                      : undefined
+                                  }
+                                />
+                              ),
+                            },
+                          ]
+                        : []),
                     ]}
                     selected={selectedTab}
                     onSelect={(tab) => {
@@ -1437,6 +1586,7 @@ export function WorkspaceChrome({
                           ? { ...previous, selected: tab }
                           : previous,
                       );
+                      setSectionTarget(undefined);
                     }}
                     selectedTabRef={selectedTabRef}
                   />
@@ -1461,6 +1611,26 @@ export function WorkspaceChrome({
                         activeHeading={activeOutline?.activeHeading}
                         headingLanguage={activeOutline?.language}
                         openManuscript={openManuscript}
+                        profile={
+                          profile
+                            ? {
+                                selected: profileSelected,
+                                current: profileCurrent,
+                                unanswered:
+                                  profileState?.saved === undefined
+                                    ? undefined
+                                    : (Object.fromEntries(
+                                        profileSectionIds.map((section) => [
+                                          section,
+                                          unanswered(profileState.saved?.fields, section),
+                                        ]),
+                                      ) as Record<ProfileSection, number>),
+                                open: (section) => {
+                                  openProfile(profile.lease, section);
+                                },
+                              }
+                            : undefined
+                        }
                         revealChat={() => controller.current?.reveal("chat")}
                       />
                     ) : panel === "explorer" && memory ? (
@@ -1517,6 +1687,51 @@ export function WorkspaceChrome({
           );
         })}
       </main>
+      {profile && (
+        <Dialog
+          open={closingProfile === profile.lease}
+          title={text("profile.leaveTitle")}
+          closeLabel={text("profile.keepEditing")}
+          closePlacement="footer"
+          onClose={() => {
+            settleProfilePrompt(true);
+          }}
+          footer={
+            <>
+              <button
+                type="button"
+                className="primitive-button primitive-primary"
+                onClick={() => {
+                  const current = profile.controller.snapshot();
+                  if (current.busy || current.reading) return;
+                  const attempt = ++closeAttempt.current;
+                  void profile.controller.save().then(() => {
+                    if (attempt !== closeAttempt.current || !profile.lease.isCurrent()) return;
+                    if (profile.controller.clean()) settleProfilePrompt();
+                    else setCloseFailed(true);
+                  });
+                }}
+              >
+                {text("profile.saveLeave")}
+              </button>
+              <button
+                type="button"
+                className="primitive-button primitive-destructive"
+                onClick={() => {
+                  profile.controller.discard();
+                  if (profile.controller.clean()) settleProfilePrompt();
+                  else setCloseFailed(true);
+                }}
+              >
+                {text("profile.discardLeave")}
+              </button>
+            </>
+          }
+        >
+          <p>{text("profile.leavePrompt")}</p>
+          {closeFailed && <p role="alert">{text("profile.leaveFailed")}</p>}
+        </Dialog>
+      )}
     </div>
   );
 }

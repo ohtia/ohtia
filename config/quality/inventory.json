@@ -82,6 +82,7 @@
     "tests/storage-opening-notice.test.ts",
     "tests/storage.test.ts",
     "tests/system-motion.test.ts",
+    "tests/thesis-profile-editor.test.ts",
     "tests/thesis-profile.test.ts",
     "tests/update-admission.test.ts",
     "tests/update-check.test.ts",

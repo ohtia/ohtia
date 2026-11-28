@@ -144,6 +144,13 @@ export class ConversationController {
   private state: ConversationState = empty({ projectId: null, conversationId: null });
   private readonly listeners = new Set<() => void>();
   private stream: Subscription | undefined;
+  private readyStream: { readonly stream: Subscription; readonly id: string } | undefined;
+  projectSubscription = (projectId: string): string | undefined =>
+    this.state.scope.projectId === projectId &&
+    this.state.researchScopeReady &&
+    this.readyStream?.stream === this.stream
+      ? this.readyStream?.id
+      : undefined;
   private readonly observers = new Set<(notice: Outcome<ResearchEvent> | "ready") => void>();
   observe = (listener: (notice: Outcome<ResearchEvent> | "ready") => void): (() => void) => {
     this.observers.add(listener);
@@ -965,6 +972,7 @@ export class ConversationController {
       this.history.connected();
       this.activity.ready();
       if (!this.live(epoch) || this.stream !== stream) return;
+      this.readyStream = { stream, id: ready.value.subscriptionId };
       this.state = {
         ...this.state,
         researchScopeReady: true,
