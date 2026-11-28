@@ -2063,6 +2063,138 @@ describe("agent rows in Settings › Agents", () => {
     });
   });
 
+  describe("the inherit option while the default's model is not offered", () => {
+    const gone = row("default", {
+      connection: "chatgpt",
+      model: "gone",
+      modelName: "Gone model",
+      inherit: false,
+    });
+    const ownOpus = row("josefa", {
+      connection: "anthropic",
+      model: "opus",
+      modelName: "Claude Opus 5.5",
+      inherit: false,
+    });
+    const inheritOption = (element: Element) =>
+      element
+        .querySelectorAll("select")[1]!
+        .querySelector<HTMLOptionElement>('option[value=":default"]')!;
+    const chatgptList =
+      (offered: () => boolean, hold?: (resolve: () => void) => void) =>
+      (input: ProviderModelPageInput) => {
+        const models =
+          input.connection === "chatgpt"
+            ? [
+                { id: "first", name: "First model", effortSupport: "unknown" },
+                ...(offered()
+                  ? [{ id: "gone", name: "Gone model", effortSupport: "unknown" }]
+                  : []),
+              ]
+            : [{ id: "opus", name: "Claude Opus 5.5", effortSupport: "unknown" }];
+        const page = {
+          ok: true as const,
+          value: {
+            connection: input.connection,
+            list_revision: input.list_revision,
+            nextCursor: models.length,
+            hasMore: false,
+            models,
+          },
+        };
+        return input.list_revision === 1 || !hold
+          ? { result: Promise.resolve(page), cancel() {} }
+          : {
+              result: new Promise((resolve) => {
+                hold(() => {
+                  resolve(page);
+                });
+              }),
+              cancel() {},
+            };
+      };
+
+    it("disables it in every agent row, keeping an inheriting agent's choice", async () => {
+      const replace = vi.fn(() => ({
+        result: Promise.resolve(failure("storage_failed")),
+        cancel() {},
+      })) as unknown as FoundationPort["replaceAgentPreference"];
+      const t = render([gone, ownOpus], { replace });
+      await t.mount();
+      const virgilio = inheritOption(t.agent("virgilio").element);
+      expect(virgilio.disabled).toBe(true);
+      expect(virgilio.textContent).toBe("Default · ChatGPT · Gone model");
+      expect(t.agent("virgilio").element.querySelectorAll("select")[1]!.value).toBe(":default");
+      const josefa = inheritOption(t.agent("josefa").element);
+      expect(josefa.disabled).toBe(true);
+      expect(t.agent("josefa").element.querySelectorAll("select")[1]!.value).toBe("opus");
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("keeps it enabled for an offered default and for a default never judged", async () => {
+      const offered = render([defaultRow, ownOpus]);
+      await offered.mount();
+      expect(inheritOption(offered.agent("virgilio").element).disabled).toBe(false);
+      expect(inheritOption(offered.agent("josefa").element).disabled).toBe(false);
+      const unread = render([gone, ownOpus], {
+        list: () => ({ result: new Promise(() => {}), cancel() {} }),
+      });
+      await unread.mount();
+      expect(inheritOption(unread.agent("virgilio").element).disabled).toBe(false);
+      expect(inheritOption(unread.agent("josefa").element).disabled).toBe(false);
+    });
+
+    it("keeps the judgement while the list updates and enables it once the list offers the model", async () => {
+      let offered = false;
+      const releases: (() => void)[] = [];
+      const t = render([gone, ownOpus], {
+        list: chatgptList(
+          () => offered,
+          (release) => releases.push(release),
+        ) as unknown as FoundationPort["listProviderModels"],
+      });
+      await t.mount();
+      expect(inheritOption(t.agent("josefa").element).disabled).toBe(true);
+      offered = true;
+      await t.relist("chatgpt");
+      expect(releases).not.toEqual([]);
+      expect(inheritOption(t.agent("josefa").element).disabled).toBe(true);
+      await act(async () => {
+        for (const release of releases) release();
+      });
+      expect(inheritOption(t.agent("josefa").element).disabled).toBe(false);
+      expect(inheritOption(t.agent("virgilio").element).disabled).toBe(false);
+    });
+
+    it("keeps it disabled while the default's save is pending and enables it once saved", async () => {
+      let finish: (() => void) | undefined;
+      const replace = vi.fn(() => ({
+        result: new Promise((resolve) => {
+          finish = () => {
+            resolve({ ok: true, value: { resultId: "019a8000-0000-7000-8000-000000000001" } });
+          };
+        }),
+        cancel() {},
+      })) as unknown as FoundationPort["replaceAgentPreference"];
+      const t = render([gone, ownOpus], { replace });
+      await t.mount();
+      const model = t.container
+        .querySelector(".agent-settings > .agent-choice")!
+        .querySelectorAll("select")[1]!;
+      await act(async () => {
+        model.value = "first";
+        model.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(inheritOption(t.agent("josefa").element).disabled).toBe(true);
+      await t.update([{ ...defaultRow, revision: 2 }, ownOpus]);
+      await act(async () => finish?.());
+      const josefa = inheritOption(t.agent("josefa").element);
+      expect(josefa.disabled).toBe(false);
+      expect(josefa.textContent).toBe("Default · ChatGPT · First model");
+    });
+  });
+
   it("summarizes an inherited effort override and an unlisted service as its selects name them", async () => {
     const t = render([
       defaultRow,
