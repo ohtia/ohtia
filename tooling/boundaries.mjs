@@ -136,6 +136,7 @@ export function inspectWorkspace(root) {
             "migrations/0040_research_stages.mjs",
             "migrations/0041_manuscript_revisions.mjs",
             "migrations/0042_openrouter_requests.mjs",
+            "migrations/0043_project_subtitle.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

@@ -29,6 +29,7 @@ export function ProjectSelectorSpecimen() {
             : index === 2
               ? "Redes de cuidado en Rosario 연구 ".repeat(5)
               : `Thesis ${String(index + 1)}`,
+        subtitle: null,
         titleRevision: 1,
         documentLanguage: index < 2 ? null : "es-AR",
         isDevelopment: false,

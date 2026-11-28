@@ -9,7 +9,7 @@ export async function verifyPackagedThesisProfile(application, page, projects) {
   const [projectId, otherProjectId] = projects;
   const native = await application.browserWindow(page);
   const patch = encodeProfileContent({
-    schemaVersion: 1,
+    schemaVersion: 2,
     fields: {
       deadline: { state: "unknown" },
       topic: {

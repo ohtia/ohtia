@@ -214,6 +214,7 @@ describe("review regression contracts", () => {
           "research.css",
           "conversation.css",
           "project-memory.css",
+          "thesis-profile.css",
           "handoff.css",
           "conversation-history.css",
           "message-markdown.css",

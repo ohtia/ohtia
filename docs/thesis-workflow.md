@@ -3,7 +3,7 @@ type: Specification
 title: "Thesis workflow"
 description: "Research stages, artifacts, review milestones, and reentry paths for theses and scientific papers."
 generated:
-  by: codex/gpt-6.2-sol
+  by: claude-code/claude-opus-5-5
 sources:
   - id: double-diamond
     resource: "https://www.designcouncil.org.uk/resources/the-double-diamond/"
@@ -94,7 +94,7 @@ Ask progressively about:
 - **Document language:** the language of the thesis text, confirmed at setup and never changed afterwards; agents work and answer in it; it is distinct from the application locale.
 - **Academic support:** supervisor, co-supervisor, committee and externally required reviews or milestones, with known and unresolved conditions.
 - **Time:** deadline, intermediate deliveries and actual weekly availability. Ask for a target date early; an unknown date remains unknown with a clarification action and does not enable a fabricated pace indicator.
-- **Experience and support:** research experience, perceived autonomy, familiar tools, difficulties and voluntarily disclosed adaptations.
+- **Experience and support:** research experience, perceived autonomy, tools the researcher needs help with (for example, making charts in MATLAB without having used it), difficulties and voluntarily disclosed adaptations.
 - **Starting material:** existing topic, question, objectives, bibliography, corpus, data, method, draft and decisions, with their actual evidence and review state.
 
 Return a profile synthesis for correction, distinguish the researcher's statements from Ohtia's proposed reformulations and record gaps affecting the next action. Unknown information blocks only dependent activities; a change in deadline, requirements or availability triggers review of the affected plan.

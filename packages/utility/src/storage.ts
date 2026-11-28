@@ -320,6 +320,12 @@ import {
   tables as manuscriptTables,
   objects as manuscriptObjects,
 } from "./migrations/0041_manuscript_revisions.mjs";
+import {
+  up as projectSubtitleMigration,
+  subtitleColumn as projectSubtitleColumn,
+  historySchema as projectSubtitleHistorySchema,
+  objects as projectSubtitleObjects,
+} from "./migrations/0043_project_subtitle.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -487,6 +493,7 @@ const names = [
   "0040_research_stages",
   "0041_manuscript_revisions",
   "0042_openrouter_requests",
+  "0043_project_subtitle",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -867,6 +874,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                     ", " +
                       openingColumns.opened +
                       (revision >= 38 ? ", " + projectTitleRevisionColumn : "") +
+                      (revision >= 43 ? ", " + projectSubtitleColumn : "") +
                       ",\n    CHECK ((title",
                   )
                 : definition.slice(0, -1) + ", " + openingColumns.error + ")"
@@ -973,7 +981,14 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 37 ? [["update_check_receipts", updateCheckReceiptsSchema]] : []),
-    ...(revision >= 38 ? [["project_title_history", projectTitleHistorySchema]] : []),
+    ...(revision >= 38
+      ? [
+          [
+            "project_title_history",
+            revision >= 43 ? projectSubtitleHistorySchema : projectTitleHistorySchema,
+          ],
+        ]
+      : []),
     ...(revision >= 39 ? Object.entries(thesisProfileTables) : []),
     ...(revision >= 40 ? Object.entries(researchStageTables) : []),
     ...(revision >= 41 ? Object.entries(manuscriptTables) : []),
@@ -1042,6 +1057,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 40 ? researchStageObjects : {}),
                 ...(revision >= 41 ? manuscriptObjects : {}),
                 ...(revision >= 42 ? openrouterObjects : {}),
+                ...(revision >= 43 ? projectSubtitleObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1498,6 +1514,7 @@ export class DurableStore {
                 "0040_research_stages": { up: researchStageMigration },
                 "0041_manuscript_revisions": { up: manuscriptMigration },
                 "0042_openrouter_requests": { up: openrouterRequests },
+                "0043_project_subtitle": { up: projectSubtitleMigration },
               }),
           },
         });

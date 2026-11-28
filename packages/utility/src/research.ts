@@ -40,6 +40,7 @@ export interface ProjectRow {
   id: Uint8Array;
   project_type: "thesis";
   title: string | null;
+  subtitle: Generated<string | null>;
   title_revision: Generated<number>;
   document_language: string | null;
   is_development: number;
@@ -136,6 +137,8 @@ export interface ResearchSchema
     project_id: Uint8Array;
     previous_title: string;
     title: string;
+    previous_subtitle: string | null;
+    subtitle: string | null;
     previous_revision: number;
     title_revision: number;
   };
@@ -237,6 +240,7 @@ export function projectRecord(row: Selectable<ProjectRow>): ProjectRecord {
     id: identifier(row.id),
     projectType: row.project_type,
     title: row.title,
+    subtitle: row.subtitle,
     titleRevision: row.title_revision,
     documentLanguage: row.document_language,
     isDevelopment: row.is_development === 1,
@@ -312,7 +316,7 @@ const payloadKeys = {
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
-  "project.rename": ["projectId", "title", "expectedTitleRevision"],
+  "project.rename": ["projectId", "title", "subtitle", "expectedTitleRevision"],
   "profile.save": ["projectId", "expectedRevision", "patch"],
   "stage.transition": ["projectId", "stageId", "expectedRevision", "decision"],
   "manuscript.create": ["projectId", "title"],
@@ -718,18 +722,23 @@ export async function applyResearchCommand(
       break;
     }
     case "project.rename": {
-      const { projectId, title, expectedTitleRevision } = input.payload;
+      const { projectId, title, subtitle, expectedTitleRevision } = input.payload;
       if (
         !isEntityId(projectId) ||
         !Number.isSafeInteger(expectedTitleRevision) ||
         expectedTitleRevision < 1
       )
         return failure("invalid_message");
-      if (typeof title !== "string" || projectTitleError(title)) return failure("name_invalid");
+      if (
+        typeof title !== "string" ||
+        projectTitleError(title) ||
+        (subtitle !== null && (typeof subtitle !== "string" || projectTitleError(subtitle)))
+      )
+        return failure("name_invalid");
       result = bytes(projectId);
       const project = await db
         .selectFrom("projects")
-        .select(["title", "title_revision", "setup_confirmed_at"])
+        .select(["title", "subtitle", "title_revision", "setup_confirmed_at"])
         .where("id", "=", result)
         .where("project_type", "=", "thesis")
         .executeTakeFirst();
@@ -737,18 +746,21 @@ export async function applyResearchCommand(
       if (!project.setup_confirmed_at || project.title === null) return failure("project_in_setup");
       if (project.title_revision !== expectedTitleRevision)
         return staleRevision(project.title_revision);
-      const revision = expectedTitleRevision + Number(project.title !== title);
+      const revision =
+        expectedTitleRevision + Number(project.title !== title || project.subtitle !== subtitle);
       if (!Number.isSafeInteger(revision)) return failure("limit_reached");
       if (revision !== expectedTitleRevision)
         await db
           .updateTable("projects")
-          .set({ title, title_revision: revision })
+          .set({ title, subtitle, title_revision: revision })
           .where("id", "=", result)
           .execute();
       titleChange = {
         project_id: result,
         previous_title: project.title,
         title,
+        previous_subtitle: project.subtitle,
+        subtitle,
         previous_revision: expectedTitleRevision,
         title_revision: revision,
       };
@@ -960,11 +972,14 @@ export async function researchReceiptResult(
   if (receipt.command === "project.rename") {
     const row = await db
       .selectFrom("project_title_history")
-      .select(["title", "title_revision"])
+      .select(["title", "subtitle", "title_revision"])
       .where("operation_id", "=", receipt.operation_id)
       .where("project_id", "=", receipt.result_id)
       .executeTakeFirstOrThrow();
-    return { resultId, titleChange: { title: row.title, titleRevision: row.title_revision } };
+    return {
+      resultId,
+      titleChange: { title: row.title, subtitle: row.subtitle, titleRevision: row.title_revision },
+    };
   }
   if (receipt.command !== "plan.finish" && receipt.command !== "plan.cancel") return { resultId };
   const { outcome } = await db

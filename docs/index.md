@@ -24,7 +24,7 @@ okf_version: "0.2"
 - [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 - [Workspace controller API](workspace-controller.md) — Compose deterministic per-window workspace geometry with the named layout preference and receipt boundary.
 - [Workspace chrome API](workspace-chrome.md) — Compose the first-run workspace with controlled commands, deterministic layout, accessible resizing and qualified window insets.
-- [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, project memory navigation, desktop layout preferences and interaction acceptance scenarios.
+- [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, project document navigation, desktop layout preferences and interaction acceptance scenarios.
 - [Data model](data-model.md) — Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite.
 - [Draft format](draft-format.md) — Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references, stable anchors and a bounded title and paragraph codec.
 

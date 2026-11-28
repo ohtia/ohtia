@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalJson,
   decodeProfileContent,
+  decodeStoredProfileContent,
   encodeProfileContent,
   failure,
   policyId,
@@ -14,6 +15,7 @@ import {
   type ResearchPayloads,
 } from "@ohtia/contracts";
 import { bytes, identifier, newId } from "../packages/utility/src/research.js";
+import { objects as profileObjects } from "../packages/utility/src/migrations/0039_thesis_profile.mjs";
 import { preThesisProfileSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 import { proposeSetup, setupConnections } from "./fixtures/project-setup.js";
 import { storageFixture } from "./fixtures/storage.js";
@@ -24,7 +26,7 @@ function value<T>(outcome: Outcome<T>): T {
 }
 const statement = { kind: "researcher_statement" } as const;
 const known = <T>(value: T) => ({ state: "known", value, origin: statement }) as const;
-const encode = (fields: ProfileFields) => encodeProfileContent({ schemaVersion: 1, fields });
+const encode = (fields: ProfileFields) => encodeProfileContent({ schemaVersion: 2, fields });
 function read(projectId: string, revisionId: string | null = null): Request {
   return {
     protocol: 1,
@@ -220,6 +222,8 @@ describe("thesis profile storage", () => {
       { topic: known("📝".repeat(512) + "x") },
       { topic: { ...known("Context"), origin: { kind: "model_guess" } } },
       { document_language: known("en") },
+      { milestones: { state: "known", items: [known({ title: "No done mark" })] } },
+      { milestones: { state: "known", items: [known({ title: "Mark", done: "yes" })] } },
     ];
     for (const fields of invalid) {
       const request = {
@@ -228,11 +232,23 @@ describe("thesis profile storage", () => {
         payload: {
           projectId,
           expectedRevision: 1,
-          patch: canonicalJson({ schemaVersion: 1, fields }),
+          patch: canonicalJson({ schemaVersion: 2, fields }),
         },
       };
       expect(await f.store.executeResearchCommand(request)).toEqual(failure("invalid_message"));
     }
+    // Saves write the current schema version only.
+    expect(
+      await f.store.executeResearchCommand({
+        ...original,
+        operationId: "version-one-patch",
+        payload: {
+          projectId,
+          expectedRevision: 1,
+          patch: canonicalJson({ schemaVersion: 1, fields: { topic: known("Older shape") } }),
+        },
+      }),
+    ).toEqual(failure("invalid_message"));
     const large = (count: number) => Array.from({ length: count }, () => known("📚".repeat(512)));
     const oversized = save(projectId, "profile-too-big", 1, {
       bibliography: { state: "known", items: large(15) },
@@ -252,7 +268,10 @@ describe("thesis profile storage", () => {
         deadline: known("2028-02-29"),
         milestones: {
           state: "known",
-          items: [known({ title: "Review" }), known({ title: "Submit", date: "2028-02-29" })],
+          items: [
+            known({ title: "Review", done: true }),
+            known({ title: "Submit", date: "2028-02-29", done: false }),
+          ],
         },
       });
       expect(await f.store.executeResearchCommand(command)).toEqual(failure("storage_failed"));
@@ -408,9 +427,117 @@ describe("thesis profile storage", () => {
           }),
         ),
       );
+      // A milestone proposed before schema version 2 has no done mark and adopts as not done.
+      const head = db
+        .prepare("SELECT revision_id FROM thesis_profile_heads WHERE project_id=?")
+        .pluck()
+        .get(attempt.project_id) as Uint8Array;
+      const legacyProposal = newId();
+      db.prepare("INSERT INTO thesis_profile_proposals VALUES (?,?,?,?,?,?)").run(
+        legacyProposal,
+        attempt.project_id,
+        attempt.id,
+        head,
+        "milestones",
+        canonicalJson({ title: "Pilot interviews", date: "2027-03-01" }),
+      );
+      const milestone = (done: boolean) =>
+        ({
+          ...known({ title: "Pilot interviews", date: "2027-03-01", done }),
+          origin: { ...adoption.origin, proposalId: identifier(legacyProposal) },
+        }) as const;
+      expect(
+        await f.store.executeResearchCommand(
+          save(producerProject, "legacy-milestone-done", at + 2, {
+            milestones: { state: "known", items: [milestone(true)] },
+          }),
+        ),
+      ).toEqual(failure("record_not_found"));
+      value(
+        await f.store.executeResearchCommand(
+          save(producerProject, "legacy-milestone", at + 2, {
+            milestones: { state: "known", items: [milestone(false)] },
+          }),
+        ),
+      );
+      value(
+        await f.store.executeResearchCommand(
+          save(producerProject, "extend-legacy-milestones", at + 3, {
+            milestones: {
+              state: "known",
+              items: [milestone(false), known({ title: "Ethics form", done: false })],
+            },
+          }),
+        ),
+      );
       expect(() => db.exec("DELETE FROM thesis_profile_proposals")).toThrow(/Immutable/);
     } finally {
       db.close();
     }
+  });
+
+  it("reads a version 1 snapshot as not done and saves the next revision as version 2", async () => {
+    const f = storageFixture();
+    await f.store.open();
+    const projectId = await confirmed(f, "milestones");
+    const first = value(
+      await f.store.executeResearchCommand(
+        save(projectId, "first-milestones", 0, {
+          milestones: {
+            state: "known",
+            items: [known({ title: "Draft", date: "2027-01-10", done: true })],
+          },
+        }),
+      ),
+    );
+    // Rewrite the stored snapshot to the released version 1 shape, which has no done mark.
+    const legacy = canonicalJson({
+      schemaVersion: 1,
+      fields: {
+        milestones: { state: "known", items: [known({ title: "Draft", date: "2027-01-10" })] },
+      },
+    });
+    const db = f.raw();
+    try {
+      db.exec("DROP TRIGGER thesis_profile_revision_update");
+      db.prepare("UPDATE thesis_profile_revisions SET content=?").run(legacy);
+      db.exec(profileObjects.thesis_profile_revision_update);
+    } finally {
+      db.close();
+    }
+    const stored = value(await f.store.readResearch(read(projectId))) as {
+      profile: { content: string; revisionId: string };
+    };
+    expect(stored.profile).toMatchObject({ revisionId: first.resultId, content: legacy });
+    expect(decodeProfileContent(legacy)).toBeUndefined();
+    expect(decodeStoredProfileContent(legacy)).toEqual({
+      schemaVersion: 2,
+      fields: {
+        milestones: {
+          state: "known",
+          items: [known({ title: "Draft", date: "2027-01-10", done: false })],
+        },
+      },
+    });
+
+    value(
+      await f.store.executeResearchCommand(
+        save(projectId, "after-legacy", 1, { topic: known("Care networks") }),
+      ),
+    );
+    const next = value(await f.store.readResearch(read(projectId))) as {
+      profile: { content: string; revision: number };
+    };
+    expect(next.profile.revision).toBe(2);
+    expect(decodeProfileContent(next.profile.content)).toEqual({
+      schemaVersion: 2,
+      fields: {
+        milestones: {
+          state: "known",
+          items: [known({ title: "Draft", date: "2027-01-10", done: false })],
+        },
+        topic: known("Care networks"),
+      },
+    });
   });
 });
