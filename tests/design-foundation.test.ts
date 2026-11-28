@@ -190,6 +190,42 @@ describe("review regression contracts", () => {
     }
     dom.window.close();
   });
+  it("lifts the reading measure from proposal card paragraphs only and stacks the consultation request label", () => {
+    const css = [
+      "design-tokens.css",
+      "foundation.css",
+      "research.css",
+      "message-markdown.css",
+      "conversation.css",
+    ]
+      .map((name) =>
+        fs.readFileSync(`packages/renderer/src/${name}`, "utf8").replace(/^@import.*$/gm, ""),
+      )
+      .join("\n");
+    const dom = new JSDOM(
+      `<style>${css}</style><div class="consultation-proposal"><section class="action-proposal"><div class="action-proposal-card"><p id="state" class="action-proposal-state">State</p><dl class="research-fields"><div id="request-row"><dt>Request</dt><dd><div class="consultation-request"><div class="message-markdown"><p id="request">Request</p><ul><li><p id="item">Item</p></li></ul></div></div></dd></div><div id="reason-row"><dt>Why</dt><dd>Reason</dd></div></dl><p id="note" class="action-proposal-note">Note</p><p id="reason" class="action-proposal-reason">Reason</p></div></section></div><p id="outside">Outside</p><div class="conversation-message researcher"><div class="conversation-text"><div class="message-markdown"><p id="researcher">Message</p></div></div></div>`,
+    );
+    for (const [id, maximum] of [
+      ["request", "none"],
+      ["item", "none"],
+      ["state", "none"],
+      ["note", "none"],
+      ["reason", "none"],
+      ["researcher", "var(--measure-reading)"],
+      ["outside", "var(--measure-reading)"],
+    ]) {
+      const style = dom.window.getComputedStyle(dom.window.document.getElementById(id)!);
+      expect(style.getPropertyValue("max-inline-size"), id).toBe(maximum);
+    }
+    for (const [id, direction] of [
+      ["request-row", "column"],
+      ["reason-row", "row"],
+    ]) {
+      const style = dom.window.getComputedStyle(dom.window.document.getElementById(id)!);
+      expect(style.getPropertyValue("flex-direction"), id).toBe(direction);
+    }
+    dom.window.close();
+  });
   it("rejects actual consumer color mutations and unresolved CSS variables through the build gate", () => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-consumer-"));
     try {
