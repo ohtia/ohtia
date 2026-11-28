@@ -59,6 +59,7 @@ async function mount(
   const connect = vi.fn(() => call({ ok: true, value: current }));
   const replaceKey = vi.fn(() => call({ ok: true, value: current }));
   const disconnect = vi.fn(() => call({ ok: true, value: current }));
+  const cancelSignIn = vi.fn(() => call({ ok: true, value: current }));
   const probe = vi.fn(() => call({ ok: true, value: current }));
   const list = vi.fn(() =>
     call<ModelPage>({
@@ -93,6 +94,7 @@ async function mount(
     connectConnection: connect,
     replaceConnectionKey: replaceKey,
     disconnectConnection: disconnect,
+    cancelConnectionSignIn: cancelSignIn,
     probeConnection: probe,
     listConnectionModels: list,
   } as unknown as FoundationPort;
@@ -118,6 +120,7 @@ async function mount(
     connect,
     replaceKey,
     disconnect,
+    cancelSignIn,
     probe,
     list,
     dispose,
@@ -1356,6 +1359,97 @@ it.each(["anthropic_api_key", "openai_api_key"])(
     expect(f.disconnect).toHaveBeenCalledExactlyOnceWith(connection);
   },
 );
+
+describe("Sign in with OpenRouter", () => {
+  const openrouter = { connection: "openrouter", display_name: "OpenRouter" } as const;
+  const buttons = (container: HTMLElement) =>
+    [...container.querySelectorAll(".connection-actions button")].map((b) => b.textContent);
+  it.each([
+    ["disconnected", {}, ["Sign in with OpenRouter", "Add OpenRouter API key"]],
+    [
+      "connected",
+      { state: "connected", connected_at: "2026-11-26T10:00:00.000Z" },
+      ["Test connection", "Replace key", "Sign in with OpenRouter", "Disconnect OpenRouter"],
+    ],
+    ["expired", { state: "expired" }, ["Sign in with OpenRouter", "Replace key"]],
+  ] as const)("offers the sign-in next to the key when %s", async (_state, snapshot, expected) => {
+    const f = await mount({ ...openrouter, ...snapshot }, "en-US", false, "api_key");
+    expect(buttons(f.container)).toEqual(expected);
+    const signIn = [...f.container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Sign in with OpenRouter",
+    )!;
+    expect(signIn.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "opens in your browser",
+    );
+    await f.click("Sign in with OpenRouter");
+    expect(f.connect).toHaveBeenCalledExactlyOnceWith("openrouter", undefined);
+  });
+
+  it("offers no sign-in for the other API-key services", async () => {
+    for (const connection of ["anthropic_api_key", "openai_api_key"]) {
+      const f = await mount({ connection }, "en-US", false, "api_key");
+      expect(buttons(f.container).some((text) => text?.startsWith("Sign in"))).toBe(false);
+    }
+  });
+
+  it("waits with only Cancel sign-in, which keeps the key, and keeps focus on the row", async () => {
+    const connected = {
+      ...openrouter,
+      state: "connected",
+      connected_at: "2026-11-26T10:00:00.000Z",
+      expires_at: "2026-12-03T10:00:00.000Z",
+    } as const;
+    const f = await mount(connected, "en-US", false, "api_key");
+    await f.click("Sign in with OpenRouter");
+    await f.event({ signing_in: true });
+    expect(buttons(f.container)).toEqual(["Cancel sign-in"]);
+    expect(document.activeElement?.textContent).toBe("Cancel sign-in");
+    expect(f.container.querySelector(".connection-feedback")?.textContent).toBe(
+      "Waiting for you to finish signing in to OpenRouter in your browser…",
+    );
+    expect(f.container.querySelector(".connection-state")?.textContent).toContain("Expires");
+    await f.click("Cancel sign-in");
+    expect(f.cancelSignIn).toHaveBeenCalledExactlyOnceWith("openrouter");
+    expect(f.disconnect).not.toHaveBeenCalled();
+    await f.event({ signing_in: undefined });
+    expect(buttons(f.container)).toContain("Sign in with OpenRouter");
+    expect(document.activeElement?.textContent).toBe("Test connection");
+  });
+
+  it.each([
+    ["sign_in_rejected", "Ohtia can’t use this OpenRouter sign-in. Sign in again."],
+    ["sign_in_timeout", "Sign-in wasn’t completed within 10 minutes. Try again when you’re ready."],
+  ] as const)("announces %s", async (reason, text) => {
+    const f = await mount({ ...openrouter, reason }, "en-US", false, "api_key");
+    expect(f.container.querySelector('[role="alert"]')?.textContent).toBe(text);
+  });
+
+  it("notes a key OpenRouter may have created, with a link to the keys page", async () => {
+    const openLink = vi.fn();
+    const f = await mount(
+      { ...openrouter, reason: "key_rejected", unkept_key: true },
+      "en-US",
+      false,
+      "api_key",
+      openLink,
+    );
+    const note = f.container.querySelector(
+      '.connection-feedback[role="status"] .connection-unkept',
+    )!;
+    expect(note.querySelector("p")?.textContent).toBe(
+      "OpenRouter may have created a key named “Ohtia” that Ohtia didn’t keep. You can delete it in your OpenRouter keys.",
+    );
+    const link = note.querySelector("a")!;
+    expect([link.textContent?.trim(), link.getAttribute("href")]).toEqual([
+      "OpenRouter keys",
+      "https://openrouter.ai/settings/keys",
+    ]);
+    await act(async () => link.click());
+    expect(openLink).toHaveBeenCalledExactlyOnceWith("openrouterKeys");
+    const plain = await mount(openrouter, "en-US", false, "api_key");
+    expect(plain.container.querySelector(".connection-unkept")).toBeNull();
+  });
+});
 
 describe("OpenRouter group", () => {
   const openrouter = { connection: "openrouter", display_name: "OpenRouter" } as const;

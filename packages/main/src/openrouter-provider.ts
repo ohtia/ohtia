@@ -1,5 +1,6 @@
 import {
   isConversationTitleTool,
+  isProviderApiKey,
   isProviderModel,
   isProviderModelSlug,
   openrouterConnection,
@@ -14,8 +15,15 @@ import { accountFingerprint } from "./account-fingerprint.js";
 import { ApiKeySession } from "./api-key-session.js";
 import { object, providerJSON } from "./chatgpt-sign-in.js";
 import type { CredentialStore, StoredSession } from "./credential-store.js";
+import {
+  authorization,
+  openrouterKeyExchange,
+  waitForCallback,
+  type Callback,
+} from "./openrouter-sign-in.js";
 import type {
   ApiKeyCheck,
+  KeySignIn,
   ProviderAdapter,
   ProviderRequestControl,
   ProviderRequests,
@@ -468,7 +476,7 @@ export class OpenRouterProvider implements ProviderAdapter {
     id: "openrouter",
     version: "1.0.0",
     connection: openrouterConnection,
-    signInModes: ["api_key"],
+    signInModes: ["api_key", "provider_login"],
     capabilities: {
       text: true,
       attachments: false,
@@ -494,6 +502,10 @@ export class OpenRouterProvider implements ProviderAdapter {
       readonly model: (id: string) => ProviderModel | undefined;
       /** Read the model list again, after OpenRouter no longer serves a chosen model. */
       readonly refresh: () => void;
+      /** Open OpenRouter's sign-in page in the system browser. */
+      readonly openBrowser?: (url: string) => Promise<void>;
+      /** The page the callback listener returns, in the interface language. */
+      readonly completedText?: () => string;
       readonly transport?: ProviderTransport;
     },
   ) {
@@ -516,7 +528,64 @@ export class OpenRouterProvider implements ProviderAdapter {
     check: (key: string, signal: AbortSignal) => this.check(key, signal),
     save: (key: string, checked?: { readonly expiresAt?: string }) =>
       this.session.save(key, checked?.expiresAt),
+    signIn: (signal: AbortSignal, sent: () => void) => this.signIn(signal, sent),
   };
+  /** OpenRouter's OAuth PKCE sign-in, which creates a key for Ohtia. */
+  private async signIn(signal: AbortSignal, sent: () => void): Promise<KeySignIn> {
+    const { openBrowser, completedText } = this.options;
+    if (!openBrowser || !completedText) return { status: "rejected", unkept: false };
+    const values = authorization();
+    let callback: Callback;
+    try {
+      callback = await waitForCallback({
+        values,
+        signal,
+        completedText: completedText(),
+        openBrowser,
+      });
+    } catch {
+      return { status: "rejected", unkept: false };
+    }
+    if (callback === "denied") return { status: "denied" };
+    let left = false;
+    let response: Response;
+    try {
+      response = await this.transport(
+        {
+          url: openrouterKeyExchange,
+          signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: callback.code,
+            code_verifier: values.verifier,
+            code_challenge_method: "S256",
+          }),
+        },
+        () => {
+          if (signal.aborted) return false;
+          left = true;
+          sent();
+          return true;
+        },
+      );
+    } catch {
+      // OpenRouter may have created the key if the request left before the connection was lost.
+      return { status: "rejected", unkept: left };
+    }
+    try {
+      // Only `key` is read; `user_id` is never kept.
+      if (response.status !== 200) return { status: "rejected", unkept: false };
+      const body = await providerJSON(response, 64 * 1024);
+      const key = object(body) ? body.key : undefined;
+      return typeof key === "string" && isProviderApiKey(key)
+        ? { status: "key", key }
+        : { status: "rejected", unkept: true };
+    } catch {
+      return { status: "rejected", unkept: true };
+    } finally {
+      await closeResponseTransport(response);
+    }
+  }
   private async get(url: string, key: string, signal: AbortSignal): Promise<Response> {
     return await this.transport(
       { url, headers: { Authorization: `Bearer ${key}` }, signal },

@@ -11,6 +11,7 @@ import {
 import {
   message,
   formatDate,
+  isKeySignInConnection,
   isProviderApiKey,
   keyCheckReasons,
   openrouterConnection,
@@ -226,7 +227,15 @@ export function ConnectionsPanel({
     };
   }, [port, connection, available, accept, recovery, subscribe]);
   const act = async (
-    kind: "connect" | "another" | "disconnect" | "probe" | "saveKey" | "replaceKey",
+    kind:
+      | "connect"
+      | "another"
+      | "disconnect"
+      | "probe"
+      | "saveKey"
+      | "replaceKey"
+      | "signIn"
+      | "cancelSignIn",
     key?: string,
   ) => {
     if (!available || pending) return;
@@ -237,14 +246,16 @@ export function ConnectionsPanel({
     const call =
       kind === "disconnect"
         ? port.disconnectConnection(connection)
-        : kind === "probe"
-          ? port.probeConnection(connection)
-          : kind === "replaceKey" && key
-            ? port.replaceConnectionKey(connection, key)
-            : port.connectConnection(
-                connection,
-                kind === "another" ? { new_registration: true } : key ? { key } : undefined,
-              );
+        : kind === "cancelSignIn"
+          ? port.cancelConnectionSignIn(connection)
+          : kind === "probe"
+            ? port.probeConnection(connection)
+            : kind === "replaceKey" && key
+              ? port.replaceConnectionKey(connection, key)
+              : port.connectConnection(
+                  connection,
+                  kind === "another" ? { new_registration: true } : key ? { key } : undefined,
+                );
     calls.current.add(call);
     try {
       const result = await call.result;
@@ -386,6 +397,8 @@ export function ConnectionsPanel({
             {apiKey ? (
               <ApiKeyControls
                 {...{ snapshot, disabled, actions, locale, act }}
+                signIn={isKeySignInConnection(connection)}
+                browserIcon={browserIcon}
                 enterKey={(key, replace) => act(replace ? "replaceKey" : "saveKey", key)}
               />
             ) : (
@@ -458,6 +471,12 @@ export function ConnectionsPanel({
           <div className="connection-feedback" role="status" aria-atomic="true">
             {apiKey && snapshot.checking_key && (
               <p>{message(locale, "connection.apiKey.checking", { service })}</p>
+            )}
+            {apiKey && snapshot.signing_in && (
+              <p>{message(locale, "connection.openrouter.signInWaiting", { service })}</p>
+            )}
+            {apiKey && snapshot.unkept_key && (
+              <UnkeptKeyNote locale={locale} service={service} openLink={openLink} />
             )}
             {!failed && snapshot.probing && (
               <p>{message(locale, "connection.testing", { service })}</p>
@@ -567,6 +586,36 @@ function OpenRouterPrivacy({
   );
 }
 
+/** A sign-in may have left a key in the service that Ohtia did not keep; announced with the row's status. */
+function UnkeptKeyNote({
+  locale,
+  service,
+  openLink,
+}: {
+  readonly locale: InterfaceLocale;
+  readonly service: string;
+  readonly openLink: ((link: ProjectLink) => void) | undefined;
+}) {
+  return (
+    <div className="connection-unkept">
+      <p>{message(locale, "connection.openrouter.unkeptKey", { service })}</p>
+      <a
+        className="primitive-link"
+        href={projectLinks.openrouterKeys}
+        onClick={(event) => {
+          event.preventDefault();
+          openLink?.("openrouterKeys");
+        }}
+      >
+        {message(locale, "connection.openrouter.keysLink", { service })}{" "}
+        <span role="img" aria-label={message(locale, "conversation.opensInBrowser")}>
+          <Icon name="external-link" size={16} />
+        </span>
+      </a>
+    </div>
+  );
+}
+
 const keyErrors = {
   key_rejected: "connection.apiKey.rejected",
   key_not_permitted: "connection.apiKey.notPermitted",
@@ -582,13 +631,18 @@ function ApiKeyControls({
   locale,
   act,
   enterKey,
+  signIn,
+  browserIcon,
 }: {
   readonly snapshot: ConnectionSnapshot;
   readonly disabled: boolean;
   readonly actions: RefObject<HTMLDivElement | null>;
   readonly locale: InterfaceLocale;
-  readonly act: (kind: "disconnect" | "probe") => Promise<void>;
+  readonly act: (kind: "disconnect" | "probe" | "signIn" | "cancelSignIn") => Promise<void>;
   readonly enterKey: (key: string, replace: boolean) => Promise<void>;
+  /** The connection can also obtain its key by signing in through the browser. */
+  readonly signIn: boolean;
+  readonly browserIcon: ReactNode;
 }) {
   const id = useId();
   const [mode, setMode] = useState<"key" | "disconnect">();
@@ -599,6 +653,7 @@ function ApiKeyControls({
   const connected = snapshot.state === "connected";
   const replace = connected || snapshot.state === "expired";
   const checking = snapshot.checking_key === true;
+  const signingIn = snapshot.signing_in === true;
   const dismiss = () => {
     if (keyField.current) keyField.current.value = "";
     restore.current = mode;
@@ -608,6 +663,14 @@ function ApiKeyControls({
     if (mode === "key") keyField.current?.focus();
     else if (mode === "disconnect") keep.current?.focus();
   }, [mode]);
+  // Sign in and Cancel sign-in replace each other; keep focus on the row's first action.
+  const wasSigningIn = useRef(signingIn);
+  useEffect(() => {
+    if (wasSigningIn.current === signingIn) return;
+    wasSigningIn.current = signingIn;
+    if (document.activeElement === document.body || document.activeElement === actions.current)
+      actions.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [signingIn, actions]);
   useEffect(() => {
     if (!mode && restore.current && !checking && !disabled) {
       const target = restore.current === "key" ? "[data-key-entry]" : "[data-disconnect]";
@@ -620,6 +683,23 @@ function ApiKeyControls({
     }
   }, [mode, checking, disabled, actions, snapshot.state]);
   const error = keyCheckReasons.find((reason) => reason === snapshot.reason);
+  const signInError =
+    snapshot.reason === "sign_in_rejected" || snapshot.reason === "sign_in_timeout"
+      ? snapshot.reason
+      : undefined;
+  // Without a working key, signing in comes first; a connected row leads with its key actions.
+  const signInButton = (
+    <button
+      type="button"
+      aria-disabled={disabled}
+      onClick={() => {
+        if (!disabled) void act("signIn");
+      }}
+    >
+      {message(locale, "connection.signIn", { service })}
+      {browserIcon}
+    </button>
+  );
   return (
     <>
       <div
@@ -634,7 +714,18 @@ function ApiKeyControls({
           }
         }}
       >
-        {!checking &&
+        {signingIn ? (
+          <button
+            type="button"
+            aria-disabled={disabled}
+            onClick={() => {
+              if (!disabled) void act("cancelSignIn");
+            }}
+          >
+            {message(locale, "connection.cancel")}
+          </button>
+        ) : (
+          !checking &&
           (mode === "key" ? (
             <form
               className="connection-key-form primitive-field"
@@ -722,6 +813,7 @@ function ApiKeyControls({
                   {message(locale, "connection.test")}
                 </button>
               )}
+              {signIn && !connected && signInButton}
               <button
                 type="button"
                 data-key-entry
@@ -734,6 +826,7 @@ function ApiKeyControls({
                   ? message(locale, "connection.apiKey.replace")
                   : message(locale, "connection.apiKey.add", { service })}
               </button>
+              {signIn && connected && signInButton}
               {connected && (
                 <button
                   type="button"
@@ -747,12 +840,23 @@ function ApiKeyControls({
                 </button>
               )}
             </>
-          ))}
+          ))
+        )}
       </div>
       {error && !(snapshot.state === "expired" && error === "key_needs_workspace") && (
         <div className="connection-notice connection-danger" role="alert">
           <Icon name="octagon-alert" />
           <p>{message(locale, keyErrors[error], { service })}</p>
+        </div>
+      )}
+      {signInError && (
+        <div className="connection-notice connection-danger" role="alert">
+          <Icon name="octagon-alert" />
+          <p>
+            {signInError === "sign_in_timeout"
+              ? message(locale, "connection.timeout")
+              : message(locale, "connection.rejected", { service })}
+          </p>
         </div>
       )}
     </>

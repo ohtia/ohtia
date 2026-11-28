@@ -383,6 +383,8 @@ export interface OperationInputs extends ResearchInputs {
     readonly key?: string;
   };
   "connection.replaceKey": { readonly connection: string; readonly key: string };
+  /** End a pending key sign-in, keeping the connection's key and state. */
+  "connection.cancelSignIn": { readonly connection: string };
   "connection.disconnect": { readonly connection: string };
 
   "bounds.read": Record<string, never>;
@@ -437,6 +439,7 @@ export interface OperationOutputs extends ResearchOutputs {
   "connection.listModels": ModelPage;
   "connection.connect": ConnectionSnapshot;
   "connection.replaceKey": ConnectionSnapshot;
+  "connection.cancelSignIn": ConnectionSnapshot;
   "connection.disconnect": ConnectionSnapshot;
 
   "bounds.read": WindowBoundsRecord;
@@ -569,6 +572,7 @@ export interface FoundationPort extends ResearchPort {
     options?: { readonly new_registration?: boolean; readonly key?: string },
   ): PortCall<ConnectionSnapshot>;
   replaceConnectionKey(connection: string, key: string): PortCall<ConnectionSnapshot>;
+  cancelConnectionSignIn(connection: string): PortCall<ConnectionSnapshot>;
   disconnectConnection(connection: string): PortCall<ConnectionSnapshot>;
   probeConnection(connection: string): PortCall<ConnectionSnapshot>;
   listConnectionModels(input: ModelPageInput): PortCall<ModelPage>;
@@ -1209,6 +1213,7 @@ export const operationErrorCodes = Object.freeze({
   "connection.listModels": [...readErrors, "stale_revision"],
   "connection.connect": readErrors,
   "connection.replaceKey": readErrors,
+  "connection.cancelSignIn": readErrors,
   "connection.disconnect": readErrors,
 
   "bounds.read": [...readErrors, "preference_invalid"],
@@ -1283,6 +1288,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
         isConnectionId(value.connection)
       );
     case "connection.read":
+    case "connection.cancelSignIn":
     case "connection.disconnect":
     case "connection.probe":
       return exact(value, ["connection"]) && isConnectionId(value.connection);
@@ -1409,6 +1415,7 @@ function output(operation: Operation, value: Json | undefined): boolean {
     case "connection.read":
     case "connection.connect":
     case "connection.replaceKey":
+    case "connection.cancelSignIn":
     case "connection.disconnect":
     case "connection.probe":
       return isConnectionSnapshot(value);
@@ -1586,6 +1593,7 @@ const operations: readonly Operation[] = [
   "connection.listModels",
   "connection.connect",
   "connection.replaceKey",
+  "connection.cancelSignIn",
   "connection.disconnect",
 
   "presentation.read",

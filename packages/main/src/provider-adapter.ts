@@ -77,6 +77,14 @@ export type ApiKeyCheck =
       readonly expiresAt?: string;
     }
   | { readonly reason: KeyCheckReason };
+/**
+ * How a browser sign-in that obtains an API key ended, before main checks the key. `unkept` means
+ * the service may have created a key that Ohtia did not receive.
+ */
+export type KeySignIn =
+  | { readonly status: "key"; readonly key: string }
+  | { readonly status: "denied" }
+  | { readonly status: "rejected"; readonly unkept: boolean };
 export interface ProviderAdapter {
   readonly declaration: ProviderDeclaration;
   /** Delegate to one CredentialStore serialization boundary; no adapter-owned persistence fallback. */
@@ -94,6 +102,11 @@ export interface ProviderAdapter {
     save(key: string, checked?: { readonly expiresAt?: string }): Promise<CredentialWrite>;
     connectedAt(): string | undefined;
     expiresAt?(): string | undefined;
+    /**
+     * Present when the declaration also has `provider_login`: wait for the browser sign-in and
+     * exchange its code. `sent` runs just before the exchange request leaves.
+     */
+    signIn?(signal: AbortSignal, sent: () => void): Promise<KeySignIn>;
   };
   /** Cancel only the pending sign-in, preserving any previously validated session. */
   cancelSignIn?(): Promise<CredentialWrite>;

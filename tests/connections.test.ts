@@ -265,7 +265,8 @@ describe("main-only connection operations", () => {
     expect((await manager.disconnect("unknown")).ok).toBe(false);
     for (const [state, reason] of [
       ["connected", "store_unavailable"],
-      ["expired", "sign_in_rejected"],
+      ["connecting", "sign_in_rejected"],
+      ["connecting", "sign_in_timeout"],
       ["error", "sign_in_timeout"],
       ["error", "arbitrary"],
     ])

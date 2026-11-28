@@ -116,6 +116,13 @@ export interface ConnectionSnapshot {
   readonly account_revision?: string;
   readonly last_account_email: string | null;
   readonly checking_key?: boolean;
+  /**
+   * An API-key connection waits for a browser sign-in that would obtain a key. The state is the
+   * one it had, `connecting` from disconnected, or `error` if the keyring fails meanwhile.
+   */
+  readonly signing_in?: boolean;
+  /** A sign-in may have created a key in the service that Ohtia did not keep. */
+  readonly unkept_key?: boolean;
   readonly connected_at?: string;
   /** When the connected key stops working, for services whose keys can expire. */
   readonly expires_at?: string;
@@ -153,9 +160,14 @@ export function connectionReasonMatches(
     return (
       state === "disconnected" || state === "connected" || state === "expired" || state === "error"
     );
-  return (
-    reason === null || (reason === "sign_in_timeout" ? state === "disconnected" : state === "error")
-  );
+  // A key sign-in that fails keeps the key, and so the state, that the connection had before it.
+  if (reason === "sign_in_timeout")
+    return state === "disconnected" || state === "connected" || state === "expired";
+  if (reason === "sign_in_rejected")
+    return (
+      state === "error" || state === "disconnected" || state === "connected" || state === "expired"
+    );
+  return reason === null || state === "error";
 }
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -359,6 +371,8 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       ...(Object.hasOwn(value, "account_revision") ? ["account_revision"] : []),
       "last_account_email",
       ...(Object.hasOwn(value, "checking_key") ? ["checking_key"] : []),
+      ...(Object.hasOwn(value, "signing_in") ? ["signing_in"] : []),
+      ...(Object.hasOwn(value, "unkept_key") ? ["unkept_key"] : []),
       ...(Object.hasOwn(value, "connected_at") ? ["connected_at"] : []),
       ...(Object.hasOwn(value, "expires_at") ? ["expires_at"] : []),
       "probing",
@@ -393,6 +407,12 @@ function snapshotFields(value: Record<string, unknown>): boolean {
     (value.last_account_email === null ||
       (typeof value.last_account_email === "string" && value.last_account_email.length > 0)) &&
     present(value, "checking_key", (checking) => typeof checking === "boolean") &&
+    present(
+      value,
+      "signing_in",
+      (signing) => typeof signing === "boolean" && (!signing || value.state !== "disconnected"),
+    ) &&
+    present(value, "unkept_key", (unkept) => typeof unkept === "boolean") &&
     present(
       value,
       "connected_at",
@@ -486,6 +506,11 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
 }
 
 export const apiKeyConnections = ["anthropic_api_key", "openai_api_key", "openrouter"] as const;
+/** API-key connections that can also obtain their key by signing in through the browser. */
+export const keySignInConnections = ["openrouter"] as const;
+export function isKeySignInConnection(value: unknown): boolean {
+  return keySignInConnections.some((connection) => connection === value);
+}
 export type ApiKeyConnection = (typeof apiKeyConnections)[number];
 export function isApiKeyConnection(value: unknown): value is ApiKeyConnection {
   return apiKeyConnections.some((connection) => connection === value);

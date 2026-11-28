@@ -363,6 +363,13 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.connection.read": event("broker", "connection.read", "DEBUG", "success", []),
   "ohtia.connection.connect": event("broker", "connection.connect", "INFO", "accepted", []),
   "ohtia.connection.replace_key": event("broker", "connection.replaceKey", "INFO", "accepted", []),
+  "ohtia.connection.cancel_sign_in": event(
+    "broker",
+    "connection.cancelSignIn",
+    "INFO",
+    "completed",
+    [],
+  ),
   "ohtia.connection.disconnect": event("broker", "connection.disconnect", "INFO", "completed", []),
   "ohtia.connection.probe_listed": event("broker", "connection.probe", "INFO", "listed", []),
   "ohtia.connection.probe_unreachable": event("broker", "connection.probe", "WARN", "unreachable", [

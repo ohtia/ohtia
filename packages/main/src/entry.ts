@@ -1181,6 +1181,8 @@ async function start(): Promise<void> {
       store: credentials,
       model: (id) => connections?.manager.model(openrouterConnectionId, id),
       refresh: () => connections?.manager.refreshModels(openrouterConnectionId, true),
+      openBrowser: (url) => shell.openExternal(url),
+      completedText: () => message(locale, "connection.browserComplete"),
     }),
     ...(developmentProvider ? [developmentProvider.createFakeProvider()] : []),
   ];

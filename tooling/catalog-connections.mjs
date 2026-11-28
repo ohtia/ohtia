@@ -14,13 +14,16 @@ export async function verifyConnectionsSpecimen(page, url, engine, output) {
         await page.goto(`${url}?screen=connections&locale=${locale}&width=${width}`);
         await page.evaluate(() => document.fonts.ready);
         const panel = page.locator(".connections-specimen");
-        await expect(panel.locator(".connection-privacy")).toHaveCount(4);
-        await expect(panel.locator(".connection-privacy a")).toHaveCount(16);
+        await expect(panel.locator(".connection-privacy")).toHaveCount(6);
+        await expect(panel.locator(".connection-privacy a")).toHaveCount(24);
         await expect(panel.locator('[data-case="1"] .connection-state')).toContainText("2026");
+        // Sign in with OpenRouter: the waiting row and the note about a key Ohtia did not keep.
+        await expect(panel.locator('[data-case="4"] .connection-actions button')).toHaveCount(1);
+        await expect(panel.locator('[data-case="5"] .connection-unkept a')).toHaveCount(1);
         const problems = await panel.evaluate((element) => {
           const clipped = [
             ...element.querySelectorAll(
-              ".connection-row *, .connection-privacy, .connection-privacy *",
+              ".connection-row *, .connection-privacy, .connection-privacy *, .connection-unkept *",
             ),
           ]
             // Inline boxes report no client width in every engine; their blocks are measured.
@@ -54,7 +57,7 @@ export async function verifyConnectionsSpecimen(page, url, engine, output) {
         await captureCatalog(panel, {
           path: path.join(output, `${engine}-connections-${locale}-${width}.png`),
         });
-        cases.push({ locale, width, groups: 4 });
+        cases.push({ locale, width, groups: 6 });
       }
     await watch.assert();
     return {

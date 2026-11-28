@@ -298,6 +298,7 @@ export const projectLinks = {
   openrouterPrivacy: "https://openrouter.ai/settings/privacy",
   openrouterPlugins: "https://openrouter.ai/settings/plugins",
   openrouterObservability: "https://openrouter.ai/settings/observability",
+  openrouterKeys: "https://openrouter.ai/settings/keys",
   repository: "https://github.com/ohtia/ohtia",
   documentation: "https://github.com/ohtia/ohtia/blob/main/docs/index.md",
   report: "https://github.com/ohtia/ohtia/issues/new/choose",
