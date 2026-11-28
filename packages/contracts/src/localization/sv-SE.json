@@ -369,6 +369,7 @@
     "manuscript.save": "Spara",
     "manuscript.saved": "Manuskriptet har sparats.",
     "manuscript.invalid": "Kontrollera manuskripttexten innan du sparar.",
+    "manuscript.pasteRefused": "Det gick inte att klistra in innehållet. Originalet finns kvar i urklippet.",
     "manuscript.failed": "Det gick inte att spara manuskriptet.",
     "manuscript.createFailed": "Det gick inte att skapa manuskriptet.",
     "manuscript.uncertain": "Sparandet är obekräftat. Kontrollera det innan du sparar igen.",

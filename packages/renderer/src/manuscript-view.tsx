@@ -495,6 +495,7 @@ function CommittedManuscript({
   const readingJump = useRef<{ viewport: HTMLElement; top: number } | undefined>(undefined);
   const work = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftId));
   const [saving, setSaving] = useState(false);
+  const [pasteRefused, setPasteRefused] = useState(false);
   const busy = useRef(false);
   const [feedback, setFeedback] = useState<
     "invalid" | "failed" | "uncertain" | "conflict" | "saved"
@@ -532,10 +533,10 @@ function CommittedManuscript({
       editorHost.current,
       drafts.get(draftId)?.document ?? current.current.document,
       message(locale, "manuscript.collection"),
-      (next) => {
+      (next, text) => {
+        setPasteRefused(false);
         const pending = drafts.get(draftId);
         const base = pending?.base ?? current.current;
-        const text = serializeManuscript(next, { draftId });
         const saved = serializeManuscript(base.document, { draftId });
         // Text identical to its base is not pending work, e.g. after typing and deleting it again.
         // A save being prepared keeps its work so the newest text survives the save.
@@ -561,6 +562,12 @@ function CommittedManuscript({
       },
       setEditingHeading,
       retired,
+      {
+        language: current.current.revision.language,
+        onPasteRefused: () => {
+          setPasteRefused(true);
+        },
+      },
     );
     editor.current.refreshIdentities();
     editor.current.setEditable(!locked);
@@ -741,6 +748,21 @@ function CommittedManuscript({
       if (!uncertain) {
         const serialized = serializeManuscript(previous.document, { draftId });
         if (!serialized.ok) {
+          const { location } = serialized.diagnostic;
+          const working = previous.document;
+          const id =
+            location.kind === "paragraph"
+              ? working.paragraphs[location.number - 1]?.id
+              : location.kind === "section"
+                ? working.sections?.[location.number - 1]?.id
+                : location.kind === "title"
+                  ? working.title?.id
+                  : undefined;
+          if (editing) goToBlock(id, 0, false);
+          else {
+            restore.current = id ? { id, offset: 0 } : anchor();
+            setEditing(true);
+          }
           setFeedback("invalid");
           return;
         }
@@ -850,6 +872,7 @@ function CommittedManuscript({
             disabled={locked}
             onClick={() => {
               restore.current = anchor();
+              setPasteRefused(false);
               setEditing((wasEditing) => !wasEditing);
             }}
           >
@@ -940,6 +963,11 @@ function CommittedManuscript({
           hidden={!editing}
         />
       </div>
+      {pasteRefused && (
+        <p className="workspace-manuscript-status" role="status">
+          {message(locale, "manuscript.pasteRefused")}
+        </p>
+      )}
       <footer className="workspace-manuscript-footer">
         <span>{modeLabel}</span>
         <span role="status" data-pending={!!work && !saving ? "true" : undefined}>

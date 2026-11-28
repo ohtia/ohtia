@@ -369,6 +369,7 @@
     "manuscript.save": "저장",
     "manuscript.saved": "원고를 저장했습니다.",
     "manuscript.invalid": "저장하기 전에 원고 내용을 확인하세요.",
+    "manuscript.pasteRefused": "이 콘텐츠를 붙여넣을 수 없습니다. 원본은 클립보드에 남아 있습니다.",
     "manuscript.failed": "원고를 저장할 수 없습니다.",
     "manuscript.createFailed": "원고를 만들 수 없습니다.",
     "manuscript.uncertain": "저장이 확인되지 않았습니다. 다시 저장하기 전에 확인하세요.",

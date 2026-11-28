@@ -369,6 +369,7 @@
     "manuscript.save": "Enregistrer",
     "manuscript.saved": "Manuscrit enregistré.",
     "manuscript.invalid": "Vérifiez le texte du manuscrit avant de l’enregistrer.",
+    "manuscript.pasteRefused": "Impossible de coller ce contenu. L’original reste dans le presse-papiers.",
     "manuscript.failed": "Impossible d’enregistrer le manuscrit.",
     "manuscript.createFailed": "Impossible de créer le manuscrit.",
     "manuscript.uncertain": "L’enregistrement reste à confirmer. Vérifiez-le avant de réessayer.",

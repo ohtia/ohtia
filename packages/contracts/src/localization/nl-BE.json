@@ -369,6 +369,7 @@
     "manuscript.save": "Opslaan",
     "manuscript.saved": "Manuscript opgeslagen.",
     "manuscript.invalid": "Controleer de tekst van het manuscript voordat je opslaat.",
+    "manuscript.pasteRefused": "Deze inhoud kon niet worden geplakt. Het origineel staat nog op het klembord.",
     "manuscript.failed": "Het manuscript kon niet worden opgeslagen.",
     "manuscript.createFailed": "Het manuscript kon niet worden gemaakt.",
     "manuscript.uncertain": "Het opslaan is onbevestigd. Controleer het resultaat voordat je het opnieuw probeert.",

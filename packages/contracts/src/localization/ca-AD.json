@@ -369,6 +369,7 @@
     "manuscript.save": "Desa",
     "manuscript.saved": "S’ha desat el manuscrit.",
     "manuscript.invalid": "Revisa el text del manuscrit abans de desar-lo.",
+    "manuscript.pasteRefused": "No s’ha pogut enganxar aquest contingut. L’original continua al porta-retalls.",
     "manuscript.failed": "No s’ha pogut desar el manuscrit.",
     "manuscript.createFailed": "No s’ha pogut crear el manuscrit.",
     "manuscript.uncertain": "El desament no està confirmat. Comprova’l abans de tornar a desar.",

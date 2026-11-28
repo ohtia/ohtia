@@ -21,6 +21,7 @@ export default tseslint.config(
       "tooling/command*.mjs",
       "tooling/product-graph.mjs",
       "tooling/credential-acceptance.mjs",
+      "tooling/manuscript-editor-acceptance.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -68,10 +69,18 @@ export default tseslint.config(
   },
   ...tseslint.configs.strictTypeChecked.map((config) => ({
     ...config,
-    files: ["packages/*/src/**/*.{ts,tsx}", "tools/desktop-probes/src/**/*.{ts,cts}"],
+    files: [
+      "packages/*/src/**/*.{ts,tsx}",
+      "tools/desktop-probes/src/**/*.{ts,cts}",
+      "tools/manuscript-editor-fixture/renderer.ts",
+    ],
   })),
   {
-    files: ["packages/*/src/**/*.{ts,tsx}", "tools/desktop-probes/src/**/*.{ts,cts}"],
+    files: [
+      "packages/*/src/**/*.{ts,tsx}",
+      "tools/desktop-probes/src/**/*.{ts,cts}",
+      "tools/manuscript-editor-fixture/renderer.ts",
+    ],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },

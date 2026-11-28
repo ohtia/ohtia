@@ -369,6 +369,7 @@
     "manuscript.save": "Tallenna",
     "manuscript.saved": "Käsikirjoitus tallennettu.",
     "manuscript.invalid": "Tarkista käsikirjoituksen teksti ennen tallentamista.",
+    "manuscript.pasteRefused": "Sisältöä ei voitu liittää. Alkuperäinen sisältö on edelleen leikepöydällä.",
     "manuscript.failed": "Käsikirjoituksen tallentaminen ei onnistunut.",
     "manuscript.createFailed": "Käsikirjoituksen luominen ei onnistunut.",
     "manuscript.uncertain": "Tallennusta ei ole vahvistettu. Tarkista se ennen uutta tallennusta.",

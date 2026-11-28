@@ -5,12 +5,14 @@ import {
   type CanonicalManuscript,
   type ManuscriptParagraph,
   type ManuscriptSection,
+  type ManuscriptResult,
 } from "@ohtia/contracts";
 import {
   manuscriptBlocks,
   manuscriptHeadingType,
   mountManuscriptEditor,
   type ManuscriptEditor,
+  type ManuscriptClipboardRefusal,
 } from "../packages/renderer/src/manuscript-editor.js";
 
 const draftId = "01a14fbd-d779-7014-a580-95cd6274b134";
@@ -46,6 +48,8 @@ function manuscript(
 let container: HTMLDivElement;
 let editor: ManuscriptEditor | undefined;
 let changes: CanonicalManuscript[];
+let validations: ManuscriptResult<string>[];
+let refusals: ManuscriptClipboardRefusal[];
 let headings: (string | undefined)[];
 const restore: (() => void)[] = [];
 
@@ -69,6 +73,8 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   changes = [];
+  validations = [];
+  refusals = [];
   headings = [];
 });
 
@@ -84,9 +90,13 @@ function mount(document: CanonicalManuscript, retired?: () => ReadonlySet<string
     container,
     document,
     label,
-    (next) => changes.push(next),
+    (next, result) => {
+      changes.push(next);
+      validations.push(result);
+    },
     (heading) => headings.push(heading),
     retired,
+    { language: "ko-KR", onPasteRefused: (refusal) => refusals.push(refusal) },
   );
   return editor;
 }
@@ -135,10 +145,10 @@ function key(name: string, init: KeyboardEventInit = {}) {
   return event;
 }
 
-function paste(data: Record<string, string>) {
+function paste(data: Record<string, string>, files: readonly File[] = []) {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
-    value: { getData: (type: string) => data[type] ?? "" },
+    value: { files, getData: (type: string) => data[type] ?? "" },
   });
   surface().dispatchEvent(event);
   return event;
@@ -221,6 +231,7 @@ describe("manuscript editor", () => {
       ]),
     );
     const element = surface();
+    expect(element.lang).toBe("ko-KR");
     expect(element.getAttribute("role")).toBe("textbox");
     expect(element.getAttribute("aria-multiline")).toBe("true");
     expect(element.getAttribute("aria-label")).toBe(label);
@@ -334,6 +345,41 @@ describe("manuscript editor", () => {
     key("Enter");
     expect(texts(latest())).toEqual(["text", "#hashtag"]);
     expect(latest().title).toBeNull();
+  });
+
+  it("keeps the original paragraph identity when Enter adds a paragraph before it", () => {
+    const original = manuscript([paragraph(firstId, line("First"))]);
+    const view = mount(original);
+    caret(textNode(block(firstId)), 0);
+    key("Enter");
+    expect(view.read()).toEqual(original);
+    const inserted = block(firstId).previousElementSibling;
+    expect(inserted?.tagName).toBe("P");
+    expect(inserted?.getAttribute("data-manuscript-block")).not.toBe(firstId);
+    expect(block(firstId).contains(document.getSelection()?.anchorNode ?? null)).toBe(true);
+
+    caret(inserted!, 0);
+    paste({ "text/plain": "New" });
+    expect(view.read().paragraphs[0]?.lines).toEqual([line("New")]);
+    expect(view.read().paragraphs[1]).toEqual(original.paragraphs[0]);
+    expect(validations.at(-1)?.ok).toBe(true);
+  });
+
+  it.each([5, 6, 7])("replaces separator spaces with a paragraph break at offset %i", (offset) => {
+    const original = manuscript([paragraph(firstId, line("First  Second"))]);
+    const view = mount(original);
+    caret(textNode(block(firstId)), offset);
+    key("Enter");
+    const split = view.read();
+    expect(texts(split)).toEqual(["First", "Second"]);
+    expect(split.paragraphs[0]?.id).toBe(firstId);
+    expect(validations.at(-1)?.ok).toBe(true);
+    expect(document.getSelection()?.anchorOffset).toBe(0);
+
+    undoKey();
+    expect(view.read()).toEqual(original);
+    key("Z", { ctrlKey: true, shiftKey: true, keyCode: 90 });
+    expect(view.read()).toEqual(split);
   });
 
   it("inserts an empty paragraph after a heading when Enter is pressed at its end", () => {
@@ -623,6 +669,341 @@ describe("manuscript editor", () => {
     // The edit made before the lock and the one after it share an undo step.
     expect(undoKey().defaultPrevented).toBe(true);
     expect(texts(latest())).toEqual(["Hello"]);
+  });
+
+  it("preserves the first paragraph identity through merge undo and redo", () => {
+    mount(manuscript([paragraph(firstId, line("First")), paragraph(secondId, line("Second"))]));
+    editor?.jump(secondId);
+    expect(key("Backspace", { keyCode: 8 }).defaultPrevented).toBe(true);
+    expect(latest().paragraphs).toEqual([paragraph(firstId, line("FirstSecond"))]);
+    undoKey();
+    expect(latest().paragraphs.map(({ id }) => id)).toEqual([firstId, secondId]);
+    key("z", { ctrlKey: true, shiftKey: true, keyCode: 90 });
+    expect(latest().paragraphs).toEqual([paragraph(firstId, line("FirstSecond"))]);
+  });
+
+  it("returns canonical validation and leaves rejected rich or oversized paste recoverable", () => {
+    const original = manuscript([paragraph(firstId, line("Keep"))]);
+    const view = mount(original);
+    select(firstId, 0, 4);
+    const html = "<table><tr><td>Research</td></tr></table>";
+    expect(paste({ "text/html": html, "text/plain": "Research" }).defaultPrevented).toBe(true);
+    expect(refusals).toEqual([
+      {
+        html,
+        text: "Research",
+        diagnostic: { code: "unsupported-construct", location: { kind: "document" } },
+      },
+    ]);
+    expect(view.read()).toEqual(original);
+    paste({ "text/plain": "File" }, [new File(["File"], "draft.txt")]);
+    expect(refusals.at(-1)?.diagnostic.code).toBe("unsupported-construct");
+    const largeHtml = "<p>" + "x".repeat(1024 * 1024) + "</p>";
+    paste({ "text/html": largeHtml });
+    expect(refusals.at(-1)?.diagnostic.code).toBe("document-limit");
+    const huge = "x".repeat(131073);
+    paste({ "text/plain": huge });
+    expect(refusals.at(-1)).toMatchObject({ text: huge, diagnostic: { code: "document-limit" } });
+    const long = "한".repeat(3000);
+    paste({ "text/plain": long });
+    expect(refusals.at(-1)).toMatchObject({ text: long, diagnostic: { code: "text-limit" } });
+    const manyLines = "text\n".repeat(258);
+    paste({ "text/plain": manyLines });
+    expect(refusals.at(-1)).toMatchObject({
+      text: manyLines,
+      diagnostic: { code: "unsupported-construct" },
+    });
+    expect(view.read()).toEqual(original);
+    expect(changes).toHaveLength(0);
+    paste({ "text/plain": "연구" });
+    expect(latest().paragraphs).toEqual([paragraph(firstId, line("연구"))]);
+    expect(validations.at(-1)).toMatchObject({ ok: true, value: expect.stringContaining("연구") });
+    undoKey();
+    expect(view.read()).toEqual(original);
+    select(firstId, 0, 4);
+    key("V", { ctrlKey: true, shiftKey: true });
+    paste({ "text/html": html, "text/plain": "Research" });
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("Research"))]);
+    key("V", { ctrlKey: true, shiftKey: true });
+    surface().dispatchEvent(new KeyboardEvent("keyup", { key: "V", bubbles: true }));
+    paste({ "text/html": html, "text/plain": "Ignored" });
+    expect(refusals.at(-1)?.text).toBe("Ignored");
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("Research"))]);
+
+    surface().dispatchEvent(new Event("paste", { bubbles: true, cancelable: true }));
+    expect(refusals.at(-1)).toMatchObject({
+      text: "",
+      html: "",
+      diagnostic: { code: "unsupported-construct" },
+    });
+    const metadata = '<meta charset="utf-8">';
+    paste({ "text/html": metadata, "text/plain": "Recoverable" });
+    expect(refusals.at(-1)).toMatchObject({ text: "Recoverable", html: metadata });
+  });
+
+  it("pastes into another paragraph while an invalid edit is still pending", async () => {
+    const view = mount(
+      manuscript([paragraph(firstId, line("First")), paragraph(secondId, line("Second"))]),
+    );
+    caretAtEnd(firstId);
+    textNode(block(firstId)).appendData(" ");
+    await vi.waitFor(() => expect(validations.at(-1)).toMatchObject({ ok: false }));
+    caretAtEnd(secondId);
+    paste({ "text/plain": " text" });
+    expect(refusals).toHaveLength(0);
+    expect(view.read().paragraphs).toEqual([
+      paragraph(firstId, line("First ")),
+      paragraph(secondId, line("Second text")),
+    ]);
+    expect(validations.at(-1)).toMatchObject({ ok: false });
+
+    const held = view.read();
+    for (const [data, code] of [
+      [{ "text/plain": "tab\ttext" }, "invalid-text"],
+      [{ "text/plain": "한".repeat(3000) }, "text-limit"],
+      [{ "text/html": "<h4>Skipped level</h4>" }, "invalid-ast"],
+    ] as const) {
+      caretAtEnd(secondId);
+      paste(data);
+      expect(refusals.at(-1)?.diagnostic.code).toBe(code);
+      expect(view.read()).toEqual(held);
+    }
+
+    const large = Array.from({ length: 16 }, (_, index) =>
+      paragraph(`blk_large-${String(index)}`, line("a".repeat(8000))),
+    );
+    view.replace(manuscript(large));
+    caretAtEnd("blk_large-0");
+    textNode(block("blk_large-0")).appendData(" ");
+    await vi.waitFor(() => expect(view.read().paragraphs[0]?.lines[0]?.text).toHaveLength(8001));
+    const nearLimit = view.read();
+    caret(trailing(), 0);
+    paste({ "text/plain": "b".repeat(3000) });
+    expect(refusals.at(-1)?.diagnostic.code).toBe("document-limit");
+    expect(view.read()).toEqual(nearLimit);
+  });
+
+  it("pastes multiline plain text and preserves explicit and ordinary breaks in copied paragraphs", () => {
+    const view = mount(manuscript([], { id: titleId, text: "Title" }));
+    view.jump(titleId);
+    paste({ "text/html": "<p>one<br>two</p>" });
+    expect(refusals.at(-1)?.diagnostic.code).toBe("unsupported-construct");
+    paste({
+      "text/html":
+        '<meta charset="utf-8"><!--StartFragment--><h1 data-pm-slice="1 1 []" data-manuscript-block="sec_foreign">New</h1>',
+    });
+    expect(view.read().title).toEqual({ id: titleId, text: "NewTitle" });
+    caret(trailing(), 0);
+    paste({ "text/plain": "One\r\n\r\nTwo" });
+    expect(texts(latest())).toEqual(["# NewTitle", "One", "Two"]);
+    const [first, second] = latest().paragraphs;
+    expect(first?.id).not.toBe(second?.id);
+    caretAtEnd(second!.id);
+    paste({ "text/html": '<p> three<br data-manuscript-break="soft">four<br>five</p>' });
+    expect(latest().paragraphs[1]?.lines).toEqual([
+      line("Two three", "soft"),
+      line("four", "hard"),
+      line("five"),
+    ]);
+  });
+
+  it("preserves soft and hard line breaks in the plain text clipboard", () => {
+    mount(
+      manuscript([paragraph(firstId, line("One", "soft"), line("Two", "hard"), line("Three"))]),
+    );
+    surface().focus();
+    document.getSelection()?.selectAllChildren(block(firstId));
+    document.dispatchEvent(new Event("selectionchange"));
+    const transfer = new Map<string, string>();
+    const copy = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(copy, "clipboardData", {
+      value: {
+        clearData: () => transfer.clear(),
+        setData: (type: string, value: string) => transfer.set(type, value),
+      },
+    });
+    surface().dispatchEvent(copy);
+    expect(copy.defaultPrevented).toBe(true);
+    expect(transfer.get("text/plain")).toBe("One\nTwo\nThree");
+    expect(transfer.get("text/html")).toContain('data-manuscript-break="soft"');
+    expect(transfer.get("text/html")).toContain('data-manuscript-break="hard"');
+  });
+
+  it("pastes ordinary browser prose with source line wrapping and indentation", () => {
+    const view = mount(manuscript([]));
+    caret(trailing(), 0);
+    paste({ "text/plain": "One Two", "text/html": "<p>\n  One\n  Two\n</p>" });
+    caretAtEnd(view.read().paragraphs[0]!.id);
+    key("Enter");
+    caret(trailing(), 0);
+    paste({
+      "text/plain": "Three Four",
+      "text/html": '<span style="color: red">Three\n  Four</span>',
+    });
+    expect(texts(view.read())).toEqual(["One Two", "Three Four"]);
+    expect(validations.at(-1)?.ok).toBe(true);
+    expect(refusals).toEqual([]);
+    const preformatted = '<p><span style="white-space: pre">Five\n  Six</span></p>';
+    paste({ "text/plain": "Five Six", "text/html": preformatted });
+    expect(refusals.at(-1)).toMatchObject({ text: "Five Six", html: preformatted });
+    expect(texts(view.read())).toEqual(["One Two", "Three Four"]);
+  });
+
+  it("pastes matching code wrappers as literal Markdown and keeps rich structures recoverable", () => {
+    const view = mount(manuscript([]));
+    const table = [
+      "| Operating system | x86-64 (`x64` / `amd64`) | ARM64 (`arm64` / `aarch64`) |",
+      "| ---------------- | ------------------------ | --------------------------- |",
+      "| Windows          | Required                 | Optional                    |",
+      "| macOS            | Optional, Intel          | Required, Apple Silicon     |",
+      "| Linux            | Required                 | Required                    |",
+    ];
+    const text = table.join("\n");
+    const html = `<pre><code><span>${text}</span></code></pre>`;
+    paste({ "text/plain": text, "text/html": html });
+    expect(view.read().paragraphs.map(({ lines }) => lines)).toEqual([
+      table.map((row, index) => line(row, index === table.length - 1 ? null : "hard")),
+    ]);
+    expect(validations.at(-1)?.ok).toBe(true);
+    const held = view.read();
+    paste({ "text/plain": text, "text/html": "<table><tr><td>Windows</td></tr></table>" });
+    paste({ "text/plain": "Different text", "text/html": html });
+    paste({ "text/plain": "Windows", "text/html": "<pre><a>Windows</a></pre>" });
+    expect(refusals).toHaveLength(3);
+    expect(view.read()).toEqual(held);
+  });
+
+  it("pastes line-wrapped Markdown straight into a focused heading without changing it", () => {
+    const original = manuscript([], { id: titleId, text: "Title" });
+    const view = mount(original);
+    view.focus();
+    const rows = [
+      "| Operating system | x86-64 (`x64` / `amd64`) | ARM64 (`arm64` / `aarch64`) |",
+      "| ---------------- | ------------------------ | --------------------------- |",
+      "| Windows          | Required                 | Optional                    |",
+      "| macOS            | Optional, Intel          | Required, Apple Silicon     |",
+      "| Linux            | Required                 | Required                    |",
+    ];
+    const html = `<div style="white-space: pre">${rows
+      .map(
+        (row) =>
+          `<div><span style="color: black">${row.slice(0, 20)}</span><span>${row.slice(20)}</span></div>`,
+      )
+      .join("")}</div>`;
+    const text = rows.join("\n");
+    paste({ "text/html": html, "text/plain": text });
+    expect(refusals).toEqual([]);
+    expect(view.read().title).toEqual(original.title);
+    const [table] = view.read().paragraphs;
+    expect(table?.lines).toEqual(
+      rows.map((row, index) => line(row, index === rows.length - 1 ? null : "hard")),
+    );
+    expect(validations.at(-1)?.ok).toBe(true);
+    const different = text.replace("Windows", "Other");
+    paste({ "text/html": html, "text/plain": different });
+    expect(refusals.at(-1)?.text).toBe(different);
+    expect(view.read().paragraphs).toEqual([table]);
+  });
+
+  it("pastes a rendered table as literal Markdown with one explicit line per row", () => {
+    const view = mount(manuscript([paragraph(firstId, line("Before and after"))]));
+    caret(textNode(block(firstId)), "Before".length);
+    const html = `<meta charset="utf-8"><div><table>
+      <thead><tr><th>Operating system</th><th>x86-64 (<code>x64</code> / <code>amd64</code>)</th><th>ARM64 (<code>arm64</code> / <code>aarch64</code>)</th></tr></thead>
+      <tbody><tr><td>Windows</td><td>Required</td><td>Optional</td></tr>
+      <tr><td>macOS</td><td>Optional, Intel</td><td>Required, Apple Silicon</td></tr>
+      <tr><td>Linux</td><td>Required</td><td>Required</td></tr></tbody></table></div>`;
+    const text = "Operating system\t x86-64\tARM64\nWindows\tRequired\tOptional";
+    paste({ "text/html": html, "text/plain": text });
+    expect(refusals).toEqual([]);
+    const [before, table] = view.read().paragraphs;
+    expect(before).toEqual(paragraph(firstId, line("Before and after")));
+    expect(table?.lines).toEqual([
+      line("| Operating system | x86-64 (x64 / amd64) | ARM64 (arm64 / aarch64) |", "hard"),
+      line("| --- | --- | --- |", "hard"),
+      line("| Windows | Required | Optional |", "hard"),
+      line("| macOS | Optional, Intel | Required, Apple Silicon |", "hard"),
+      line("| Linux | Required | Required |"),
+    ]);
+    expect(validations.at(-1)?.ok).toBe(true);
+    const held = view.read();
+
+    const merged = html.replace(
+      "<td>Required</td><td>Optional</td>",
+      '<td colspan="2">Required</td>',
+    );
+    paste({ "text/html": merged, "text/plain": text });
+    expect(refusals.at(-1)?.html).toBe(merged);
+    expect(view.read()).toEqual(held);
+  });
+
+  it("pastes Hangul from browser selections in a title and a paragraph", () => {
+    const view = mount(
+      manuscript([paragraph(firstId, line("Body"))], { id: titleId, text: "Title" }),
+    );
+    const html = '<p><span style="color: black"> 한글 </span></p>';
+    const clipboard = { "text/plain": " 한글 ", "text/html": html };
+    select(titleId, 0, 5);
+    paste(clipboard);
+    expect(view.read().title).toEqual({ id: titleId, text: "한글" });
+    select(firstId, 0, 4);
+    paste(clipboard);
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("한글"))]);
+    expect(validations.at(-1)?.ok).toBe(true);
+
+    caret(textNode(block(firstId)), 1);
+    paste({ "text/plain": " 글 " });
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("한 글 글"))]);
+    expect(validations.at(-1)?.ok).toBe(true);
+    expect(refusals).toEqual([]);
+  });
+
+  it("undoes and redoes after keyboard refocus when a native composition missed its end event", () => {
+    const view = mount(manuscript([paragraph(firstId, line("First"))]));
+    caretAtEnd(firstId);
+    paste({ "text/plain": "한글" });
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("First한글"))]);
+    surface().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    surface().blur();
+    view.focus();
+    expect(undoKey().defaultPrevented).toBe(true);
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("First"))]);
+    expect(key("Z", { ctrlKey: true, shiftKey: true, keyCode: 90 }).defaultPrevented).toBe(true);
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("First한글"))]);
+  });
+
+  it("keeps native commit keys available and exposes current working text", () => {
+    const original = manuscript([paragraph(firstId, line("First"))]);
+    const view = mount(original);
+    caretAtEnd(firstId);
+    expect(view.isComposing()).toBe(false);
+    expect(key("Enter", { isComposing: true }).defaultPrevented).toBe(false);
+    expect(key("Enter", { keyCode: 229 }).defaultPrevented).toBe(false);
+    expect(changes).toHaveLength(0);
+    expect(view.read()).toEqual(original);
+    key("Enter");
+    expect(changes).toEqual([original]);
+    surface().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    expect(view.isComposing()).toBe(true);
+    expect(key("Enter").defaultPrevented).toBe(false);
+    paste({ "text/plain": "Pending" });
+    expect(refusals.at(-1)?.text).toBe("Pending");
+    expect(view.read()).toEqual(original);
+    surface().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    expect(view.isComposing()).toBe(false);
+    surface().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    surface().blur();
+    expect(view.isComposing()).toBe(false);
+    caretAtEnd(firstId);
+    paste({ "text/plain": " text" });
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("First text"))]);
+
+    surface().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    expect(view.isComposing()).toBe(true);
+    surface().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(view.isComposing()).toBe(false);
+    paste({ "text/plain": " again" });
+    expect(view.read().paragraphs).toEqual([paragraph(firstId, line("First text again"))]);
   });
 
   it("removes the editor when destroyed", () => {
