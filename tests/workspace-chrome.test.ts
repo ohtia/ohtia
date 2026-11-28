@@ -1242,6 +1242,7 @@ describe("workspace chrome manuscript close guard", () => {
       const paste = new Event("paste", { bubbles: true, cancelable: true });
       Object.defineProperty(paste, "clipboardData", {
         value: {
+          files: [],
           types: ["text/plain"],
           getData: (type: string) => (type === "text/plain" ? "New " : ""),
         },
@@ -1406,6 +1407,8 @@ describe("workspace chrome manuscript close guard", () => {
   it("saves pending text and then performs the requested close", async () => {
     const t = await manuscriptChrome();
     await t.edit();
+    await act(async () => t.named("Preview")!.click());
+    expect(t.named("Edit")).toBeDefined();
     await t.close("window.close");
     await act(async () => t.named("Save and close", t.dialog()!)!.click());
     await t.settle();
@@ -1655,6 +1658,7 @@ describe("workspace chrome manuscript close guard", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Composed " : ""),
       },

@@ -369,6 +369,7 @@
     "manuscript.save": "Save",
     "manuscript.saved": "Manuscript saved.",
     "manuscript.invalid": "Check the manuscript text before saving.",
+    "manuscript.pasteRefused": "Could not paste this content. The original is still on the clipboard.",
     "manuscript.failed": "Could not save the manuscript.",
     "manuscript.createFailed": "Could not create the manuscript.",
     "manuscript.uncertain": "The save is unconfirmed. Check it before saving again.",

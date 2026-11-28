@@ -920,6 +920,7 @@ export const messageContracts = {
   "manuscript.save": { params: {} },
   "manuscript.saved": { params: {} },
   "manuscript.invalid": { params: {} },
+  "manuscript.pasteRefused": { params: {} },
   "manuscript.failed": { params: {} },
   "manuscript.createFailed": { params: {} },
   "manuscript.uncertain": { params: {} },

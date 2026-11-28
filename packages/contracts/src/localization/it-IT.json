@@ -369,6 +369,7 @@
     "manuscript.save": "Salva",
     "manuscript.saved": "Manoscritto salvato.",
     "manuscript.invalid": "Controlla il testo del manoscritto prima di salvarlo.",
+    "manuscript.pasteRefused": "Impossibile incollare questo contenuto. L’originale è ancora negli appunti.",
     "manuscript.failed": "Impossibile salvare il manoscritto.",
     "manuscript.createFailed": "Impossibile creare il manoscritto.",
     "manuscript.uncertain": "Il salvataggio non è confermato. Verificalo prima di riprovare.",

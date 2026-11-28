@@ -209,7 +209,8 @@
 }
 
 .conversation-message.agent .message-markdown p,
-.plan-markdown p {
+.plan-markdown p,
+.action-proposal p {
   max-inline-size: none;
 }
 
@@ -291,7 +292,8 @@
   overflow-wrap: anywhere;
 }
 
-.action-proposal .research-fields > div:has(> dd > .plan-markdown) {
+.action-proposal .research-fields > div:has(> dd > .plan-markdown),
+.action-proposal .research-fields > div:has(> dd > .consultation-request) {
   flex-direction: column;
   gap: var(--space-1);
 }

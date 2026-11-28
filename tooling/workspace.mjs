@@ -112,6 +112,7 @@ const commands = {
       node("typescript/bin/tsc", ["-p", path.join(item.directory, "tsconfig.json"), "--noEmit"]);
     node("typescript/bin/tsc", ["-p", "tools/renderer-preview/tsconfig.json"]);
     node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json", "--noEmit"]);
+    node("typescript/bin/tsc", ["-p", "tools/manuscript-editor-fixture/tsconfig.json"]);
     run(python, ["-m", "pyrefly", "check"]);
   },
   lint() {
@@ -126,6 +127,8 @@ const commands = {
       "tooling/command*.mjs",
       "tooling/product-graph.mjs",
       "tooling/credential-acceptance.mjs",
+      "tooling/manuscript-editor-acceptance.mjs",
+      "tools/manuscript-editor-fixture/renderer.ts",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -237,6 +240,9 @@ const commands = {
   },
   "desktop:test"() {
     run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);
+  },
+  "manuscript-editor:test"() {
+    run(process.execPath, ["tooling/manuscript-editor-acceptance.mjs", ...process.argv.slice(3)]);
   },
   "diagnostics:test"() {
     run(process.execPath, ["tooling/diagnostic-acceptance.mjs", ...process.argv.slice(3)]);

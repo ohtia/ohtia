@@ -369,6 +369,7 @@
     "manuscript.save": "Gem",
     "manuscript.saved": "Manuskript gemt.",
     "manuscript.invalid": "Kontrollér manuskriptets tekst, før du gemmer.",
+    "manuscript.pasteRefused": "Indholdet kunne ikke indsættes. Originalen ligger stadig i udklipsholderen.",
     "manuscript.failed": "Manuskriptet kunne ikke gemmes.",
     "manuscript.createFailed": "Manuskriptet kunne ikke oprettes.",
     "manuscript.uncertain": "Lagringen er ikke bekræftet. Kontrollér den, før du gemmer igen.",
