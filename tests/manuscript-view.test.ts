@@ -553,6 +553,7 @@ describe("manuscript editing and saving", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Pasted " : ""),
       },
@@ -575,6 +576,7 @@ describe("manuscript editing and saving", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Pasted " : ""),
       },
@@ -684,6 +686,7 @@ describe("manuscript editing and saving", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Pasted " : ""),
       },
@@ -729,6 +732,7 @@ describe("manuscript editing and saving", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Pasted " : ""),
       },
@@ -771,6 +775,7 @@ describe("manuscript editing and saving", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? "Pasted " : ""),
       },
@@ -808,6 +813,20 @@ describe("manuscript editing and saving", () => {
     expect(button("Save")?.disabled).toBe(false);
     expect(button("Discard changes")?.disabled).toBe(false);
     expect(article().textContent).toContain("Conflicting sentence.");
+    await press("Edit");
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: {
+        files: [],
+        getData: (type: string) => (type === "text/html" ? "<p><b>Rich</b></p>" : "Rich"),
+      },
+    });
+    await act(async () => textbox()!.dispatchEvent(paste));
+    expect(textbox()?.closest("section")?.textContent).toContain(
+      "Could not paste this content. The original is still on the clipboard.",
+    );
+    expect(footerStatus().textContent).toBe("The saved manuscript changed. Your edits are kept.");
+    expect(drafts.get(draftId)).toEqual({ base, document: edited("Conflicting sentence.") });
   });
 
   it("keeps the text after a refused save and holds a rejected bridge call as unconfirmed", async () => {
@@ -922,7 +941,10 @@ describe("manuscript editing and saving", () => {
     const { foundation, port, content } = manuscriptPort();
     await view(foundation);
     await seed(edited(" padded text "), content());
+    expect(modeButton()?.textContent).toBe("Edit");
     await press("Save");
+    expect(modeButton()?.textContent).toBe("Preview");
+    expect(textbox()?.contains(document.getSelection()?.anchorNode ?? null)).toBe(true);
     expect(port.saveManuscript).not.toHaveBeenCalled();
     expect(port.stageManuscriptPart).not.toHaveBeenCalled();
     expect(footerStatus().textContent).toBe("Check the manuscript text before saving.");
@@ -949,6 +971,7 @@ describe("manuscript editing across modes", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? text : ""),
       },
@@ -1041,6 +1064,7 @@ describe("manuscript edit lock", () => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
       value: {
+        files: [],
         types: ["text/plain"],
         getData: (type: string) => (type === "text/plain" ? text : ""),
       },

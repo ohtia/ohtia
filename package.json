@@ -13,6 +13,7 @@
     "desktop:launch": "node tooling/workspace.mjs desktop:launch",
     "desktop:prepare": "node tooling/workspace.mjs desktop:prepare",
     "desktop:test": "node tooling/workspace.mjs desktop:test",
+    "manuscript-editor:test": "node tooling/workspace.mjs manuscript-editor:test",
     "probes:bundle": "node tooling/workspace.mjs probes:bundle",
     "probes:prepare": "node tooling/workspace.mjs probes:prepare",
     "probes:run": "node tooling/workspace.mjs probes:run",

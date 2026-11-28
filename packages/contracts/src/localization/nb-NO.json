@@ -369,6 +369,7 @@
     "manuscript.save": "Lagre",
     "manuscript.saved": "Manuskriptet er lagret.",
     "manuscript.invalid": "Kontroller manuskriptteksten før du lagrer.",
+    "manuscript.pasteRefused": "Kunne ikke lime inn innholdet. Originalen ligger fortsatt på utklippstavlen.",
     "manuscript.failed": "Kunne ikke lagre manuskriptet.",
     "manuscript.createFailed": "Kunne ikke opprette manuskriptet.",
     "manuscript.uncertain": "Lagringen er ikke bekreftet. Kontroller den før du lagrer igjen.",

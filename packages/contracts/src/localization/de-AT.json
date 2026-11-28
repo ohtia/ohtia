@@ -369,6 +369,7 @@
     "manuscript.save": "Speichern",
     "manuscript.saved": "Manuskript gespeichert.",
     "manuscript.invalid": "Prüfe den Manuskripttext vor dem Speichern.",
+    "manuscript.pasteRefused": "Dieser Inhalt konnte nicht eingefügt werden. Das Original ist weiterhin in der Zwischenablage.",
     "manuscript.failed": "Das Manuskript konnte nicht gespeichert werden.",
     "manuscript.createFailed": "Das Manuskript konnte nicht erstellt werden.",
     "manuscript.uncertain": "Das Speichern ist unbestätigt. Prüfe es vor einem erneuten Versuch.",

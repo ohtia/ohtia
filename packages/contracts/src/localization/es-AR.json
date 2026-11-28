@@ -369,6 +369,7 @@
     "manuscript.save": "Guardar",
     "manuscript.saved": "Manuscrito guardado.",
     "manuscript.invalid": "Revisá el texto del manuscrito antes de guardar.",
+    "manuscript.pasteRefused": "No se pudo pegar este contenido. El original sigue en el portapapeles.",
     "manuscript.failed": "No se pudo guardar el manuscrito.",
     "manuscript.createFailed": "No se pudo crear el manuscrito.",
     "manuscript.uncertain": "El guardado no está confirmado. Comprobalo antes de volver a guardar.",
