@@ -18,7 +18,7 @@ const content = encodeProfileContent({
       items: [
         {
           state: "known",
-          value: { title: "Ethics form", date: "2026-01-15", done: false },
+          value: { title: "Ethics form", date: "2025-06-15", done: false },
           origin: { kind: "researcher_statement" },
         },
         {
