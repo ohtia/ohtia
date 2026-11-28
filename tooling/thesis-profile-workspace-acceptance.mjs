@@ -37,6 +37,7 @@ const receipt = {
   limitations: [
     "Uses a synthetic setup-confirmed fixture and makes no provider call.",
     "Composition is driven through Chromium CDP. No OS IME or manual assistive journey was exercised.",
+    "Delayed stage replies and an unavailable profile read are exercised by unit tests, not on this path.",
   ],
 };
 
@@ -44,11 +45,11 @@ function record(name) {
   receipt.cases.push(name);
 }
 
-async function start() {
+async function start(timeZone) {
   app = await _electron.launch({
     executablePath: launch.executable,
     args: [launch.app, ...launch.args],
-    env: { ...launch.env, OHTIA_RUNTIME_ACCEPTANCE: "1" },
+    env: { ...launch.env, OHTIA_RUNTIME_ACCEPTANCE: "1", ...(timeZone ? { TZ: timeZone } : {}) },
     chromiumSandbox: true,
     artifactsDir: attempt,
   });
@@ -84,7 +85,11 @@ async function openProfile(page) {
 }
 async function openFromNavigator(page, action, target) {
   await tab(page, "workspace.navigator").press("Enter");
-  await button(documentArea(page), action).press("Enter");
+  const overview = documentArea(page).locator(".navigator");
+  await button(
+    overview,
+    action === "schedule" ? "profile.openSchedule" : `profile.section.${action}`,
+  ).press("Enter");
   await expect(heading(page, target)).toBeFocused();
   await expect(tab(page, "profile.title")).toHaveCount(1);
 }
@@ -114,8 +119,8 @@ try {
   );
   await editSection(page, "schedule");
   await state(page, "deadline", "unknown").check();
-  await openFromNavigator(page, "profile.openResearch", "research");
-  await openFromNavigator(page, "profile.openSchedule", "schedule");
+  await openFromNavigator(page, "research", "research");
+  await openFromNavigator(page, "schedule", "schedule");
   await expect(state(page, "deadline", "unknown")).toBeChecked();
   await selectProject(page, otherTitle);
   await openProfile(page);
@@ -133,7 +138,7 @@ try {
   ).toBeFocused();
   record("single-tab-section-keyboard-pending-project-switch-and-partial-save");
 
-  await openFromNavigator(page, "profile.openResearch", "research");
+  await openFromNavigator(page, "research", "research");
   await editSection(page, "research");
   await state(page, "questions", "known").check();
   await button(field(page, "questions"), "profile.addItem").press("Enter");
@@ -155,7 +160,7 @@ try {
   await page.evaluate(() => window.ohtia.bootstrap.newWindow());
   const second = await opened;
   await selectProject(second, originalTitle);
-  await openFromNavigator(second, "profile.openResearch", "research");
+  await openFromNavigator(second, "research", "research");
   await editSection(second, "research");
   await state(second, "topic", "known").check();
   await field(second, "topic").getByRole("textbox").first().fill("Competing topic");
@@ -221,14 +226,79 @@ try {
   app = undefined;
   page = await start();
   await selectProject(page, originalTitle);
-  await openFromNavigator(page, "profile.openResearch", "research");
+  await openFromNavigator(page, "research", "research");
   await expect(profile(page)).toContainText(text("profile.savedVersion", { number: 3 }));
   await expect(field(page, "questions")).toContainText(question);
   await expect(field(page, "questions")).toContainText(text("profile.origin.researcher_statement"));
-  await openFromNavigator(page, "profile.openSchedule", "schedule");
+  await openFromNavigator(page, "schedule", "schedule");
   await expect(field(page, "deadline")).toContainText(text("profile.state.unknown"));
   await expect(profile(page).locator(".profile-subtitle-text")).toHaveText(subtitle);
   record("restart-restores-version-values-attribution-and-subtitle");
+
+  // The Navigator overview reads the saved profile and the stage projection without starting work.
+  const overview = () => documentArea(page).locator(".navigator");
+  const deadlineText = () => overview().locator(".navigator-deadline");
+  const showNavigator = async () => {
+    await tab(page, "workspace.navigator").press("Enter");
+    await expect(overview().locator(".research-stages")).toBeVisible();
+  };
+  await showNavigator();
+  await expect(deadlineText()).toContainText(text("navigator.deadline.unknown"));
+  const steps = overview().locator(".research-stage-select");
+  await expect(steps).toHaveCount(8);
+  await expect(steps.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(overview().locator(".navigator-stage")).toContainText(text("navigator.notStarted"));
+  await expect(overview().locator('.research-stage[data-kind="milestone"]')).toContainText(
+    text("navigator.milestone.pending"),
+  );
+  await steps.first().focus();
+  await page.keyboard.press("Tab");
+  await expect(steps.nth(1)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(steps.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(overview().locator(".navigator-stage")).toContainText(text("navigator.laterStage"));
+  await expect(steps.first()).toContainText(text("navigator.state.notStarted"));
+
+  await openFromNavigator(page, "schedule", "schedule");
+  await editSection(page, "schedule");
+  await state(page, "deadline", "inapplicable").check();
+  await button(profile(page), "profile.save").press("Enter");
+  await expect(profile(page)).toContainText(text("profile.savedVersion", { number: 4 }));
+  await showNavigator();
+  await expect(deadlineText()).toContainText(text("navigator.deadline.inapplicable"));
+  await openFromNavigator(page, "schedule", "schedule");
+  await editSection(page, "schedule");
+  await state(page, "deadline", "known").check();
+  await field(page, "deadline").locator('input[type="date"]').fill("2027-06-30");
+  await button(profile(page), "profile.save").press("Enter");
+  await expect(profile(page)).toContainText(text("profile.savedVersion", { number: 5 }));
+  const calendar = new Intl.DateTimeFormat(receipt.locale, {
+    dateStyle: "long",
+    timeZone: "UTC",
+  }).format(Date.UTC(2027, 5, 30));
+  await showNavigator();
+  await expect(deadlineText()).toContainText(calendar);
+  receipt.timeZones = [await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)];
+  await selectProject(page, otherTitle);
+  await showNavigator();
+  await expect(overview().locator("h2")).toHaveText(otherTitle);
+  await expect(deadlineText()).toContainText(text("navigator.deadline.pending"));
+  await selectProject(page, originalTitle);
+  await showNavigator();
+  await expect(deadlineText()).toContainText(calendar);
+  for (const timeZone of ["Asia/Seoul", "Pacific/Honolulu"]) {
+    await app.close();
+    app = undefined;
+    page = await start(timeZone);
+    await selectProject(page, originalTitle);
+    await showNavigator();
+    expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe(
+      timeZone,
+    );
+    await expect(deadlineText()).toContainText(calendar);
+    receipt.timeZones.push(timeZone);
+  }
+  record("navigator-deadline-states-stage-map-keyboard-project-switch-and-time-zones");
 } catch (error) {
   // Keep the failing window's state with the evidence.
   for (const [index, window] of (app?.windows() ?? []).entries())

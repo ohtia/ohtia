@@ -763,56 +763,104 @@ export function WeeklyActions({
 }
 
 export type StageState = "not-started" | "in-progress" | "done";
-export interface Stage {
+export type WorkflowMilestoneState = "pending" | "reached";
+/** A stage, or a workflow milestone, which has no activities or focus. */
+export type Stage = {
   readonly id: string;
   readonly name: string;
-  readonly state: StageState;
   readonly focus?: boolean;
   readonly pendingProposal?: boolean;
-}
+} & (
+  | { readonly kind?: "stage"; readonly state: StageState }
+  | { readonly kind: "milestone"; readonly state: WorkflowMilestoneState }
+);
 /** Stage, stage state, focus and pending proposal remain separate facts. */
 export function StageStatus({
   label,
   stages,
   orientation = "vertical",
   labels,
+  selected,
+  onSelect,
 }: {
   readonly label: string;
   readonly stages: readonly Stage[];
   readonly orientation?: "horizontal" | "vertical";
   readonly labels: {
     readonly state: Readonly<Record<StageState, string>>;
-    readonly focus: string;
-    readonly pendingProposal: string;
+    readonly milestone?: Readonly<Record<WorkflowMilestoneState, string>>;
+    readonly focus?: string;
+    readonly pendingProposal?: string;
   };
+  /** With `onSelect`, each item is a button and `selected` names the one whose detail shows. */
+  readonly selected?: string | undefined;
+  readonly onSelect?: (id: string) => void;
 }) {
   if (stages.filter((stage) => stage.focus).length > 1)
     throw new RangeError("At most one stage is the current focus.");
+  if (
+    stages.some(
+      (stage) =>
+        (stage.kind === "milestone" && (stage.focus || !labels.milestone)) ||
+        (stage.focus && labels.focus === undefined) ||
+        (stage.pendingProposal && labels.pendingProposal === undefined),
+    )
+  )
+    throw new RangeError("Every shown stage fact needs its label.");
   return (
     <ol className="research-stages" data-orientation={orientation} aria-label={label}>
-      {stages.map((stage) => (
-        <li
-          key={stage.id}
-          className="research-stage"
-          data-focus={stage.focus ? "true" : "false"}
-          aria-current={stage.focus ? "step" : undefined}
-        >
-          <span className="research-stage-name">{stage.name}</span>
-          <span className="research-badge" data-state={stage.state}>
-            {labels.state[stage.state]}
-          </span>
-          {stage.focus && (
-            <span className="research-badge" data-state="focus">
-              {labels.focus}
+      {stages.map((stage) => {
+        const milestone = stage.kind === "milestone";
+        const content = (
+          <>
+            {milestone && (
+              <span className="research-milestone-mark" data-state={stage.state}>
+                <LucideGlyph name="diamond" size={16} />
+              </span>
+            )}
+            <span className="research-stage-name">{stage.name}</span>
+            <span className="research-badge" data-state={stage.state}>
+              {stage.kind === "milestone"
+                ? labels.milestone?.[stage.state]
+                : labels.state[stage.state]}
             </span>
-          )}
-          {stage.pendingProposal && (
-            <span className="research-stage-proposal">
-              <LucideGlyph name="circle-dashed" size={16} /> {labels.pendingProposal}
-            </span>
-          )}
-        </li>
-      ))}
+            {stage.focus && (
+              <span className="research-badge" data-state="focus">
+                {labels.focus}
+              </span>
+            )}
+            {stage.pendingProposal && (
+              <span className="research-stage-proposal">
+                <LucideGlyph name="circle-dashed" size={16} /> {labels.pendingProposal}
+              </span>
+            )}
+          </>
+        );
+        return (
+          <li
+            key={stage.id}
+            className="research-stage"
+            data-kind={milestone ? "milestone" : "stage"}
+            data-focus={stage.focus ? "true" : "false"}
+            aria-current={stage.focus ? "step" : undefined}
+          >
+            {onSelect ? (
+              <button
+                type="button"
+                className="research-stage-select"
+                aria-pressed={selected === stage.id}
+                onClick={() => {
+                  onSelect(stage.id);
+                }}
+              >
+                {content}
+              </button>
+            ) : (
+              content
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }

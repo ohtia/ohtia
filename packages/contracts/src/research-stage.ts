@@ -14,6 +14,24 @@ export const researchStages = [
 ] as const;
 
 export type ResearchStageId = (typeof researchStages)[number];
+
+/** A point in a project type's workflow that has no activities, focus, entry or reopening. */
+export const workflowMilestones = ["delivery"] as const;
+export type WorkflowMilestoneId = (typeof workflowMilestones)[number];
+export type WorkflowStep =
+  | { readonly kind: "stage"; readonly id: ResearchStageId }
+  | { readonly kind: "milestone"; readonly id: WorkflowMilestoneId };
+
+/**
+ * Each project type's ordered workflow. The order is the position in the list, identifiers are
+ * unique within a type, and a step is identified by its project type and identifier.
+ */
+export const projectWorkflows: Readonly<Record<"thesis", readonly WorkflowStep[]>> = Object.freeze({
+  thesis: Object.freeze([
+    ...researchStages.map((id): WorkflowStep => Object.freeze({ kind: "stage", id })),
+    Object.freeze({ kind: "milestone", id: "delivery" }),
+  ]),
+});
 export type ResearchStageState = "not-started" | "in-progress" | "done";
 export type StageActionAvailability = "available" | "workflow_unavailable" | "wrong_state";
 

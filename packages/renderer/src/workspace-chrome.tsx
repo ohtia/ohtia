@@ -16,6 +16,7 @@ import {
   commandDefinitions,
   formatNumber,
   message,
+  projectWorkflows,
   workspacePanels,
   type CommandBridge,
   type CommandId,
@@ -53,7 +54,18 @@ import {
 import type { ManuscriptOutline } from "./manuscript-outline.js";
 import { Tabs } from "./tabs.js";
 import { ThesisProfileView, type ProfileSectionTarget } from "./thesis-profile-view.js";
-import { profileSectionIds, unanswered, type ProfileSection } from "./thesis-profile-fields.js";
+import {
+  navigatorSurfaceCommitted,
+  type NavigatorController,
+  type NavigatorState,
+} from "./navigator-controller.js";
+import { NavigatorView } from "./navigator-view.js";
+import {
+  localDate,
+  profileSectionIds,
+  unanswered,
+  type ProfileSection,
+} from "./thesis-profile-fields.js";
 import type {
   PendingProjectWork,
   PendingWorkDecision,
@@ -101,6 +113,8 @@ export interface WorkspaceChromeProps {
     | "confirmManuscriptLock"
   >;
   readonly onManuscriptVisibility?: (revision: ManuscriptRevision | null) => void;
+  /** Reads the stage projection of the selected setup-confirmed project for the Navigator. */
+  readonly navigator?: NavigatorController;
   readonly profile?: Omit<
     Parameters<typeof ThesisProfileView>[0],
     "target" | "locale" | "title" | "subtitle"
@@ -157,6 +171,14 @@ interface DocumentTabsState {
 const ignoreManuscriptVisibility = () => {};
 const noSubscription = () => () => {};
 const noProfile = () => undefined;
+const noNavigator = (): NavigatorState => ({
+  projectId: undefined,
+  stages: undefined,
+  reading: false,
+  readFailed: false,
+});
+const noNavigatorState = noNavigator();
+const noNavigatorSnapshot = () => noNavigatorState;
 const noUpdateSubscription = () => () => {};
 const noUpdateSnapshot = (): UpdateSnapshot | undefined => undefined;
 function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
@@ -266,6 +288,7 @@ export function WorkspaceChrome({
   manuscriptLifecycle,
   onManuscriptVisibility = ignoreManuscriptVisibility,
   profile,
+  navigator,
   revealSourceRequest,
   chatTitle,
   chatActivity,
@@ -583,6 +606,25 @@ export function WorkspaceChrome({
   const profileState = useSyncExternalStore(
     profileController?.subscribe ?? noSubscription,
     profileController?.snapshot ?? noProfile,
+  );
+  // The Navigator reads the stages of the project type while the project is selected.
+  const navigatorSteps =
+    profileLease && project?.id === profileLease.projectId && project.setupConfirmedAt
+      ? projectWorkflows[project.projectType]
+      : undefined;
+  useLayoutEffect(
+    () =>
+      navigator && profileLease && navigatorSteps
+        ? navigator.attach(profileLease, navigatorSteps)
+        : undefined,
+    [navigator, profileLease, navigatorSteps],
+  );
+  useLayoutEffect(() => {
+    navigator?.setSubscription(profileSubscription);
+  }, [navigator, profileLease, navigatorSteps, profileSubscription]);
+  const navigatorState = useSyncExternalStore(
+    navigator?.subscribe ?? noSubscription,
+    navigator?.snapshot ?? noNavigatorSnapshot,
   );
   const [sectionTarget, setSectionTarget] = useState<
     (ProfileSectionTarget & { readonly lease: ProjectSelectionLease }) | undefined
@@ -1039,6 +1081,15 @@ export function WorkspaceChrome({
     : text("workspace.noProject");
   const projectLanguage = project?.setupConfirmedAt ? (project.documentLanguage ?? "") : locale;
   const geometry = state?.geometry;
+  // The Navigator surface is committed once its stages render in a visible documents panel.
+  const navigatorCommitted = navigatorSurfaceCommitted(
+    selectedTab === "navigator",
+    !!geometry?.visible.documents,
+    navigatorState,
+  );
+  useEffect(() => {
+    if (navigatorCommitted && profileLease) navigator?.committed(profileLease);
+  }, [navigatorCommitted, navigator, profileLease]);
   const narrow = geometry?.mode === "narrow";
   const layout = controller.current;
   const mainPanel = geometry?.visible.documents
@@ -1408,39 +1459,47 @@ export function WorkspaceChrome({
                         label: text("workspace.navigator"),
                         icon: <LucideGlyph name="signpost" size={16} />,
                         content: projectScope ? (
-                          project && (
+                          project &&
+                          (profile &&
+                          navigatorSteps &&
+                          project.title &&
+                          navigatorState.projectId === project.id ? (
+                            <NavigatorView
+                              key={project.id}
+                              locale={locale}
+                              title={project.title}
+                              subtitle={project.subtitle}
+                              projectType={project.projectType}
+                              steps={navigatorSteps}
+                              stages={navigatorState}
+                              retryStages={() => {
+                                navigator?.retry();
+                              }}
+                              profile={{
+                                saved: profileState?.saved
+                                  ? { fields: profileState.saved.fields }
+                                  : profileState?.saved,
+                                readFailed: !!profileState?.readFailed,
+                                retry: () => {
+                                  void profile.controller.load();
+                                },
+                              }}
+                              openProfile={(section) => {
+                                openProfile(profile.lease, section);
+                              }}
+                              today={localDate()}
+                            />
+                          ) : (
                             <div className="workspace-empty workspace-setup">
                               <p>
                                 {text(
                                   project.setupConfirmedAt
-                                    ? "setup.navigatorConfirmed"
+                                    ? "navigator.stagesLoading"
                                     : "setup.navigator",
                                 )}
                               </p>
-                              {profile && project.setupConfirmedAt && (
-                                <div className="profile-actions">
-                                  <button
-                                    type="button"
-                                    className="primitive-button"
-                                    onClick={() => {
-                                      openProfile(profile.lease, "schedule");
-                                    }}
-                                  >
-                                    {text("profile.openSchedule")}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="primitive-button"
-                                    onClick={() => {
-                                      openProfile(profile.lease, "research");
-                                    }}
-                                  >
-                                    {text("profile.openResearch")}
-                                  </button>
-                                </div>
-                              )}
                             </div>
-                          )
+                          ))
                         ) : (
                           <div className="workspace-welcome">
                             {decoration !== "hidden" && <ProductCharacter />}
@@ -1581,6 +1640,7 @@ export function WorkspaceChrome({
                     ]}
                     selected={selectedTab}
                     onSelect={(tab) => {
+                      if (tab === "navigator" && profileLease) navigator?.selected(profileLease);
                       setDocuments((previous) =>
                         previous.projectId === projectScope
                           ? { ...previous, selected: tab }

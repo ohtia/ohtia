@@ -630,6 +630,47 @@ describe("attributed research presentation", () => {
       }),
     );
     expect(container.querySelector("ol")!.getAttribute("data-orientation")).toBe("vertical");
+    const milestoneLabels = {
+      state: { "not-started": "Not started", "in-progress": "In progress", done: "Done" },
+      milestone: { pending: "Pending", reached: "Reached" },
+    } as const;
+    const delivery = { id: "delivery", kind: "milestone", name: "Delivery and defense" } as const;
+    await rejectsRender(
+      h(StageStatus, {
+        label: "Stages",
+        stages: [{ ...delivery, state: "pending" }],
+        labels: { state: milestoneLabels.state },
+      }),
+      /needs its label/,
+    );
+    await rejectsRender(
+      h(StageStatus, {
+        label: "Stages",
+        stages: [{ id: "a", name: "A", state: "done", focus: true }],
+        labels: milestoneLabels,
+      }),
+      /needs its label/,
+    );
+    await rejectsRender(
+      h(StageStatus, {
+        label: "Stages",
+        stages: [{ ...delivery, state: "pending", focus: true }],
+        labels: { ...milestoneLabels, focus: "Focus" },
+      }),
+      /needs its label/,
+    );
+    await render(
+      h(StageStatus, {
+        label: "Stages",
+        stages: [{ ...delivery, state: "reached" }],
+        labels: milestoneLabels,
+      }),
+    );
+    expect(container.querySelector("li")!.textContent).toBe("Delivery and defenseReached");
+    expect(
+      container.querySelector('.research-milestone-mark[data-state="reached"] svg'),
+    ).not.toBeNull();
+    expect(container.querySelector("button")).toBeNull();
     const pace = (plan: Parameters<typeof PaceIndicator>[0]["plan"]) =>
       h(PaceIndicator, {
         plan,

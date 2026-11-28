@@ -1,7 +1,9 @@
 import { vi } from "vitest";
 import {
   failure,
+  stageAction,
   staleRevision,
+  type ResearchStageId,
   type FoundationPort,
   type PresentationSnapshot,
   type Outcome,
@@ -49,6 +51,23 @@ export function harness() {
     return call({ ok: true as const, value });
   };
   const port = {
+    // A setup-confirmed thesis has no stage records until a stage is entered.
+    readResearchStage: ({ projectId, stageId }: { projectId: string; stageId: ResearchStageId }) =>
+      call({
+        ok: true as const,
+        value: {
+          projectId,
+          stageId,
+          state: "not-started" as const,
+          revision: 0,
+          decisionId: null,
+          profileRevisionId: null,
+          enter: stageAction(stageId, "not-started", "not-started"),
+          reopen: stageAction(stageId, "not-started", "done"),
+          latestEntry: null,
+        },
+      }),
+    readStageDecision: () => call(failure("record_not_found")),
     readExecutionLimits: () =>
       call({
         ok: true as const,

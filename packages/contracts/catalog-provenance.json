@@ -403,6 +403,15 @@
       },
       "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "Navigator overview and thesis workflow entries for issue #425, in every supported locale: workflow.thesis.*, navigator.*",
+      "producer": {
+        "agent": "claude-code",
+        "effective_model": "claude-opus-5-5"
+      },
+      "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
+      "human_linguistic_review": null
     }
   ]
 }

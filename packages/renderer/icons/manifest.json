@@ -186,6 +186,12 @@
       "sha256": "bc4edbaaea7f39131cfcd05dda9f34725c7c3b61eea0f2cd8c4ef2912df6db65"
     },
     {
+      "name": "diamond",
+      "file": "diamond.svg",
+      "archive_member": "package/icons/diamond.svg",
+      "sha256": "8b18700b943a1e71a2e7ae0ac8e244ad4bb960195414267739aa311610f7d800"
+    },
+    {
       "name": "download",
       "file": "download.svg",
       "archive_member": "package/icons/download.svg",
