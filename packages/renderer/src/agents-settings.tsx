@@ -625,8 +625,14 @@ function PreferenceControls({
   connections,
   snapshots,
   requested = false,
+  defaultUnavailable = false,
+  onDefaultJudged,
 }: {
   readonly requested?: boolean;
+  /** Whether the default's model is judged not offered; it disables an agent's inherit option. */
+  readonly defaultUnavailable?: boolean;
+  /** The default's own component reports that judgement for the agent rows. */
+  readonly onDefaultJudged?: (unavailable: boolean) => void;
   readonly target: AgentPreferenceTarget;
   readonly settings: Settings;
   readonly port: FoundationPort;
@@ -833,6 +839,10 @@ function PreferenceControls({
           service: connections.find((item) => item.id === saved.connection),
         }
       : undefined;
+  const judgedUnavailable = !!settings.data && !!saved?.model && !usable;
+  useEffect(() => {
+    onDefaultJudged?.(judgedUnavailable);
+  }, [onDefaultJudged, judgedUnavailable]);
   const savedState =
     settings.saveState?.target === target &&
     ["saving", "saved"].includes(settings.saveState.phase) ? (
@@ -893,7 +903,9 @@ function PreferenceControls({
             {message(locale, "agents.chooseModel")}
           </option>
           {target !== "default" && (draft === undefined || defaults?.connection === connection) && (
-            <option value=":default">{inheritLabel}</option>
+            <option value=":default" disabled={defaultUnavailable}>
+              {inheritLabel}
+            </option>
           )}
           {currentModel && currentModel !== ":default" && !model && (
             <option value={currentModel} disabled>
@@ -1179,6 +1191,8 @@ export function AgentsSettings({
   readonly openAgent?: ReplyAgent | undefined;
 }) {
   const each = useId();
+  // The default's availability, judged once by its own component and shared with every agent row.
+  const [defaultUnavailable, setDefaultUnavailable] = useState(false);
   return (
     <div className="agent-settings">
       <p className="settings-info">
@@ -1202,6 +1216,7 @@ export function AgentsSettings({
       </RecoveryFocusBoundary>
       <PreferenceControls
         target="default"
+        onDefaultJudged={setDefaultUnavailable}
         {...{ settings, port, locale, connections, snapshots }}
       />
       <section className="agent-rows" aria-labelledby={each}>
@@ -1212,6 +1227,7 @@ export function AgentsSettings({
             <PreferenceControls
               key={target}
               requested={target === openAgent}
+              defaultUnavailable={defaultUnavailable}
               {...{ target, settings, port, locale, connections, snapshots }}
             />
           ))}
